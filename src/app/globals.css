@@ -1,0 +1,43 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ===== Ported from the old css/style.css =====
+   Colors/fonts moved into tailwind.config.ts (theme.extend).
+   The .lang-content toggle is gone entirely — next-intl renders only
+   the active locale's text server-side, so there's nothing to hide/show.
+*/
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  -webkit-font-smoothing: antialiased;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+}
+
+@layer components {
+  .form-input.error {
+    @apply border-red-500 ring-2 ring-red-500/10;
+  }
+
+  .card-shadow {
+    @apply shadow-card transition-all duration-[250ms] hover:shadow-card-hover hover:-translate-y-0.5;
+  }
+
+  .section-padding {
+    @apply py-16 md:py-[5.5rem];
+  }
+
+  .btn-primary {
+    @apply inline-flex items-center justify-center gap-2 rounded-full bg-primary px-8 py-[0.85rem]
+      font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
+      hover:bg-primary-dark hover:scale-[1.01] hover:shadow-[0_8px_25px_rgba(13,124,102,0.25)];
+  }
+}

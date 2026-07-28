@@ -1,0 +1,68 @@
+{
+  "home": {
+    "heroTitle": "What would you like to take care of today?",
+    "heroSubtitle": "Choose a category to see partners and programs that fit you"
+  },
+  "categories": {
+    "hospital": "Hospitals",
+    "clinic": "Clinics & Aesthetics",
+    "dental": "Dental",
+    "wellness": "Wellness & Alternative Medicine",
+    "spa": "Spa & Relaxation",
+    "hotel_transport": "Hotels & Transport"
+  },
+  "nav": {
+    "home": "Home",
+    "services": "Services",
+    "partners": "Partners",
+    "contact": "Contact"
+  },
+  "common": {
+    "partnersCount": "{count} partners",
+    "noPartners": "No partners in this category yet",
+    "helpLink": "Not sure which to pick? Get help from our team →",
+    "allPackages": "All Packages",
+    "promoOnly": "Special Promotions 🔥",
+    "noPrograms": "No programs in this filter yet",
+    "programsAndServices": "Programs & Services",
+    "bookNow": "Book this program",
+    "promotion": "Promotion"
+  },
+  "booking": {
+    "back": "Back",
+    "continue": "Continue",
+    "confirm": "Confirm Booking",
+    "submitting": "⏳ Saving...",
+    "errorSchedule": "Please choose a date and time",
+    "errorContact": "Please fill in your name, phone, and country",
+    "errorGeneric": "Something went wrong, please try again",
+    "successTitle": "Booking received",
+    "successBody": "Our team will contact you via Line or phone within 24 hours to confirm details",
+    "fields": {
+      "date": "Preferred date",
+      "time": "Preferred time",
+      "needTransport": "🚗 Need transport",
+      "needHotel": "🏨 Need a hotel",
+      "letTeamDecide": "-- Let the team decide --",
+      "oneWay": "🚗 One way only",
+      "roundTrip": "🔁 Round trip",
+      "daily": "📅 Daily hire (multiple days)",
+      "name": "Full name",
+      "phone": "Phone number",
+      "line": "Line ID",
+      "country": "Current country of residence",
+      "select": "-- Select --",
+      "other": "Other",
+      "attachment": "Upload documents/results (optional)"
+    },
+    "summary": {
+      "main": "Main program",
+      "hotel": "Hotel",
+      "transport": "Transport",
+      "total": "Total",
+      "disclaimer": "*Hotel/transport prices are estimates — our team will confirm the final price",
+      "reviewDate": "Appointment date",
+      "reviewContact": "Contact"
+    }
+  }
+}
