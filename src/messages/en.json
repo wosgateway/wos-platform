@@ -1,7 +1,35 @@
 {
   "home": {
-    "heroTitle": "What would you like to take care of today?",
-    "heroSubtitle": "Choose a category to see partners and programs that fit you"
+    "hero": {
+      "badge": "Cross-border Healthcare Platform",
+      "title": "One Platform Connecting Care Between Laos and Thailand",
+      "subtitle": "WOS coordinates hospitals, hotels, and transport in a single system, so cross-border patients can book and track their care with confidence — from appointment to the trip home.",
+      "ctaPrimary": "Find a Doctor / Book",
+      "ctaSecondary": "For Partners"
+    },
+    "why": {
+      "title": "Why WOS",
+      "items": [
+        {
+          "title": "Verified Partners",
+          "desc": "Every hospital and clinic is vetted before joining the network"
+        },
+        {
+          "title": "Transparent Pricing",
+          "desc": "Clear package prices upfront, no hidden costs"
+        },
+        {
+          "title": "Cross-border Coordination",
+          "desc": "Doctor appointment, hotel, and transport handled in one booking"
+        },
+        {
+          "title": "Local Support Team",
+          "desc": "Reach our team via LINE/WhatsApp throughout your trip"
+        }
+      ]
+    },
+    "categoriesTitle": "Browse Categories",
+    "categoriesSubtitle": "Choose a category to see partners and programs that fit you"
   },
   "categories": {
     "hospital": "Hospitals",
