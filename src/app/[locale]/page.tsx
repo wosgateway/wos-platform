@@ -1,6 +1,12 @@
 import { useTranslations } from 'next-intl';
+import { Link } from '@/i18n/navigation';
 import { CATEGORIES } from '@/lib/categories';
 import { CategoryCard } from '@/components/CategoryCard';
+import { TrustBar } from '@/components/TrustBar';
+import { PartnerLogos } from '@/components/PartnerLogos';
+import { JourneyTimeline } from '@/components/JourneyTimeline';
+import { Testimonials } from '@/components/Testimonials';
+import { FAQ } from '@/components/FAQ';
 
 export default function HomePage() {
   const t = useTranslations('home');
@@ -26,15 +32,24 @@ export default function HomePage() {
             <a href="#categories" className="btn-primary">
               {t('hero.ctaPrimary')}
             </a>
-            <a
-              href="/partner"
+            <Link
+              href="/become-partner"
               className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-primary px-8 py-[0.8rem] font-semibold text-primary transition-all duration-200 hover:bg-primary hover:text-white"
             >
               {t('hero.ctaSecondary')}
-            </a>
+            </Link>
           </div>
+
+          {/* NEW: trust stats under the CTAs */}
+          <TrustBar />
         </div>
       </section>
+
+      {/* ===== PARTNER LOGOS (NEW) ===== */}
+      <PartnerLogos />
+
+      {/* ===== PATIENT JOURNEY (NEW) ===== */}
+      <JourneyTimeline />
 
       {/* ===== WHY WOS ===== */}
       <section className="section-padding bg-white">
@@ -69,6 +84,12 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* ===== TESTIMONIALS (NEW) ===== */}
+      <Testimonials />
+
+      {/* ===== FAQ (NEW) ===== */}
+      <FAQ />
     </main>
   );
 }

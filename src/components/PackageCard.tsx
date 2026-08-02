@@ -2,6 +2,7 @@ import Image from 'next/image';
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { formatTHB } from '@/lib/format';
+import { normalizeImageSrc } from '@/lib/image';
 import type { Package } from '@/lib/data';
 
 export function PackageCard({ pkg }: { pkg: Package }) {
@@ -15,7 +16,7 @@ export function PackageCard({ pkg }: { pkg: Package }) {
       {pkg.image_url ? (
         <div className="relative -mt-1 h-32 w-full overflow-hidden rounded-xl">
           <Image
-            src={pkg.image_url as string}
+            src={normalizeImageSrc(pkg.image_url as string)}
             alt={pkg.title as string}
             fill
             className="object-cover"

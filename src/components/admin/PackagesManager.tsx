@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 import type { Package, Partner } from '@/lib/data';
+
+type PackageStatus = 'pending' | 'published' | 'rejected' | 'archived';
 
 interface PackageFormState {
   id: string | null;
@@ -15,6 +17,7 @@ interface PackageFormState {
   special_price: string;
   duration: string;
   is_promotion: boolean;
+  status: PackageStatus;
 }
 
 const emptyForm: PackageFormState = {
@@ -27,7 +30,30 @@ const emptyForm: PackageFormState = {
   special_price: '',
   duration: '',
   is_promotion: false,
+  status: 'pending',
 };
+
+const STATUS_LABEL: Record<PackageStatus, string> = {
+  pending: '⏳ รอตรวจสอบ',
+  published: '✅ เผยแพร่แล้ว',
+  rejected: '❌ ปฏิเสธ',
+  archived: '📦 เก็บเข้าคลัง',
+};
+
+const STATUS_BADGE_CLASS: Record<PackageStatus, string> = {
+  pending: 'bg-amber-100 text-amber-700',
+  published: 'bg-emerald-100 text-emerald-700',
+  rejected: 'bg-red-100 text-red-600',
+  archived: 'bg-slate-100 text-slate-500',
+};
+
+const STATUS_FILTERS: { value: 'all' | PackageStatus; label: string }[] = [
+  { value: 'all', label: 'ทั้งหมด' },
+  { value: 'pending', label: '⏳ รอตรวจสอบ' },
+  { value: 'published', label: '✅ เผยแพร่แล้ว' },
+  { value: 'rejected', label: '❌ ปฏิเสธ' },
+  { value: 'archived', label: '📦 เก็บเข้าคลัง' },
+];
 
 export function PackagesManager() {
   const supabase = createClient();
@@ -35,11 +61,14 @@ export function PackagesManager() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<'all' | PackageStatus>('all');
+
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PackageFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
   async function loadAll() {
     setLoading(true);
@@ -62,6 +91,16 @@ export function PackagesManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const filtered = useMemo(() => {
+    if (statusFilter === 'all') return packages;
+    return packages.filter((p) => ((p.status as PackageStatus) || 'pending') === statusFilter);
+  }, [packages, statusFilter]);
+
+  const pendingCount = useMemo(
+    () => packages.filter((p) => ((p.status as PackageStatus) || 'pending') === 'pending').length,
+    [packages]
+  );
+
   function openModal(pkg?: Package) {
     setFormError(null);
     if (pkg) {
@@ -75,9 +114,10 @@ export function PackagesManager() {
         special_price: pkg.special_price != null ? String(pkg.special_price) : '',
         duration: (pkg.duration as string) ?? '',
         is_promotion: !!pkg.is_promotion,
+        status: ((pkg.status as PackageStatus) || 'pending'),
       });
     } else {
-      setForm({ ...emptyForm, partner_id: partners[0]?.id ?? '' });
+      setForm({ ...emptyForm, partner_id: partners[0]?.id ?? '', status: 'published' });
     }
     setModalOpen(true);
   }
@@ -119,6 +159,7 @@ export function PackagesManager() {
       special_price: form.special_price ? Number(form.special_price) : null,
       duration: form.duration.trim() || null,
       is_promotion: form.is_promotion,
+      status: form.status,
     };
     const { error } = form.id
       ? await supabase.from('packages').update(payload).eq('id', form.id)
@@ -142,10 +183,31 @@ export function PackagesManager() {
     loadAll();
   }
 
+  async function updateStatus(id: string, status: PackageStatus) {
+    setStatusUpdatingId(id);
+    const { error } = await supabase.from('packages').update({ status }).eq('id', id);
+    setStatusUpdatingId(null);
+    if (error) {
+      alert('อัปเดตสถานะไม่สำเร็จ: ' + error.message);
+      return;
+    }
+    setPackages((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
+  }
+
   return (
     <div className="space-y-4 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-900">แพ็กเกจ ({packages.length})</h2>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-bold text-slate-900">แพ็กเกจ ({packages.length})</h2>
+          <p className="mt-0.5 text-xs text-slate-500">
+            แสดง {filtered.length} รายการ
+            {pendingCount > 0 ? (
+              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                ⏳ รอตรวจสอบ {pendingCount}
+              </span>
+            ) : null}
+          </p>
+        </div>
         <div className="flex gap-2">
           <button onClick={loadAll} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm">
             รีเฟรช
@@ -160,6 +222,23 @@ export function PackagesManager() {
         </div>
       </div>
 
+      {/* Status filter pills */}
+      <div className="flex flex-wrap gap-2">
+        {STATUS_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => setStatusFilter(f.value)}
+            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
+              statusFilter === f.value
+                ? 'border-slate-800 bg-slate-800 text-white'
+                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       {partners.length === 0 && !loading ? (
         <p className="text-sm text-amber-600">ต้องเพิ่มพาร์ทเนอร์อย่างน้อย 1 รายก่อนจึงจะสร้างแพ็กเกจได้</p>
       ) : null}
@@ -172,8 +251,8 @@ export function PackagesManager() {
 
       {loading ? (
         <p className="text-sm text-slate-400">กำลังโหลด...</p>
-      ) : packages.length === 0 ? (
-        <p className="text-sm text-slate-400">ยังไม่มีแพ็กเกจ</p>
+      ) : filtered.length === 0 ? (
+        <p className="text-sm text-slate-400">ไม่มีแพ็กเกจในหมวดนี้</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <table className="w-full text-left text-sm">
@@ -182,40 +261,68 @@ export function PackagesManager() {
                 <th className="px-4 py-2">ชื่อโปรแกรม</th>
                 <th className="px-4 py-2">พาร์ทเนอร์</th>
                 <th className="px-4 py-2">ราคา</th>
+                <th className="px-4 py-2">สถานะ</th>
                 <th className="px-4 py-2">โปรโมชัน</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {packages.map((pkg) => (
-                <tr key={pkg.id} className="border-t border-slate-100">
-                  <td className="px-4 py-2 font-medium text-slate-800">{pkg.title as string}</td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {(pkg.partners as { name?: string } | undefined)?.name ?? '-'}
-                  </td>
-                  <td className="px-4 py-2 text-slate-500">
-                    {pkg.special_price ? (
-                      <>
-                        <span className="mr-1 text-slate-300 line-through">
-                          {formatTHB(pkg.original_price as number)}
-                        </span>
-                        {formatTHB(pkg.special_price as number)}
-                      </>
-                    ) : (
-                      formatTHB(pkg.original_price as number)
-                    )}
-                  </td>
-                  <td className="px-4 py-2">{pkg.is_promotion ? '🔥' : '-'}</td>
-                  <td className="px-4 py-2 text-right">
-                    <button onClick={() => openModal(pkg)} className="mr-3 text-primary hover:underline">
-                      แก้ไข
-                    </button>
-                    <button onClick={() => handleDelete(pkg.id)} className="text-red-500 hover:underline">
-                      ลบ
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {filtered.map((pkg) => {
+                const status: PackageStatus = (pkg.status as PackageStatus) || 'pending';
+                const busy = statusUpdatingId === pkg.id;
+                return (
+                  <tr key={pkg.id} className="border-t border-slate-100">
+                    <td className="px-4 py-2 font-medium text-slate-800">{pkg.title as string}</td>
+                    <td className="px-4 py-2 text-slate-500">
+                      {(pkg.partners as { name?: string } | undefined)?.name ?? '-'}
+                    </td>
+                    <td className="px-4 py-2 text-slate-500">
+                      {pkg.special_price ? (
+                        <>
+                          <span className="mr-1 text-slate-300 line-through">
+                            {formatTHB(pkg.original_price as number)}
+                          </span>
+                          {formatTHB(pkg.special_price as number)}
+                        </>
+                      ) : (
+                        formatTHB(pkg.original_price as number)
+                      )}
+                    </td>
+                    <td className="px-4 py-2">
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[status]}`}>
+                        {STATUS_LABEL[status]}
+                      </span>
+                      {status === 'pending' ? (
+                        <div className="mt-1 flex gap-1.5">
+                          <button
+                            disabled={busy}
+                            onClick={() => updateStatus(pkg.id, 'published')}
+                            className="rounded border border-emerald-200 px-2 py-0.5 text-[11px] text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                          >
+                            ✅ อนุมัติ
+                          </button>
+                          <button
+                            disabled={busy}
+                            onClick={() => updateStatus(pkg.id, 'rejected')}
+                            className="rounded border border-red-200 px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-50"
+                          >
+                            ❌ ปฏิเสธ
+                          </button>
+                        </div>
+                      ) : null}
+                    </td>
+                    <td className="px-4 py-2">{pkg.is_promotion ? '🔥' : '-'}</td>
+                    <td className="px-4 py-2 text-right">
+                      <button onClick={() => openModal(pkg)} className="mr-3 text-primary hover:underline">
+                        แก้ไข
+                      </button>
+                      <button onClick={() => handleDelete(pkg.id)} className="text-red-500 hover:underline">
+                        ลบ
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>
@@ -297,6 +404,19 @@ export function PackagesManager() {
                 onChange={(e) => setForm({ ...form, duration: e.target.value })}
               />
             </div>
+            <div>
+              <label className="form-label">สถานะ</label>
+              <select
+                className="form-input"
+                value={form.status}
+                onChange={(e) => setForm({ ...form, status: e.target.value as PackageStatus })}
+              >
+                <option value="pending">⏳ รอตรวจสอบ</option>
+                <option value="published">✅ เผยแพร่แล้ว</option>
+                <option value="rejected">❌ ปฏิเสธ</option>
+                <option value="archived">📦 เก็บเข้าคลัง</option>
+              </select>
+            </div>
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input
                 type="checkbox"
@@ -314,7 +434,7 @@ export function PackagesManager() {
                 className="form-input"
                 onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
               />
-              {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
+              {uploading ? <p className="mt-1 text-xs text-slate-400">⏳ กำลังอัปโหลด...</p> : null}
               {form.image_url ? (
                 <img src={form.image_url} alt="" className="mt-2 h-20 w-20 rounded-lg object-cover" />
               ) : null}

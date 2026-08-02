@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { normalizeImageSrc } from '@/lib/image';
 
 export function PartnerGallery({ images, alt }: { images: string[]; alt: string }) {
   const [active, setActive] = useState(0);
-  const main = images[active] || images[0];
+  const normalized = images.map((img) => normalizeImageSrc(img));
+  const main = normalized[active] || normalized[0];
 
   return (
     <>
@@ -14,9 +16,9 @@ export function PartnerGallery({ images, alt }: { images: string[]; alt: string 
           <Image src={main} alt={alt} fill className="object-cover" sizes="100vw" priority />
         </div>
       </div>
-      {images.length > 1 && (
+      {normalized.length > 1 && (
         <div className="mb-8 grid grid-cols-4 gap-2 sm:grid-cols-6">
-          {images.map((img, i) => (
+          {normalized.map((img, i) => (
             <button
               key={img + i}
               onClick={() => setActive(i)}

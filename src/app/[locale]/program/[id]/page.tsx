@@ -3,6 +3,7 @@ import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { fetchPackageById } from '@/lib/data';
 import { formatTHB } from '@/lib/format';
+import { normalizeImageSrc } from '@/lib/image';
 import { Breadcrumb } from '@/components/Breadcrumb';
 import { Link } from '@/i18n/navigation';
 
@@ -22,7 +23,13 @@ export default async function ProgramDetailPage({
   if (!pkg) notFound();
 
   const partner = pkg.partners;
-  const image = (pkg.image_url as string) || partner?.cover_image_url || '/images/hero/hero-main.webp';
+  // เดิม fallback chain นี้ไม่ผ่าน normalizeImageSrc เลย — ถ้า pkg.image_url
+  // หรือ partner.cover_image_url เป็น path เก่าที่ไม่มี "/" นำหน้า (migrate
+  // มาจาก static site) next/image จะ throw ตรงนี้ (ดู PartnerCard/PackageCard
+  // ที่แก้จุดเดียวกันไปแล้วก่อนหน้า)
+  const image = normalizeImageSrc(
+    (pkg.image_url as string) || (partner?.cover_image_url as string | undefined)
+  );
 
   return (
     <main>
@@ -90,12 +97,16 @@ export default async function ProgramDetailPage({
           </div>
 
           <div className="mt-10 text-center">
-            <Link
-              href="/services"
+            {/* เดิมชี้ไป /services (ไม่มี route นี้จริง) — เปลี่ยนเป็น LINE OA
+                ให้ตรงกับที่แก้ไว้แล้วในหน้า category/[slug] และ partner/[id] */}
+            <a
+              href="https://line.me/ti/p/@vlf9996z"
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-block text-sm text-slate-500 transition hover:text-primary"
             >
               {t('helpLink')}
-            </Link>
+            </a>
           </div>
         </div>
       </section>

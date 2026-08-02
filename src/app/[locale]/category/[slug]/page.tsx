@@ -1,9 +1,8 @@
 import { getTranslations } from 'next-intl/server';
 import { getCategoryBySlug } from '@/lib/categories';
 import { fetchPartners } from '@/lib/data';
-import { PartnerCard } from '@/components/PartnerCard';
+import { PartnersSearchGrid } from '@/components/PartnersSearchGrid';
 import { Breadcrumb } from '@/components/Breadcrumb';
-import { Link } from '@/i18n/navigation';
 import { notFound } from 'next/navigation';
 
 export default async function CategoryPage({
@@ -39,25 +38,25 @@ export default async function CategoryPage({
 
       <section className="pb-16">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
-          {partners.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-slate-200 py-16 text-center text-slate-400">
-              <span className="text-3xl">🔍</span>
-              <p className="mt-2">{t('noPartners')}</p>
-            </div>
-          ) : (
-            <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {partners.map((partner) => (
-                <PartnerCard key={partner.id} partner={partner} />
-              ))}
-            </div>
-          )}
+          {/* ค้นหา/กรองเฉพาะฝั่งลูกค้า — ไม่ใช้กับ /admin หรือ partner portal
+              (ดูสรุปเหตุผลใน README ส่วน consumer-facing vs B2B) */}
+          <PartnersSearchGrid partners={partners} />
         </div>
       </section>
 
       <section className="pb-12 text-center">
-        <Link href="/services" className="text-sm text-slate-500 transition hover:text-primary">
+        {/* เดิมชี้ไป /services ซึ่งไม่มี route นี้อยู่จริงในโปรเจกต์ (ไม่เคยสร้าง) —
+            เปลี่ยนเป็นลิงก์ LINE OA แทน เพราะความหมายเดิมของ helpLink คือ
+            "ไม่แน่ใจจะเลือกที่ไหนดี? ให้ทีมช่วยแนะนำ" ซึ่งคือการคุยกับคนจริง
+            ไม่ใช่หน้าเว็บ — ใช้ <a> ธรรมดาเพราะเป็นลิงก์ภายนอก ไม่ใช่ next-intl Link */}
+        <a
+          href="https://line.me/ti/p/@vlf9996z"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm text-slate-500 transition hover:text-primary"
+        >
           {t('helpLink')}
-        </Link>
+        </a>
       </section>
     </main>
   );

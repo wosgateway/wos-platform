@@ -5,7 +5,6 @@ import { CATEGORIES } from '@/lib/categories';
 import { Breadcrumb } from '@/components/Breadcrumb';
 import { PartnerGallery } from '@/components/PartnerGallery';
 import { PackagesGrid } from '@/components/PackagesGrid';
-import { Link } from '@/i18n/navigation';
 
 export default async function PartnerDetailPage({
   params: { id },
@@ -76,12 +75,16 @@ export default async function PartnerDetailPage({
           <PackagesGrid packages={packages} />
 
           <div className="mt-10 text-center">
-            <Link
-              href="/services"
+            {/* เดิมชี้ไป /services (ไม่มี route นี้จริง) — เปลี่ยนเป็น LINE OA
+                ให้ตรงกับที่แก้ไว้แล้วในหน้า category/[slug]/page.tsx */}
+            <a
+              href="https://line.me/ti/p/@vlf9996z"
+              target="_blank"
+              rel="noopener noreferrer"
               className="inline-block text-sm text-slate-500 transition hover:text-primary"
             >
               {t('helpLink')}
-            </Link>
+            </a>
           </div>
         </div>
       </section>

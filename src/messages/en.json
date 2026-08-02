@@ -7,6 +7,35 @@
       "ctaPrimary": "Find a Doctor / Book",
       "ctaSecondary": "For Partners"
     },
+    "trustBar": {
+      "items": [
+        { "value": "50+", "label": "Partner hospitals" },
+        { "value": "< 2 hrs", "label": "Team response time" },
+        { "value": "3 languages", "label": "Thai / Lao / English" },
+        { "value": "24/7", "label": "VIP transport available" }
+      ]
+    },
+    "partners": {
+      "label": "Our Partner Hospital Network",
+      "names": [
+        "Bumrungrad International",
+        "Bangkok Hospital Udon",
+        "Aek Udon International",
+        "Vejthani Hospital"
+      ]
+    },
+    "journey": {
+      "title": "Your Journey With WOS",
+      "subtitle": "From your first message to the trip home, we handle every step",
+      "steps": [
+        { "icon": "💬", "title": "Consult & Plan", "desc": "Tell us what you need — we recommend doctors and packages that fit" },
+        { "icon": "🛂", "title": "Cross the Border", "desc": "We coordinate documents and travel across the Laos–Thailand border" },
+        { "icon": "🚗", "title": "VIP Transport", "desc": "Pickup from the border crossing to your hotel and the hospital" },
+        { "icon": "🏨", "title": "Check In", "desc": "Partner hotels near the medical facility — clean and safe" },
+        { "icon": "🏥", "title": "Receive Care", "desc": "See your specialist at the scheduled appointment" },
+        { "icon": "🧑‍⚕️", "title": "Follow-up & Return", "desc": "Your coordinator stays with you until you're home" }
+      ]
+    },
     "why": {
       "title": "Why WOS",
       "items": [
@@ -29,7 +58,52 @@
       ]
     },
     "categoriesTitle": "Browse Categories",
-    "categoriesSubtitle": "Choose a category to see partners and programs that fit you"
+    "categoriesSubtitle": "Choose a category to see partners and programs that fit you",
+    "testimonials": {
+      "title": "What Our Patients Say",
+      "items": [
+        {
+          "quote": "The team coordinated everything from booking to the trip home — travelling to Thailand for care was smoother than I expected.",
+          "name": "Patient from Luang Prabang",
+          "meta": "Annual checkup"
+        },
+        {
+          "quote": "Transport was on time and the hotel was clean and close to the hospital. I didn't have to worry about travel at all.",
+          "name": "Patient from Vientiane",
+          "meta": "Dental care"
+        },
+        {
+          "quote": "An interpreter was with me through every appointment, explaining each step clearly. It put my mind at ease.",
+          "name": "Patient from Savannakhet",
+          "meta": "Specialist consultation"
+        }
+      ]
+    },
+    "faq": {
+      "title": "Frequently Asked Questions",
+      "items": [
+        {
+          "q": "Do I need a visa to travel to Thailand for treatment?",
+          "a": "It depends on your nationality and length of stay. Our team will tell you what applies to you and help prepare the documents you need."
+        },
+        {
+          "q": "Can I know the treatment cost in advance?",
+          "a": "Yes — we prepare a quote before confirming any appointment, with no hidden costs."
+        },
+        {
+          "q": "What currencies can I pay with?",
+          "a": "We accept Thai baht, Lao kip, and international transfers. Ask our team about the most convenient option for you."
+        },
+        {
+          "q": "Who takes care of me if there's an emergency during treatment?",
+          "a": "Your personal WOS coordinator is available around the clock and works directly with the hospital until you're safely home."
+        },
+        {
+          "q": "Is a Lao-speaking interpreter available during appointments?",
+          "a": "Yes — our team provides an interpreter or coordinator who speaks Lao throughout your appointments."
+        }
+      ]
+    }
   },
   "categories": {
     "hospital": "Hospitals",
@@ -54,7 +128,11 @@
     "noPrograms": "No programs in this filter yet",
     "programsAndServices": "Programs & Services",
     "bookNow": "Book this program",
-    "promotion": "Promotion"
+    "promotion": "Promotion",
+    "viewPackagesAndBook": "View packages & book",
+    "reviewsSuffix": "reviews",
+    "searchPlaceholder": "Search partner name or province...",
+    "noSearchResults": "No partners match your search"
   },
   "booking": {
     "back": "Back",
@@ -92,5 +170,72 @@
       "reviewDate": "Appointment date",
       "reviewContact": "Contact"
     }
+  },
+  "becomePartner": {
+    "meta": { "title": "WOS — For Business Partners" },
+    "hero": {
+      "title": "Join as a WOS Partner",
+      "subtitle": "Expand your business into the fastest-growing Healthcare Hospitality ecosystem in the region, connecting with 1,000+ cross-border patients per month"
+    },
+    "benefits": {
+      "title": "Benefits You'll Get",
+      "items": [
+        { "icon": "📈", "title": "Increase Customers", "desc": "Connect with 1,000+ cross-border patients per month" },
+        { "icon": "🔗", "title": "Smart Integration", "desc": "Receive alerts and manage cases via central Dashboard" },
+        { "icon": "🌏", "title": "Expand International Reach", "desc": "Reach Lao patients seeking quality services in Thailand" }
+      ]
+    },
+    "howItWorks": {
+      "title": "How to Apply",
+      "steps": [
+        { "title": "Fill in Info", "desc": "Fill in your business information in the form below" },
+        { "title": "Team Contacts You", "desc": "WOS team will contact you within 24 hours" },
+        { "title": "Start Partnership", "desc": "Start using the system and receive patient cases immediately" }
+      ]
+    },
+    "form": {
+      "heading": "🤝 Apply as Business Partner",
+      "contactName": "Contact Name",
+      "companyName": "Organization Name",
+      "companyNamePlaceholder": "e.g. Vientiane Wellness Clinic",
+      "phone": "Phone Number",
+      "phonePlaceholder": "+856 20 XXXXXXXX",
+      "businessType": "Business Type",
+      "typeClinic": "Clinic / Hospital",
+      "typeHotel": "Hotel / Accommodation",
+      "typeTransport": "Transport Provider / Transfer Service",
+      "typeInvestor": "Investor / Business Partner",
+      "additionalInfo": "Additional Information",
+      "additionalInfoPlaceholder": "Cases per month, number of rooms, special requirements...",
+      "submit": "Submit Partner Application",
+      "submitting": "⏳ Submitting...",
+      "validationError": "⚠️ Please fill in all required fields",
+      "success": "✅ Submitted successfully! WOS team will contact you as soon as possible",
+      "errorPrefix": "❌ "
+    },
+    "alreadyPartner": "Already a partner with us?",
+    "loginLink": "Log in here"
+  },
+  "footer": {
+    "tagline": "A Healthcare Hospitality platform connecting cross-border care",
+    "servicesTitle": "Services",
+    "services": ["Consult", "Checkup", "Aesthetics", "Dental"],
+    "partnersTitle": "Partners",
+    "partners": ["Join Network", "Investor", "Hospital", "Hotel"],
+    "contactTitle": "Contact",
+    "contactPhoneTh": "Call (Thailand): 085-590-7666",
+    "contactPhoneLo": "Call (Laos): +856 20 9872 4718",
+    "companyLine": "Royal Bridge 99 Ltd. · 211 Moo 3, Mittraphap Rd., Ban Chan, Mueang, Udon Thani 41000 · Business Registration: 0413568000586",
+    "rightsReserved": "All rights reserved.",
+    "privacyPolicy": "Privacy Policy"
+  },
+  "partnerDirectory": {
+    "title": "Find All Partners",
+    "subtitle": "Choose the partner that's right for you — search or filter by category and province",
+    "searchPlaceholder": "Search partner name or province...",
+    "allCategories": "All",
+    "allProvinces": "All provinces",
+    "noResults": "No partners match your search",
+    "loadError": "Unable to load partners right now. Please try again."
   }
 }
