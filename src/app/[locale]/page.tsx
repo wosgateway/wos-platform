@@ -7,6 +7,13 @@ import { PartnerLogos } from '@/components/PartnerLogos';
 import { JourneyTimeline } from '@/components/JourneyTimeline';
 import { Testimonials } from '@/components/Testimonials';
 import { FAQ } from '@/components/FAQ';
+import HeroSlider from '@/components/HeroSlider';
+
+const HERO_SLIDES = [
+  { src: '/images/hero/hero-1.webp', alt: 'โรงพยาบาลพันธมิตร WOS' },
+  { src: '/images/hero/hero-2.webp', alt: 'ทีมแพทย์มืออาชีพ' },
+  { src: '/images/hero/hero-3.webp', alt: 'บริการข้ามพรมแดนไทย-ลาว' },
+];
 
 export default function HomePage() {
   const t = useTranslations('home');
@@ -17,15 +24,17 @@ export default function HomePage() {
   return (
     <main>
       {/* ===== HERO ===== */}
-      <section className="bg-gradient-to-br from-primary-light via-white to-amber-50/30 section-padding">
-        <div className="mx-auto max-w-4xl px-4 text-center">
-          <span className="inline-block rounded-full bg-primary/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+      <section className="relative min-h-[70vh] flex items-center overflow-hidden">
+        <HeroSlider slides={HERO_SLIDES} />
+
+        <div className="relative z-10 mx-auto max-w-4xl px-4 text-center py-20">
+          <span className="inline-block rounded-full bg-white/20 backdrop-blur-sm px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-white">
             {t('hero.badge')}
           </span>
-          <h1 className="mt-5 text-3xl font-bold leading-tight text-slate-900 md:text-5xl">
+          <h1 className="mt-5 text-3xl font-bold leading-tight text-white md:text-5xl drop-shadow-md">
             {t('hero.title')}
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-slate-600 md:text-lg">
+          <p className="mx-auto mt-4 max-w-2xl text-white/90 md:text-lg">
             {t('hero.subtitle')}
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
@@ -34,7 +43,7 @@ export default function HomePage() {
             </a>
             <Link
               href="/become-partner"
-              className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-primary px-8 py-[0.8rem] font-semibold text-primary transition-all duration-200 hover:bg-primary hover:text-white"
+              className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-white px-8 py-[0.8rem] font-semibold text-white transition-all duration-200 hover:bg-white hover:text-primary"
             >
               {t('hero.ctaSecondary')}
             </Link>
