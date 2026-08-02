@@ -22,7 +22,7 @@ interface FormState {
   transportDays: number;
   hotelPartnerId: string;
   hotelCheckinDate: string;
-  hotelNights: number;
+  hotelCheckoutDate: string;
   customerName: string;
   customerPhone: string;
   customerLine: string;
@@ -44,7 +44,7 @@ const initialState: FormState = {
   transportDays: 1,
   hotelPartnerId: '',
   hotelCheckinDate: '',
-  hotelNights: 1,
+  hotelCheckoutDate: '',
   customerName: '',
   customerPhone: '',
   customerLine: '',
@@ -55,6 +55,19 @@ const initialState: FormState = {
 function packagePrice(pkg: Package | undefined): number {
   if (!pkg) return 0;
   return Number((pkg.special_price as number) ?? (pkg.original_price as number) ?? 0);
+}
+
+// Calculates number of nights between two YYYY-MM-DD date strings.
+// Returns 0 if either date is missing or checkout is not after checkin,
+// so the UI/price never shows a bogus value while the customer is still
+// picking dates.
+function calcNights(checkin: string, checkout: string): number {
+  if (!checkin || !checkout) return 0;
+  const start = new Date(checkin);
+  const end = new Date(checkout);
+  const diffMs = end.getTime() - start.getTime();
+  if (Number.isNaN(diffMs) || diffMs <= 0) return 0;
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
 
 export function BookingForm({
@@ -78,9 +91,14 @@ export function BookingForm({
   const selectedHotel = hotelOptions.find((p) => p.id === form.hotelPartnerId);
   const selectedTransport = transportOptions.find((p) => p.id === form.transportPartnerId);
 
+  const hotelNights = useMemo(
+    () => calcNights(form.hotelCheckinDate, form.hotelCheckoutDate),
+    [form.hotelCheckinDate, form.hotelCheckoutDate]
+  );
+
   const priceBreakdown = useMemo(() => {
     const main = packagePrice(pkg);
-    const hotel = form.needHotel ? packagePrice(selectedHotel) * (form.hotelNights || 1) : 0;
+    const hotel = form.needHotel ? packagePrice(selectedHotel) * hotelNights : 0;
     const transport =
       form.needTransport && form.transportMode === 'daily'
         ? packagePrice(selectedTransport) * (form.transportDays || 1)
@@ -88,7 +106,7 @@ export function BookingForm({
           ? packagePrice(selectedTransport)
           : 0;
     return { main, hotel, transport, total: main + hotel + transport };
-  }, [pkg, form.needHotel, form.hotelNights, form.needTransport, form.transportMode, form.transportDays, selectedHotel, selectedTransport]);
+  }, [pkg, form.needHotel, hotelNights, form.needTransport, form.transportMode, form.transportDays, selectedHotel, selectedTransport]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -100,6 +118,13 @@ export function BookingForm({
       if (!form.bookingDate || !form.bookingTime) {
         setError(t('errorSchedule'));
         return false;
+      }
+      if (form.needHotel) {
+        const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
+        if (!form.hotelCheckinDate || !form.hotelCheckoutDate || nights <= 0) {
+          setError(t('errorHotelDates'));
+          return false;
+        }
       }
     }
     if (n === 2) {
@@ -142,9 +167,12 @@ export function BookingForm({
         attachmentUrl = data.publicUrl;
       }
 
+      const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
+
       // Payload shape kept identical to the old booking.html insert so the
       // existing `bookings` table / RLS policies / admin CSV export all
-      // keep working with zero schema changes.
+      // keep working with zero schema changes. hotel_nights is now derived
+      // from checkin/checkout instead of being typed in manually.
       const payload = {
         package_id: pkg.id,
         customer_name: form.customerName.trim(),
@@ -158,7 +186,7 @@ export function BookingForm({
         transport_package_id: form.transportPartnerId || null,
         hotel_package_id: form.hotelPartnerId || null,
         hotel_checkin_date: form.needHotel ? form.hotelCheckinDate || null : null,
-        hotel_nights: form.needHotel ? form.hotelNights || 1 : null,
+        hotel_nights: form.needHotel ? nights || 1 : null,
         transport_mode: form.needTransport ? form.transportMode : null,
         transport_pickup_date: form.needTransport ? form.transportPickupDate || null : null,
         transport_pickup_time: form.needTransport ? form.transportPickupTime || null : null,
@@ -349,21 +377,42 @@ export function BookingForm({
                   </option>
                 ))}
               </select>
+
               <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="date"
-                  className="form-input"
-                  value={form.hotelCheckinDate}
-                  onChange={(e) => update('hotelCheckinDate', e.target.value)}
-                />
-                <input
-                  type="number"
-                  min={1}
-                  className="form-input"
-                  value={form.hotelNights}
-                  onChange={(e) => update('hotelNights', parseInt(e.target.value, 10) || 1)}
-                />
+                <div>
+                  <label className="form-label">{t('fields.hotelCheckin')} *</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    value={form.hotelCheckinDate}
+                    onChange={(e) => {
+                      const newCheckin = e.target.value;
+                      update('hotelCheckinDate', newCheckin);
+                      // If checkout is no longer after the new checkin, clear it
+                      // so the customer can't submit an invalid range.
+                      if (form.hotelCheckoutDate && calcNights(newCheckin, form.hotelCheckoutDate) <= 0) {
+                        update('hotelCheckoutDate', '');
+                      }
+                    }}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">{t('fields.hotelCheckout')} *</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    min={form.hotelCheckinDate || undefined}
+                    value={form.hotelCheckoutDate}
+                    onChange={(e) => update('hotelCheckoutDate', e.target.value)}
+                  />
+                </div>
               </div>
+
+              {hotelNights > 0 ? (
+                <p className="text-sm font-medium text-primary">
+                  {t('summary.nightsCount', { count: hotelNights })}
+                </p>
+              ) : null}
             </div>
           ) : null}
         </div>
@@ -434,7 +483,10 @@ export function BookingForm({
             </div>
             {form.needHotel ? (
               <div className="flex justify-between text-slate-600">
-                <span>🏨 {t('summary.hotel')}</span>
+                <span>
+                  🏨 {t('summary.hotel')}
+                  {hotelNights > 0 ? ` (${t('summary.nightsCount', { count: hotelNights })})` : ''}
+                </span>
                 <span className="font-medium text-slate-800">{formatTHB(priceBreakdown.hotel)}</span>
               </div>
             ) : null}

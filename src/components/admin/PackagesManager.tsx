@@ -1,11 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 import type { Package, Partner } from '@/lib/data';
-
-type PackageStatus = 'pending' | 'published' | 'rejected' | 'archived';
 
 interface PackageFormState {
   id: string | null;
@@ -17,7 +15,8 @@ interface PackageFormState {
   special_price: string;
   duration: string;
   is_promotion: boolean;
-  status: PackageStatus;
+  suggested_hotel_name: string;
+  suggested_hotel_price_note: string;
 }
 
 const emptyForm: PackageFormState = {
@@ -30,30 +29,18 @@ const emptyForm: PackageFormState = {
   special_price: '',
   duration: '',
   is_promotion: false,
-  status: 'pending',
+  suggested_hotel_name: '',
+  suggested_hotel_price_note: '',
 };
 
-const STATUS_LABEL: Record<PackageStatus, string> = {
-  pending: '⏳ รอตรวจสอบ',
-  published: '✅ เผยแพร่แล้ว',
-  rejected: '❌ ปฏิเสธ',
-  archived: '📦 เก็บเข้าคลัง',
+const STATUS_LABEL: Record<Package['status'], { text: string; className: string }> = {
+  pending: { text: '⏳ รอตรวจสอบ', className: 'bg-amber-100 text-amber-700' },
+  published: { text: '✅ เผยแพร่แล้ว', className: 'bg-emerald-100 text-emerald-700' },
+  rejected: { text: '❌ ถูกปฏิเสธ', className: 'bg-red-100 text-red-600' },
+  archived: { text: '📦 เก็บถาวร', className: 'bg-slate-100 text-slate-500' },
 };
 
-const STATUS_BADGE_CLASS: Record<PackageStatus, string> = {
-  pending: 'bg-amber-100 text-amber-700',
-  published: 'bg-emerald-100 text-emerald-700',
-  rejected: 'bg-red-100 text-red-600',
-  archived: 'bg-slate-100 text-slate-500',
-};
-
-const STATUS_FILTERS: { value: 'all' | PackageStatus; label: string }[] = [
-  { value: 'all', label: 'ทั้งหมด' },
-  { value: 'pending', label: '⏳ รอตรวจสอบ' },
-  { value: 'published', label: '✅ เผยแพร่แล้ว' },
-  { value: 'rejected', label: '❌ ปฏิเสธ' },
-  { value: 'archived', label: '📦 เก็บเข้าคลัง' },
-];
+type StatusFilter = 'all' | Package['status'];
 
 export function PackagesManager() {
   const supabase = createClient();
@@ -61,14 +48,12 @@ export function PackagesManager() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [statusFilter, setStatusFilter] = useState<'all' | PackageStatus>('all');
-
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PackageFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [statusUpdatingId, setStatusUpdatingId] = useState<string | null>(null);
 
   async function loadAll() {
     setLoading(true);
@@ -91,16 +76,6 @@ export function PackagesManager() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const filtered = useMemo(() => {
-    if (statusFilter === 'all') return packages;
-    return packages.filter((p) => ((p.status as PackageStatus) || 'pending') === statusFilter);
-  }, [packages, statusFilter]);
-
-  const pendingCount = useMemo(
-    () => packages.filter((p) => ((p.status as PackageStatus) || 'pending') === 'pending').length,
-    [packages]
-  );
-
   function openModal(pkg?: Package) {
     setFormError(null);
     if (pkg) {
@@ -114,10 +89,11 @@ export function PackagesManager() {
         special_price: pkg.special_price != null ? String(pkg.special_price) : '',
         duration: (pkg.duration as string) ?? '',
         is_promotion: !!pkg.is_promotion,
-        status: ((pkg.status as PackageStatus) || 'pending'),
+        suggested_hotel_name: (pkg.suggested_hotel_name as string) ?? '',
+        suggested_hotel_price_note: (pkg.suggested_hotel_price_note as string) ?? '',
       });
     } else {
-      setForm({ ...emptyForm, partner_id: partners[0]?.id ?? '', status: 'published' });
+      setForm({ ...emptyForm, partner_id: partners[0]?.id ?? '' });
     }
     setModalOpen(true);
   }
@@ -149,6 +125,10 @@ export function PackagesManager() {
       setFormError('กรุณากรอกชื่อโปรแกรม');
       return;
     }
+    if (uploading) {
+      setFormError('กรุณารอให้อัปโหลดรูปเสร็จก่อนแล้วค่อยกดบันทึก');
+      return;
+    }
     setSaving(true);
     const payload = {
       partner_id: form.partner_id,
@@ -159,11 +139,14 @@ export function PackagesManager() {
       special_price: form.special_price ? Number(form.special_price) : null,
       duration: form.duration.trim() || null,
       is_promotion: form.is_promotion,
-      status: form.status,
+      suggested_hotel_name: form.suggested_hotel_name.trim() || null,
+      suggested_hotel_price_note: form.suggested_hotel_price_note.trim() || null,
     };
+    // แอดมินสร้าง/แก้เอง = published ทันที ไม่ต้องผ่านขั้นตอนอนุมัติ
+    // (ต่างจากที่พาร์ทเนอร์ส่งมาจาก portal ซึ่งเข้ามาเป็น 'pending' เสมอ)
     const { error } = form.id
-      ? await supabase.from('packages').update(payload).eq('id', form.id)
-      : await supabase.from('packages').insert(payload);
+      ? await supabase.from('packages').update({ ...payload, status: 'published' }).eq('id', form.id)
+      : await supabase.from('packages').insert({ ...payload, status: 'published' });
     setSaving(false);
     if (error) {
       setFormError('บันทึกไม่สำเร็จ: ' + error.message);
@@ -183,30 +166,38 @@ export function PackagesManager() {
     loadAll();
   }
 
-  async function updateStatus(id: string, status: PackageStatus) {
-    setStatusUpdatingId(id);
-    const { error } = await supabase.from('packages').update({ status }).eq('id', id);
-    setStatusUpdatingId(null);
+  async function handleApprove(id: string) {
+    const { error } = await supabase.from('packages').update({ status: 'published' }).eq('id', id);
     if (error) {
-      alert('อัปเดตสถานะไม่สำเร็จ: ' + error.message);
+      alert('อนุมัติไม่สำเร็จ: ' + error.message);
       return;
     }
-    setPackages((prev) => prev.map((p) => (p.id === id ? { ...p, status } : p)));
+    loadAll();
   }
+
+  async function handleReject(id: string) {
+    if (!confirm('ปฏิเสธโปรแกรมนี้? พาร์ทเนอร์จะเห็นสถานะ "ถูกปฏิเสธ" ใน portal')) return;
+    const { error } = await supabase.from('packages').update({ status: 'rejected' }).eq('id', id);
+    if (error) {
+      alert('ดำเนินการไม่สำเร็จ: ' + error.message);
+      return;
+    }
+    loadAll();
+  }
+
+  const filtered = statusFilter === 'all' ? packages : packages.filter((p) => p.status === statusFilter);
+  const pendingCount = packages.filter((p) => p.status === 'pending').length;
 
   return (
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="flex items-center gap-3">
           <h2 className="text-lg font-bold text-slate-900">แพ็กเกจ ({packages.length})</h2>
-          <p className="mt-0.5 text-xs text-slate-500">
-            แสดง {filtered.length} รายการ
-            {pendingCount > 0 ? (
-              <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
-                ⏳ รอตรวจสอบ {pendingCount}
-              </span>
-            ) : null}
-          </p>
+          {pendingCount > 0 ? (
+            <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
+              ⏳ รอตรวจสอบ {pendingCount} รายการ
+            </span>
+          ) : null}
         </div>
         <div className="flex gap-2">
           <button onClick={loadAll} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm">
@@ -222,19 +213,17 @@ export function PackagesManager() {
         </div>
       </div>
 
-      {/* Status filter pills */}
+      {/* ===== Filter สถานะ ===== */}
       <div className="flex flex-wrap gap-2">
-        {STATUS_FILTERS.map((f) => (
+        {(['all', 'pending', 'published', 'rejected', 'archived'] as StatusFilter[]).map((s) => (
           <button
-            key={f.value}
-            onClick={() => setStatusFilter(f.value)}
-            className={`rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
-              statusFilter === f.value
-                ? 'border-slate-800 bg-slate-800 text-white'
-                : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+            key={s}
+            onClick={() => setStatusFilter(s)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+              statusFilter === s ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            {f.label}
+            {s === 'all' ? 'ทั้งหมด' : STATUS_LABEL[s].text}
           </button>
         ))}
       </div>
@@ -252,7 +241,7 @@ export function PackagesManager() {
       {loading ? (
         <p className="text-sm text-slate-400">กำลังโหลด...</p>
       ) : filtered.length === 0 ? (
-        <p className="text-sm text-slate-400">ไม่มีแพ็กเกจในหมวดนี้</p>
+        <p className="text-sm text-slate-400">ไม่มีแพ็กเกจในสถานะนี้</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <table className="w-full text-left text-sm">
@@ -262,67 +251,56 @@ export function PackagesManager() {
                 <th className="px-4 py-2">พาร์ทเนอร์</th>
                 <th className="px-4 py-2">ราคา</th>
                 <th className="px-4 py-2">สถานะ</th>
-                <th className="px-4 py-2">โปรโมชัน</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((pkg) => {
-                const status: PackageStatus = (pkg.status as PackageStatus) || 'pending';
-                const busy = statusUpdatingId === pkg.id;
-                return (
-                  <tr key={pkg.id} className="border-t border-slate-100">
-                    <td className="px-4 py-2 font-medium text-slate-800">{pkg.title as string}</td>
-                    <td className="px-4 py-2 text-slate-500">
-                      {(pkg.partners as { name?: string } | undefined)?.name ?? '-'}
-                    </td>
-                    <td className="px-4 py-2 text-slate-500">
-                      {pkg.special_price ? (
-                        <>
-                          <span className="mr-1 text-slate-300 line-through">
-                            {formatTHB(pkg.original_price as number)}
-                          </span>
-                          {formatTHB(pkg.special_price as number)}
-                        </>
-                      ) : (
-                        formatTHB(pkg.original_price as number)
-                      )}
-                    </td>
-                    <td className="px-4 py-2">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_BADGE_CLASS[status]}`}>
-                        {STATUS_LABEL[status]}
-                      </span>
-                      {status === 'pending' ? (
-                        <div className="mt-1 flex gap-1.5">
-                          <button
-                            disabled={busy}
-                            onClick={() => updateStatus(pkg.id, 'published')}
-                            className="rounded border border-emerald-200 px-2 py-0.5 text-[11px] text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-                          >
-                            ✅ อนุมัติ
-                          </button>
-                          <button
-                            disabled={busy}
-                            onClick={() => updateStatus(pkg.id, 'rejected')}
-                            className="rounded border border-red-200 px-2 py-0.5 text-[11px] text-red-600 hover:bg-red-50 disabled:opacity-50"
-                          >
-                            ❌ ปฏิเสธ
-                          </button>
-                        </div>
-                      ) : null}
-                    </td>
-                    <td className="px-4 py-2">{pkg.is_promotion ? '🔥' : '-'}</td>
-                    <td className="px-4 py-2 text-right">
-                      <button onClick={() => openModal(pkg)} className="mr-3 text-primary hover:underline">
-                        แก้ไข
-                      </button>
-                      <button onClick={() => handleDelete(pkg.id)} className="text-red-500 hover:underline">
-                        ลบ
-                      </button>
-                    </td>
-                  </tr>
-                );
-              })}
+              {filtered.map((pkg) => (
+                <tr key={pkg.id} className="border-t border-slate-100">
+                  <td className="px-4 py-2 font-medium text-slate-800">{pkg.title as string}</td>
+                  <td className="px-4 py-2 text-slate-500">
+                    {(pkg.partners as { name?: string } | undefined)?.name ?? '-'}
+                  </td>
+                  <td className="px-4 py-2 text-slate-500">
+                    {pkg.special_price ? (
+                      <>
+                        <span className="mr-1 text-slate-300 line-through">
+                          {formatTHB(pkg.original_price as number)}
+                        </span>
+                        {formatTHB(pkg.special_price as number)}
+                      </>
+                    ) : (
+                      formatTHB(pkg.original_price as number)
+                    )}
+                  </td>
+                  <td className="px-4 py-2">
+                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[pkg.status].className}`}>
+                      {STATUS_LABEL[pkg.status].text}
+                    </span>
+                  </td>
+                  <td className="px-4 py-2 text-right">
+                    {pkg.status === 'pending' ? (
+                      <>
+                        <button
+                          onClick={() => handleApprove(pkg.id)}
+                          className="mr-3 text-emerald-600 hover:underline"
+                        >
+                          อนุมัติ
+                        </button>
+                        <button onClick={() => handleReject(pkg.id)} className="mr-3 text-red-500 hover:underline">
+                          ปฏิเสธ
+                        </button>
+                      </>
+                    ) : null}
+                    <button onClick={() => openModal(pkg)} className="mr-3 text-primary hover:underline">
+                      แก้ไข
+                    </button>
+                    <button onClick={() => handleDelete(pkg.id)} className="text-red-500 hover:underline">
+                      ลบ
+                    </button>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -404,18 +382,31 @@ export function PackagesManager() {
                 onChange={(e) => setForm({ ...form, duration: e.target.value })}
               />
             </div>
-            <div>
-              <label className="form-label">สถานะ</label>
-              <select
-                className="form-input"
-                value={form.status}
-                onChange={(e) => setForm({ ...form, status: e.target.value as PackageStatus })}
-              >
-                <option value="pending">⏳ รอตรวจสอบ</option>
-                <option value="published">✅ เผยแพร่แล้ว</option>
-                <option value="rejected">❌ ปฏิเสธ</option>
-                <option value="archived">📦 เก็บเข้าคลัง</option>
-              </select>
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+              <p className="mb-3 text-xs text-slate-400">
+                🏨 ที่พักแนะนำ — ใช้แค่โชว์ให้ผู้ป่วยเห็นภาพราคาคร่าวๆตอนดูโปรแกรม
+                ไม่ใช่ราคาผูกมัด ราคาจริงตอนจองจะยืนยันแยกเป็นรายการโรงแรมในคำสั่งจอง
+              </p>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="form-label">ชื่อโรงแรมที่แนะนำ</label>
+                  <input
+                    className="form-input"
+                    placeholder="เช่น Vientiane Riverside Hotel"
+                    value={form.suggested_hotel_name}
+                    onChange={(e) => setForm({ ...form, suggested_hotel_name: e.target.value })}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">ช่วงราคาโดยประมาณ</label>
+                  <input
+                    className="form-input"
+                    placeholder="เช่น 1,200–1,800 บาท/คืน"
+                    value={form.suggested_hotel_price_note}
+                    onChange={(e) => setForm({ ...form, suggested_hotel_price_note: e.target.value })}
+                  />
+                </div>
+              </div>
             </div>
             <label className="flex items-center gap-2 text-sm text-slate-600">
               <input
@@ -434,7 +425,7 @@ export function PackagesManager() {
                 className="form-input"
                 onChange={(e) => e.target.files?.[0] && handleImageUpload(e.target.files[0])}
               />
-              {uploading ? <p className="mt-1 text-xs text-slate-400">⏳ กำลังอัปโหลด...</p> : null}
+              {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
               {form.image_url ? (
                 <img src={form.image_url} alt="" className="mt-2 h-20 w-20 rounded-lg object-cover" />
               ) : null}
@@ -448,8 +439,12 @@ export function PackagesManager() {
               >
                 ยกเลิก
               </button>
-              <button type="submit" disabled={saving} className="btn-primary text-sm disabled:opacity-60">
-                {saving ? 'กำลังบันทึก...' : 'บันทึก'}
+              <button
+                type="submit"
+                disabled={saving || uploading}
+                className="btn-primary text-sm disabled:opacity-60"
+              >
+                {saving ? 'กำลังบันทึก...' : uploading ? 'กำลังอัปโหลดรูป...' : 'บันทึก'}
               </button>
             </div>
           </form>

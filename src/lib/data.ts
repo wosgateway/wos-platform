@@ -23,6 +23,10 @@ export interface Package {
   status: 'pending' | 'published' | 'rejected' | 'archived';
   submitted_by: string | null;
   created_at: string;
+  // ข้อมูลแนะนำที่พักตอนเบราส์ดูโปรแกรม — ไม่ใช่ราคาผูกมัด
+  // ราคาจริงตอนจองคำนวณแยกเป็น order_item (service_type='hotel')
+  suggested_hotel_name?: string | null;
+  suggested_hotel_price_note?: string | null;
   partners?: Partner;
   [key: string]: unknown;
 }
