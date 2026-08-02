@@ -1,5 +1,5 @@
 // src/middleware.ts
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import createMiddleware from 'next-intl/middleware';
 import { NextResponse, type NextRequest } from 'next/server';
 import { routing } from './i18n/routing';
@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
         getAll() {
           return request.cookies.getAll();
         },
-        setAll(cookiesToSet) {
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
           // sync onto the request first so this same middleware run sees fresh cookies
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           // rebuild response so the refreshed cookies actually reach the browser
