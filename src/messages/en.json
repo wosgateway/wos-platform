@@ -112,6 +112,11 @@
     "fields": {
       "date": "Preferred date",
       "time": "Preferred time",
+      "day": "Day",
+      "month": "Month",
+      "year": "Year",
+      "hour": "Hour",
+      "minute": "Minute",
       "needTransport": "🚗 Need transport",
       "needHotel": "🏨 Need a hotel",
       "hotelCheckin": "Check-in date",

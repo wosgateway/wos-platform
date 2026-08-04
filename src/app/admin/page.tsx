@@ -5,11 +5,12 @@ import { AdminGate } from '@/components/admin/AdminGate';
 import { PartnersManager } from '@/components/admin/PartnersManager';
 import { PackagesManager } from '@/components/admin/PackagesManager';
 import { BookingsManager } from '@/components/admin/BookingsManager';
+import { PartnerLeadsManager } from '@/components/admin/PartnerLeadsManager';
 
 // Not under [locale] — this is an internal Thai-only tool, same as the
 // old admin.html / admin-partners.html which never had lang-content spans.
 export default function AdminPage() {
-  const [tab, setTab] = useState<'partners' | 'packages' | 'bookings'>('partners');
+  const [tab, setTab] = useState<'partners' | 'packages' | 'bookings' | 'leads'>('partners');
 
   return (
     <AdminGate>
@@ -39,14 +40,24 @@ export default function AdminPage() {
           >
             รายการจอง
           </button>
+          <button
+            onClick={() => setTab('leads')}
+            className={`rounded-t-lg px-4 py-2 text-sm font-medium ${
+              tab === 'leads' ? 'border-b-2 border-primary text-primary' : 'text-slate-400'
+            }`}
+          >
+            พันธมิตรสมัครใหม่
+          </button>
         </div>
 
         {tab === 'partners' ? (
           <PartnersManager />
         ) : tab === 'packages' ? (
           <PackagesManager />
-        ) : (
+        ) : tab === 'bookings' ? (
           <BookingsManager />
+        ) : (
+          <PartnerLeadsManager />
         )}
       </div>
     </AdminGate>
