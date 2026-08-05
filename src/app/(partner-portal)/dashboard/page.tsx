@@ -12,7 +12,7 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900">ภาพรวม</h1>
         <p className="text-sm text-slate-500">ยินดีต้อนรับกลับ, {user.full_name} 👋</p>
       </div>
-      <DashboardMetrics organizationId={user.organization_id} partnerId={user.branch?.partner_id ?? null} />
+      <DashboardMetrics partnerId={user.branch?.partner_id ?? null} />
       <div className="mt-8">
         <RecentBookings organizationId={user.organization_id} />
       </div>

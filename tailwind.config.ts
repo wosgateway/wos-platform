@@ -5,15 +5,25 @@ const config: Config = {
   theme: {
     extend: {
       colors: {
-        // Carried over from the original css/style.css :root variables.
-        // Figma design system will refine these before public launch —
-        // kept as-is for now so the functional migration isn't blocked on design.
+        // ===== Rebrand: Hospital-first -> Life-first =====
+        // เดิม: primary #0d7c66 (เขียวเข้มโทน medical), accent #f59e0b (amber)
+        // ใหม่: soft sage green + warm sand/gold -> ความรู้สึก premium wellness
+        // แทนที่จะเป็น "โรงพยาบาล" ให้รู้สึกเป็น "รีสอร์ตดูแลสุขภาพ"
         primary: {
-          DEFAULT: '#0d7c66',
-          light: '#e6f4f1',
-          dark: '#0a5f4e',
+          DEFAULT: '#5b8c6e', // soft sage green
+          light: '#eef4ef',   // pale sage tint (แทน primary-light เดิม)
+          dark: '#3f6b53',    // deep sage สำหรับ hover/active
         },
-        accent: '#f59e0b',
+        accent: '#c9a15a', // warm gold/sand (แทน amber เดิม)
+        sand: {
+          DEFAULT: '#f6f1e7', // warm sand background — ใช้แทนพื้นขาวล้วนในบาง section
+          dark: '#eee5d3',
+        },
+        slateWarm: {
+          // slate ที่ลดความ "เย็น/คลินิก" ลงเล็กน้อย ใช้แทน slate-900/500 เดิมได้ถ้าต้องการ
+          900: '#2b2a26',
+          500: '#6b6a63',
+        },
       },
       fontFamily: {
         sans: ['var(--font-prompt)', 'Noto Sans Lao', 'sans-serif'],

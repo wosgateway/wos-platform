@@ -1,52 +1,90 @@
 'use client';
 
+// src/components/admin/BookingsManager.tsx
+//
+// Rewritten for the orders/order_items model (migrations 008-014),
+// replacing the old direct `bookings` table query. `customers` and
+// `order_items` have no admin-readable RLS policy (see migration 011
+// comment), so this reads through /api/admin/orders — a service-role
+// API route — instead of the browser Supabase client.
+//
+// Data shape: 1 order -> many order_items (each item is 'clinic' |
+// 'wellness' | 'insurance' | 'hotel' | 'transport', with its own
+// partner_id/package_id — see migrations 008/010/014). This replaces
+// the old single-row-per-booking model where hotel/transport fields
+// lived flat on the `bookings` row itself. Only 'hotel'/'transport'
+// items can ever be needs_assignment = true (migration 014); every
+// other service_type is always fully resolved at creation time.
+//
+// Print/WhatsApp/LINE summary logic is ported from the old
+// buildBookingSummaryText/printBookingSummary/sendBookingViaWhatsApp
+// functions, adapted to read from order.items instead of flat
+// booking fields.
+
 import { useEffect, useMemo, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 
-// Ported 1:1 from the bookings tab in the old admin.html (loadBookings,
-// renderBookings, bookingsRowHtml, buildBookingSummaryText, printBookingSummary,
-// sendBookingViaWhatsApp/Line, updateBookingStatus/PartnerField). Same tables,
-// same joins, same pricing math — just typed React state instead of manual
-// DOM re-rendering.
+// Matches public.orders.status CHECK constraint (migration 008,
+// chk_order_status) exactly.
+type OrderStatus =
+  | 'draft'
+  | 'pending_deposit'
+  | 'deposit_paid'
+  | 'confirmed'
+  | 'checked_in'
+  | 'completed'
+  | 'cancelled'
+  | 'refunded';
 
-type BookingStatus = 'pending' | 'confirmed' | 'cancelled';
-type TransportMode = 'one_way' | 'round_trip' | 'daily' | null;
+// Matches public.order_items.service_type CHECK constraint
+// (chk_item_service_type) exactly. 'hotel'/'transport' are the only
+// two categories create_order_with_items() (migration 014) ever lets
+// go unassigned — clinic/wellness/insurance items always resolve to
+// a real package_id/partner_id at creation time.
+type ServiceType = 'clinic' | 'hotel' | 'transport' | 'wellness' | 'insurance';
+
 type DateRangePreset = 'all' | 'today' | '3d' | '7d' | 'month' | 'custom';
 
-interface PackageRef {
-  title: string;
-  original_price: number | null;
-  special_price: number | null;
-  partners: { name: string } | null;
-}
-
-interface Booking {
+interface OrderItem {
   id: string;
-  customer_name: string;
-  customer_phone: string;
-  customer_line: string | null;
-  country: string | null;
-  booking_date: string | null;
-  booking_time: string | null;
-  need_transport: boolean;
-  need_hotel: boolean;
-  hotel_package_id: string | null;
-  transport_package_id: string | null;
-  hotel_checkin_date: string | null;
-  hotel_nights: number | null;
-  transport_mode: TransportMode;
-  transport_pickup_date: string | null;
-  transport_pickup_time: string | null;
+  order_id: string;
+  partner_id: string | null;
+  package_id: string | null;
+  service_type: ServiceType;
+  price: number | null;
+  deposit_required: number | null;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
+  needs_assignment: boolean;
+  hotel_checkout_date: string | null;
+  transport_mode: string | null;
   transport_return_date: string | null;
   transport_return_time: string | null;
-  transport_days: number | null;
+  package: { id: string; title: string; original_price: number | null; special_price: number | null } | null;
+  partner: { id: string; name: string } | null;
+}
+
+interface Customer {
+  id: string;
+  full_name: string;
+  phone: string;
+  line_id: string | null;
+  country: string | null;
+}
+
+interface Order {
+  id: string;
+  order_number: string | null;
+  patient_id: string;
+  status: OrderStatus;
+  notes: string | null;
   attachment_url: string | null;
-  status: BookingStatus;
+  total_amount: number | null;
+  total_deposit_required: number | null;
+  currency: string | null;
   created_at: string;
-  packages: PackageRef | null;
-  hotel_package: PackageRef | null;
-  transport_package: PackageRef | null;
+  customer: Customer | null;
+  items: OrderItem[];
 }
 
 interface PickerPackage {
@@ -54,33 +92,36 @@ interface PickerPackage {
   title: string;
   original_price: number | null;
   special_price: number | null;
-  partners: { id: string; name: string; category: string; status: string } | null;
+  partners: { id: string; name: string } | null;
 }
 
-const BOOKINGS_SELECT = `
-  id, customer_name, customer_phone, customer_line, country,
-  booking_date, booking_time, need_transport, need_hotel,
-  hotel_package_id, transport_package_id,
-  hotel_checkin_date, hotel_nights,
-  transport_mode, transport_pickup_date, transport_pickup_time,
-  transport_return_date, transport_return_time, transport_days,
-  attachment_url, status, created_at,
-  packages!bookings_package_id_fkey ( title, original_price, special_price, partners ( name ) ),
-  hotel_package:hotel_package_id ( title, original_price, special_price, partners ( name ) ),
-  transport_package:transport_package_id ( title, original_price, special_price, partners ( name ) )
-`;
-
-const STATUS_LABEL: Record<BookingStatus, string> = {
-  pending: 'รอดำเนินการ',
-  confirmed: 'ยืนยันแล้ว',
-  cancelled: 'ยกเลิก',
+const STATUS_LABEL: Record<OrderStatus, string> = {
+  draft: '📝 ฉบับร่าง',
+  pending_deposit: '⏳ รอชำระมัดจำ',
+  deposit_paid: '💰 ชำระมัดจำแล้ว',
+  confirmed: '✅ ยืนยันแล้ว',
+  checked_in: '🏥 เช็คอินแล้ว',
+  completed: '🎉 เสร็จสิ้น',
+  cancelled: '❌ ยกเลิก',
+  refunded: '💸 คืนเงินแล้ว',
 };
 
-const STATUS_BADGE_CLASS: Record<BookingStatus, string> = {
-  pending: 'bg-amber-100 text-amber-800',
+const STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
+  draft: 'bg-slate-100 text-slate-500',
+  pending_deposit: 'bg-amber-100 text-amber-800',
+  deposit_paid: 'bg-sky-100 text-sky-800',
   confirmed: 'bg-emerald-100 text-emerald-800',
+  checked_in: 'bg-indigo-100 text-indigo-800',
+  completed: 'bg-green-100 text-green-800',
   cancelled: 'bg-red-100 text-red-800',
+  refunded: 'bg-orange-100 text-orange-800',
 };
+
+// hotel/transport are the only categories that can be needs_assignment;
+// everything else (clinic/wellness/insurance) is "the main service(s)".
+function isAddOnItem(item: OrderItem): boolean {
+  return item.service_type === 'hotel' || item.service_type === 'transport';
+}
 
 function localISODate(d: Date) {
   const y = d.getFullYear();
@@ -94,76 +135,57 @@ function addDays(d: Date, n: number) {
   return copy;
 }
 
-function effectivePrice(pkg: PackageRef | null) {
-  if (!pkg) return 0;
-  return Number(pkg.special_price ?? pkg.original_price ?? 0);
+function itemLabel(item: OrderItem): string {
+  const partnerName = item.partner?.name;
+  const title = item.package?.title;
+  return [partnerName, title].filter(Boolean).join(' — ') || 'ยังไม่ระบุ';
 }
 
-// Hotel package price is a per-night rate — multiply by nights stayed
-function hotelTotalPrice(b: Booking) {
-  if (!b.need_hotel) return 0;
-  const nights = Math.max(1, Number(b.hotel_nights) || 1);
-  return effectivePrice(b.hotel_package) * nights;
+function itemPrice(item: OrderItem): number {
+  if (item.price != null) return Number(item.price);
+  if (item.package) return Number(item.package.special_price ?? item.package.original_price ?? 0);
+  return 0;
 }
 
-// Transport package price is a flat rate for one_way/round_trip,
-// or a per-day rate multiplied by transport_days when mode is 'daily'
-function transportTotalPrice(b: Booking) {
-  if (!b.need_transport) return 0;
-  const unit = effectivePrice(b.transport_package);
-  if (b.transport_mode === 'daily') {
-    return unit * Math.max(1, Number(b.transport_days) || 1);
-  }
-  return unit;
-}
-
-// Short label describing the transport arrangement (mode + dates)
-function transportDetailLabel(b: Booking) {
-  if (!b.need_transport) return null;
-  const mode = b.transport_mode || 'one_way';
-  const pickup = `${b.transport_pickup_date || '-'} ${b.transport_pickup_time || ''}`.trim();
+function transportDetailLabel(item: OrderItem): string {
+  const mode = item.transport_mode || 'one_way';
+  const pickup = `${item.scheduled_date || '-'} ${item.scheduled_time || ''}`.trim();
   if (mode === 'round_trip') {
-    const ret = `${b.transport_return_date || '-'} ${b.transport_return_time || ''}`.trim();
+    const ret = `${item.transport_return_date || '-'} ${item.transport_return_time || ''}`.trim();
     return `ไป-กลับ · รับ ${pickup} · ส่งกลับ ${ret}`;
-  }
-  if (mode === 'daily') {
-    const days = Math.max(1, Number(b.transport_days) || 1);
-    return `เหมาต่อวัน ${days} วัน · เริ่ม ${pickup}`;
   }
   return `เที่ยวเดียว · รับ ${pickup}`;
 }
 
-// Build a plain-text booking summary (used for WhatsApp/LINE share + print)
-function buildBookingSummaryText(b: Booking) {
-  const pkgTitle = b.packages ? b.packages.title : null;
-  const partnerName = b.packages?.partners ? b.packages.partners.name : null;
-  const mainPrice = effectivePrice(b.packages);
-  const hotelPrice = hotelTotalPrice(b);
-  const transportPrice = transportTotalPrice(b);
-  const totalPrice = mainPrice + hotelPrice + transportPrice;
-  const statusLabel = STATUS_LABEL[b.status] + (b.status === 'confirmed' ? ' ✅' : b.status === 'cancelled' ? ' ❌' : '');
+function buildOrderSummaryText(order: Order): string {
+  const mainItems = order.items.filter((i) => !isAddOnItem(i));
+  const hotelItem = order.items.find((i) => i.service_type === 'hotel');
+  const transportItem = order.items.find((i) => i.service_type === 'transport');
+  const statusLabel = STATUS_LABEL[order.status];
 
   const lines: string[] = [];
   lines.push('🏥 WOS.os — สรุปการจอง');
   lines.push('');
-  lines.push(`ลูกค้า: ${b.customer_name || '-'}`);
-  lines.push(`วันที่/เวลา: ${b.booking_date || '-'} ${b.booking_time || ''}`.trim());
-  if (partnerName || pkgTitle) lines.push(`โปรแกรม: ${[partnerName, pkgTitle].filter(Boolean).join(' — ')}`);
-  if (b.need_hotel && b.hotel_package) {
-    const nights = Math.max(1, Number(b.hotel_nights) || 1);
+  lines.push(`เลขที่คำสั่งจอง: ${order.order_number || order.id}`);
+  lines.push(`ลูกค้า: ${order.customer?.full_name || '-'}`);
+  for (const mainItem of mainItems) {
+    lines.push(`โปรแกรม: ${itemLabel(mainItem)}`);
+    if (mainItem.scheduled_date) {
+      lines.push(`วันที่/เวลา: ${mainItem.scheduled_date} ${mainItem.scheduled_time || ''}`.trim());
+    }
+  }
+  if (hotelItem) {
     lines.push(
-      `โรงแรม: ${[b.hotel_package.partners?.name, b.hotel_package.title].filter(Boolean).join(' — ')} (เข้าพัก ${
-        b.hotel_checkin_date || '-'
-      } · ${nights} คืน)`
+      `โรงแรม: ${itemLabel(hotelItem)} (เข้าพัก ${hotelItem.scheduled_date || '-'} ถึง ${
+        hotelItem.hotel_checkout_date || '-'
+      })`
     );
   }
-  if (b.need_transport && b.transport_package) {
-    lines.push(
-      `รถรับส่ง: ${[b.transport_package.partners?.name, b.transport_package.title].filter(Boolean).join(' — ')} (${transportDetailLabel(b)})`
-    );
+  if (transportItem) {
+    lines.push(`รถรับส่ง: ${itemLabel(transportItem)} (${transportDetailLabel(transportItem)})`);
   }
   lines.push('');
-  lines.push(`ราคารวม: ${formatTHB(totalPrice)}`);
+  lines.push(`ราคารวม: ${formatTHB(order.total_amount ?? 0)}`);
   lines.push(`สถานะ: ${statusLabel}`);
   lines.push('');
   lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/message/BVJXBWDYR2UHN1');
@@ -171,10 +193,7 @@ function buildBookingSummaryText(b: Booking) {
   return lines.join('\n');
 }
 
-// Normalize a customer phone number to WhatsApp's international-digits-only
-// format. Assumes Thai numbers by default (leading 0 -> 66); leaves
-// already-international numbers alone.
-function toWhatsAppNumber(phone: string | null, country: string | null) {
+function toWhatsAppNumber(phone: string | null | undefined, country: string | null | undefined) {
   if (!phone) return '';
   let digits = String(phone).replace(/[^0-9]/g, '');
   if (digits.startsWith('0')) {
@@ -184,66 +203,52 @@ function toWhatsAppNumber(phone: string | null, country: string | null) {
   return digits;
 }
 
-function sendBookingViaWhatsApp(b: Booking) {
-  const text = buildBookingSummaryText(b);
-  const number = toWhatsAppNumber(b.customer_phone, b.country);
+function sendOrderViaWhatsApp(order: Order) {
+  const text = buildOrderSummaryText(order);
+  const number = toWhatsAppNumber(order.customer?.phone, order.customer?.country);
   const url = number
     ? `https://wa.me/${number}?text=${encodeURIComponent(text)}`
     : `https://wa.me/?text=${encodeURIComponent(text)}`;
   window.open(url, '_blank');
 }
 
-function sendBookingViaLine(b: Booking) {
-  const text = buildBookingSummaryText(b);
-  // LINE has no public deep-link to message a specific personal ID directly;
-  // this opens LINE's share sheet with the summary pre-filled so the admin
-  // picks the customer's chat themselves.
+function sendOrderViaLine(order: Order) {
+  const text = buildOrderSummaryText(order);
   const url = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
   window.open(url, '_blank');
 }
 
-function printBookingSummary(b: Booking) {
-  const pkgTitle = b.packages ? b.packages.title : null;
-  const partnerName = b.packages?.partners ? b.packages.partners.name : null;
-  const mainPrice = effectivePrice(b.packages);
-  const hotelPrice = hotelTotalPrice(b);
-  const transportPrice = transportTotalPrice(b);
-  const totalPrice = mainPrice + hotelPrice + transportPrice;
-  const statusLabel = STATUS_LABEL[b.status] || b.status;
-
+function printOrderSummary(order: Order) {
   const escapeHtml = (str: unknown) => {
     if (str === null || str === undefined) return '';
-    return String(str).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+    return String(str).replace(
+      /[&<>"']/g,
+      (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!
+    );
   };
 
-  const rows: [string, string, string][] = [];
-  if (partnerName || pkgTitle) {
-    rows.push(['โปรแกรม', [partnerName, pkgTitle].filter(Boolean).join(' — '), formatTHB(mainPrice)]);
-  }
-  if (b.need_hotel && b.hotel_package) {
-    const nights = Math.max(1, Number(b.hotel_nights) || 1);
-    rows.push([
-      'โรงแรม',
-      `${[b.hotel_package.partners?.name, b.hotel_package.title].filter(Boolean).join(' — ')} · เข้าพัก ${
-        b.hotel_checkin_date || '-'
-      } (${nights} คืน)`,
-      formatTHB(hotelPrice),
-    ]);
-  }
-  if (b.need_transport && b.transport_package) {
-    rows.push([
-      'รถรับส่ง',
-      `${[b.transport_package.partners?.name, b.transport_package.title].filter(Boolean).join(' — ')} · ${transportDetailLabel(b)}`,
-      formatTHB(transportPrice),
-    ]);
-  }
+  const SERVICE_TYPE_ROW_LABEL: Record<ServiceType, string> = {
+    clinic: 'โปรแกรม (คลินิก/รพ.)',
+    wellness: 'โปรแกรม (เวลเนส)',
+    insurance: 'ประกัน',
+    hotel: 'โรงแรม',
+    transport: 'รถรับส่ง',
+  };
+
+  const rows: [string, string, string][] = order.items.map((item) => [
+    SERVICE_TYPE_ROW_LABEL[item.service_type],
+    itemLabel(item) + (item.service_type === 'transport' ? ` · ${transportDetailLabel(item)}` : ''),
+    formatTHB(itemPrice(item)),
+  ]);
+
+  const statusLabel = STATUS_LABEL[order.status] || order.status;
 
   const html = `
     <!DOCTYPE html>
     <html lang="th">
     <head>
     <meta charset="UTF-8">
-    <title>สรุปการจอง — ${escapeHtml(b.customer_name || '')}</title>
+    <title>สรุปการจอง — ${escapeHtml(order.customer?.full_name || '')}</title>
     <style>
       body { font-family: 'Prompt', 'Noto Sans Thai', sans-serif; color: #0f172a; padding: 40px; max-width: 640px; margin: 0 auto; }
       .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0d7c66; padding-bottom: 16px; margin-bottom: 24px; }
@@ -265,19 +270,22 @@ function printBookingSummary(b: Booking) {
     <body>
       <div class="header">
         <div class="brand">WOS<span style="color:#f59e0b">.os</span><small>Wellness Operating System — สรุปการจอง</small></div>
-        <div class="meta">วันที่ออกเอกสาร<br>${new Date().toLocaleDateString('th-TH')}</div>
+        <div class="meta">เลขที่คำสั่งจอง<br>${escapeHtml(order.order_number || order.id)}</div>
       </div>
       <div class="customer">
-        <div><b>ลูกค้า:</b> ${escapeHtml(b.customer_name || '-')} ${b.country ? '(' + escapeHtml(b.country) + ')' : ''}</div>
-        <div><b>ติดต่อ:</b> ${escapeHtml(b.customer_phone || '-')} ${b.customer_line ? '· LINE: ' + escapeHtml(b.customer_line) : ''}</div>
-        <div><b>วันที่ใช้บริการ:</b> ${escapeHtml(b.booking_date || '-')} ${escapeHtml(b.booking_time || '')}</div>
+        <div><b>ลูกค้า:</b> ${escapeHtml(order.customer?.full_name || '-')} ${
+          order.customer?.country ? '(' + escapeHtml(order.customer.country) + ')' : ''
+        }</div>
+        <div><b>ติดต่อ:</b> ${escapeHtml(order.customer?.phone || '-')} ${
+          order.customer?.line_id ? '· LINE: ' + escapeHtml(order.customer.line_id) : ''
+        }</div>
         <div><b>สถานะ:</b> <span class="status-badge">${escapeHtml(statusLabel)}</span></div>
       </div>
       <table>
         <thead><tr><th>รายการ</th><th>รายละเอียด</th><th style="text-align:right">ราคา</th></tr></thead>
         <tbody>
           ${rows.map((r) => `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td><td class="price">${escapeHtml(r[2])}</td></tr>`).join('')}
-          <tr class="total-row"><td colspan="2">ราคารวมทั้งหมด</td><td class="price">${escapeHtml(formatTHB(totalPrice))}</td></tr>
+          <tr class="total-row"><td colspan="2">ราคารวมทั้งหมด</td><td class="price">${escapeHtml(formatTHB(order.total_amount ?? 0))}</td></tr>
         </tbody>
       </table>
       <div class="footer">
@@ -299,12 +307,11 @@ function printBookingSummary(b: Booking) {
 }
 
 export function BookingsManager() {
-  const supabase = createClient();
-  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
 
-  const [statusFilter, setStatusFilter] = useState<'all' | BookingStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | OrderStatus>('all');
   const [rangePreset, setRangePreset] = useState<DateRangePreset>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
@@ -314,42 +321,40 @@ export function BookingsManager() {
 
   const [savingId, setSavingId] = useState<string | null>(null);
 
+  // Hotel/transport packages still live in the public `packages` table
+  // (see PROJECT_STRUCTURE.md decision: `packages` is the single source
+  // of truth for programs), so this picker query is unchanged from the
+  // old BookingsManager.
   async function loadHotelTransportPackages() {
-    const [hotelRes, transportRes] = await Promise.all([
-      supabase
-        .from('packages')
-        .select('id, title, original_price, special_price, partners!inner(id, name, category, status)')
-        .eq('partners.category', 'Hotel')
-        .eq('partners.status', 'active')
-        .order('title'),
-      supabase
-        .from('packages')
-        .select('id, title, original_price, special_price, partners!inner(id, name, category, status)')
-        .eq('partners.category', 'Transport')
-        .eq('partners.status', 'active')
-        .order('title'),
-    ]);
-    setHotelPackages((hotelRes.data ?? []) as unknown as PickerPackage[]);
-    setTransportPackages((transportRes.data ?? []) as unknown as PickerPackage[]);
+    try {
+      const res = await fetch('/api/admin/packages/pickers?categories=Hotel,Transport');
+      if (!res.ok) throw new Error('failed to load hotel/transport packages');
+      const result = await res.json();
+      setHotelPackages(result.hotel ?? []);
+      setTransportPackages(result.transport ?? []);
+    } catch (e) {
+      // Non-fatal — reassignment dropdowns will just be empty.
+      console.error(e);
+    }
   }
 
-  async function loadBookings() {
+  async function loadOrders() {
     setLoading(true);
     setListError(null);
-    const { data, error } = await supabase
-      .from('bookings')
-      .select(BOOKINGS_SELECT)
-      .order('created_at', { ascending: false });
-    setLoading(false);
-    if (error) {
-      setListError('โหลดข้อมูลไม่สำเร็จ: ' + error.message);
-      return;
+    try {
+      const res = await fetch('/api/admin/orders');
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'failed to load orders');
+      setOrders(result.orders as Order[]);
+    } catch (e) {
+      setListError('โหลดข้อมูลไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'unknown error'));
+    } finally {
+      setLoading(false);
     }
-    setBookings((data ?? []) as unknown as Booking[]);
   }
 
   async function refreshAll() {
-    await Promise.all([loadHotelTransportPackages(), loadBookings()]);
+    await Promise.all([loadHotelTransportPackages(), loadOrders()]);
   }
 
   useEffect(() => {
@@ -382,53 +387,74 @@ export function BookingsManager() {
     setRangePreset(!dateFrom && !dateTo ? 'all' : 'custom');
   }
 
+  // Filters by the first non-add-on item's scheduled_date (i.e. the
+  // clinic/wellness/insurance service date — hotel/transport are add-ons
+  // to that, not the anchor date), same intent as the old
+  // bookings.booking_date filter.
   const filtered = useMemo(() => {
-    let list = statusFilter === 'all' ? bookings : bookings.filter((b) => b.status === statusFilter);
+    let list = statusFilter === 'all' ? orders : orders.filter((o) => o.status === statusFilter);
     if (dateFrom || dateTo) {
-      list = list.filter((b) => {
-        if (!b.booking_date) return false;
-        if (dateFrom && b.booking_date < dateFrom) return false;
-        if (dateTo && b.booking_date > dateTo) return false;
+      list = list.filter((o) => {
+        const mainDate = o.items.find((i) => !isAddOnItem(i))?.scheduled_date;
+        if (!mainDate) return false;
+        if (dateFrom && mainDate < dateFrom) return false;
+        if (dateTo && mainDate > dateTo) return false;
         return true;
       });
     }
     return list;
-  }, [bookings, statusFilter, dateFrom, dateTo]);
+  }, [orders, statusFilter, dateFrom, dateTo]);
 
-  async function updateBookingStatus(id: string, newStatus: BookingStatus) {
+  async function updateOrderStatus(id: string, newStatus: OrderStatus) {
     setSavingId(id);
-    const { error } = await supabase.from('bookings').update({ status: newStatus }).eq('id', id);
-    setSavingId(null);
-    if (error) {
-      alert('อัปเดตสถานะไม่สำเร็จ: ' + error.message);
-      return;
+    try {
+      const res = await fetch(`/api/admin/orders/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'update failed');
+      setOrders((prev) => prev.map((o) => (o.id === id ? { ...o, status: newStatus } : o)));
+    } catch (e) {
+      alert('อัปเดตสถานะไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'unknown error'));
+    } finally {
+      setSavingId(null);
     }
-    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, status: newStatus } : b)));
   }
 
-  async function updateBookingPartnerField(
-    id: string,
-    field: 'hotel_package_id' | 'transport_package_id',
-    value: string
-  ) {
-    setSavingId(id);
-    const { error } = await supabase
-      .from('bookings')
-      .update({ [field]: value || null })
-      .eq('id', id);
-    setSavingId(null);
-    if (error) {
-      alert('อัปเดตไม่สำเร็จ: ' + error.message);
-      return;
+  // Reuses the existing /api/admin/order-items/[id]/assign endpoint
+  // (already shipped for the pending-assignments screen) instead of a
+  // new route, since the contract — { package_id, quantity } — already
+  // covers hotel/transport reassignment.
+  async function reassignItem(itemId: string, packageId: string) {
+    if (!packageId) return;
+    setSavingId(itemId);
+    try {
+      const res = await fetch(`/api/admin/order-items/${itemId}/assign`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ package_id: packageId, quantity: 1 }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'assignment failed');
+      await loadOrders();
+    } catch (e) {
+      alert('เปลี่ยนแพ็กเกจไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'unknown error'));
+    } finally {
+      setSavingId(null);
     }
-    setBookings((prev) => prev.map((b) => (b.id === id ? { ...b, [field]: value || null } : b)));
   }
 
-  const statusPills: { value: 'all' | BookingStatus; label: string }[] = [
+  const statusPills: { value: 'all' | OrderStatus; label: string }[] = [
     { value: 'all', label: 'ทั้งหมด' },
-    { value: 'pending', label: '⏳ รอดำเนินการ' },
-    { value: 'confirmed', label: '✅ ยืนยันแล้ว' },
-    { value: 'cancelled', label: '❌ ยกเลิก' },
+    { value: 'pending_deposit', label: STATUS_LABEL.pending_deposit },
+    { value: 'deposit_paid', label: STATUS_LABEL.deposit_paid },
+    { value: 'confirmed', label: STATUS_LABEL.confirmed },
+    { value: 'checked_in', label: STATUS_LABEL.checked_in },
+    { value: 'completed', label: STATUS_LABEL.completed },
+    { value: 'cancelled', label: STATUS_LABEL.cancelled },
+    { value: 'refunded', label: STATUS_LABEL.refunded },
   ];
   const rangePills: { value: DateRangePreset; label: string }[] = [
     { value: 'all', label: 'ทั้งหมด' },
@@ -440,16 +466,18 @@ export function BookingsManager() {
 
   const pillClass = (active: boolean) =>
     `rounded-full border px-3 py-1 text-xs font-medium transition-colors ${
-      active ? 'border-slate-800 bg-slate-800 text-white' : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
+      active
+        ? 'border-slate-800 bg-slate-800 text-white'
+        : 'border-slate-200 bg-white text-slate-500 hover:bg-slate-50'
     }`;
 
   return (
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-bold text-slate-900">🏨 รายการจองแพ็กเกจ ({bookings.length})</h2>
+          <h2 className="text-lg font-bold text-slate-900">🏨 รายการจอง ({orders.length})</h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            ทั้งหมด {bookings.length} รายการ · แสดง {filtered.length} รายการ
+            ทั้งหมด {orders.length} รายการ · แสดง {filtered.length} รายการ
           </p>
         </div>
         <button onClick={refreshAll} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm">
@@ -458,10 +486,11 @@ export function BookingsManager() {
       </div>
 
       {listError ? (
-        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{listError}</div>
+        <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">
+          {listError}
+        </div>
       ) : null}
 
-      {/* Status filter pills */}
       <div className="flex flex-wrap gap-2">
         {statusPills.map((p) => (
           <button key={p.value} onClick={() => setStatusFilter(p.value)} className={pillClass(statusFilter === p.value)}>
@@ -470,7 +499,6 @@ export function BookingsManager() {
         ))}
       </div>
 
-      {/* Date range filter — filters by booking_date (วันที่ใช้บริการ) */}
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 p-2.5">
         <span className="pl-1 text-xs font-medium text-slate-500">📅 ช่วงวันที่ใช้บริการ:</span>
         {rangePills.map((p) => (
@@ -515,51 +543,42 @@ export function BookingsManager() {
           <table className="w-full min-w-[900px] text-left text-sm">
             <thead className="border-b border-slate-100 text-slate-500">
               <tr>
-                <th className="px-4 py-3 font-semibold">วันที่/เวลาจอง</th>
+                <th className="px-4 py-3 font-semibold">เลขที่ / วันที่แจ้ง</th>
                 <th className="px-4 py-3 font-semibold">ลูกค้า</th>
                 <th className="px-4 py-3 font-semibold">ติดต่อ</th>
-                <th className="px-4 py-3 font-semibold">โปรแกรม / พาร์ทเนอร์</th>
+                <th className="px-4 py-3 font-semibold">โปรแกรม</th>
                 <th className="px-4 py-3 font-semibold">โรงแรม / รถรับส่ง</th>
                 <th className="px-4 py-3 font-semibold">ราคารวม</th>
-                <th className="px-4 py-3 font-semibold">แจ้งเมื่อ</th>
                 <th className="px-4 py-3 font-semibold">สถานะ</th>
                 <th className="px-4 py-3 font-semibold">ส่งให้ลูกค้า</th>
               </tr>
             </thead>
             <tbody>
-              {filtered.map((b) => {
-                const pkgTitle = b.packages ? b.packages.title : '-';
-                const partnerName = b.packages?.partners ? b.packages.partners.name : '-';
-                const createdAt = b.created_at ? new Date(b.created_at).toLocaleString('th-TH') : '-';
-                const mainPrice = effectivePrice(b.packages);
-                const hotelPrice = hotelTotalPrice(b);
-                const transportPrice = transportTotalPrice(b);
-                const totalPrice = mainPrice + hotelPrice + transportPrice;
-                const transportLabel = b.transport_package
-                  ? `${b.transport_package.partners ? b.transport_package.partners.name + ' — ' : ''}${b.transport_package.title}`
-                  : null;
-                const hotelLabel = b.hotel_package
-                  ? `${b.hotel_package.partners ? b.hotel_package.partners.name + ' — ' : ''}${b.hotel_package.title}`
-                  : null;
-                const transportDetail = transportDetailLabel(b);
-                const busy = savingId === b.id;
+              {filtered.map((order) => {
+                const mainItems = order.items.filter((i) => !isAddOnItem(i));
+                const hotelItem = order.items.find((i) => i.service_type === 'hotel');
+                const transportItem = order.items.find((i) => i.service_type === 'transport');
+                const createdAt = order.created_at ? new Date(order.created_at).toLocaleString('th-TH') : '-';
+                const busy = savingId === order.id;
 
                 return (
-                  <tr key={b.id} className="border-b border-slate-50 align-top hover:bg-slate-50">
+                  <tr key={order.id} className="border-b border-slate-50 align-top hover:bg-slate-50">
                     <td className="whitespace-nowrap px-4 py-3">
-                      <div className="font-medium text-slate-800">{b.booking_date || '-'}</div>
-                      <div className="text-xs text-slate-500">{b.booking_time || '-'}</div>
+                      <div className="font-medium text-slate-800">{order.order_number || order.id.slice(0, 8)}</div>
+                      <div className="text-xs text-slate-400">{createdAt}</div>
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-slate-800">{b.customer_name}</div>
-                      <div className="text-xs text-slate-500">{b.country || '-'}</div>
+                      <div className="font-medium text-slate-800">{order.customer?.full_name || '-'}</div>
+                      <div className="text-xs text-slate-500">{order.customer?.country || '-'}</div>
                     </td>
                     <td className="px-4 py-3 text-slate-600">
-                      <div>{b.customer_phone}</div>
-                      {b.customer_line ? <div className="text-xs text-slate-400">LINE: {b.customer_line}</div> : null}
-                      {b.attachment_url ? (
+                      <div>{order.customer?.phone || '-'}</div>
+                      {order.customer?.line_id ? (
+                        <div className="text-xs text-slate-400">LINE: {order.customer.line_id}</div>
+                      ) : null}
+                      {order.attachment_url ? (
                         <a
-                          href={b.attachment_url}
+                          href={order.attachment_url}
                           target="_blank"
                           rel="noopener noreferrer"
                           className="text-xs text-primary hover:underline"
@@ -569,31 +588,48 @@ export function BookingsManager() {
                       ) : null}
                     </td>
                     <td className="px-4 py-3">
-                      <div className="font-medium text-slate-800">{pkgTitle}</div>
-                      <div className="text-xs text-slate-500">{partnerName}</div>
+                      {mainItems.length === 0 ? (
+                        '-'
+                      ) : (
+                        mainItems.map((item) => (
+                          <div key={item.id} className="mb-1.5 last:mb-0">
+                            <div className="font-medium text-slate-800">{itemLabel(item)}</div>
+                            <div className="text-xs text-slate-500">
+                              {item.scheduled_date || '-'} {item.scheduled_time || ''}
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </td>
                     <td className="min-w-[180px] px-4 py-3 text-xs text-slate-600">
-                      {b.need_transport || b.need_hotel ? (
+                      {!hotelItem && !transportItem ? (
+                        '-'
+                      ) : (
                         <>
-                          <div className="mb-1.5 border-b border-slate-100 pb-1.5 text-xs text-slate-400">
-                            📅 ใช้วันที่ {b.booking_date || '-'} {b.booking_time || '-'}
-                          </div>
-                          {b.need_transport ? (
+                          {transportItem ? (
                             <div className="mb-1.5">
                               <div className="flex items-center gap-1 text-xs">
                                 <span>🚗</span>
-                                <span className={`font-medium ${transportLabel ? 'text-slate-700' : 'text-amber-600'}`}>
-                                  {transportLabel || 'ยังไม่ระบุ'}
+                                <span
+                                  className={`font-medium ${
+                                    transportItem.partner ? 'text-slate-700' : 'text-amber-600'
+                                  }`}
+                                >
+                                  {itemLabel(transportItem)}
                                 </span>
                               </div>
-                              {transportDetail ? <div className="ml-4 text-xs text-slate-500">{transportDetail}</div> : null}
-                              {transportPrice ? (
-                                <div className="ml-4 text-xs text-slate-400">{formatTHB(transportPrice)}</div>
+                              <div className="ml-4 text-xs text-slate-500">
+                                {transportDetailLabel(transportItem)}
+                              </div>
+                              {itemPrice(transportItem) ? (
+                                <div className="ml-4 text-xs text-slate-400">
+                                  {formatTHB(itemPrice(transportItem))}
+                                </div>
                               ) : null}
                               <select
                                 disabled={busy}
-                                value={b.transport_package_id || ''}
-                                onChange={(e) => updateBookingPartnerField(b.id, 'transport_package_id', e.target.value)}
+                                value=""
+                                onChange={(e) => reassignItem(transportItem.id, e.target.value)}
                                 className="mt-0.5 rounded border border-slate-200 px-1.5 py-1 text-xs"
                               >
                                 <option value="">-- เปลี่ยน/เลือกแพ็กเกจรถ --</option>
@@ -605,22 +641,28 @@ export function BookingsManager() {
                               </select>
                             </div>
                           ) : null}
-                          {b.need_hotel ? (
+                          {hotelItem ? (
                             <div>
                               <div className="flex items-center gap-1 text-xs">
                                 <span>🏨</span>
-                                <span className={`font-medium ${hotelLabel ? 'text-slate-700' : 'text-amber-600'}`}>
-                                  {hotelLabel || 'ยังไม่ระบุ'}
+                                <span
+                                  className={`font-medium ${
+                                    hotelItem.partner ? 'text-slate-700' : 'text-amber-600'
+                                  }`}
+                                >
+                                  {itemLabel(hotelItem)}
                                 </span>
                               </div>
                               <div className="ml-4 text-xs text-slate-500">
-                                {b.hotel_checkin_date || '-'} · {Math.max(1, Number(b.hotel_nights) || 1)} คืน
+                                {hotelItem.scheduled_date || '-'} ถึง {hotelItem.hotel_checkout_date || '-'}
                               </div>
-                              {hotelPrice ? <div className="ml-4 text-xs text-slate-400">{formatTHB(hotelPrice)}</div> : null}
+                              {itemPrice(hotelItem) ? (
+                                <div className="ml-4 text-xs text-slate-400">{formatTHB(itemPrice(hotelItem))}</div>
+                              ) : null}
                               <select
                                 disabled={busy}
-                                value={b.hotel_package_id || ''}
-                                onChange={(e) => updateBookingPartnerField(b.id, 'hotel_package_id', e.target.value)}
+                                value=""
+                                onChange={(e) => reassignItem(hotelItem.id, e.target.value)}
                                 className="mt-0.5 rounded border border-slate-200 px-1.5 py-1 text-xs"
                               >
                                 <option value="">-- เปลี่ยน/เลือกแพ็กเกจโรงแรม --</option>
@@ -633,47 +675,45 @@ export function BookingsManager() {
                             </div>
                           ) : null}
                         </>
-                      ) : (
-                        '-'
                       )}
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
-                      <div className="font-bold text-slate-900">{formatTHB(totalPrice)}</div>
-                      {hotelPrice || transportPrice ? (
-                        <div className="text-xs text-slate-400">โปรแกรม {formatTHB(mainPrice)}</div>
-                      ) : null}
+                      <div className="font-bold text-slate-900">{formatTHB(order.total_amount ?? 0)}</div>
                     </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-slate-500">{createdAt}</td>
                     <td className="px-4 py-3">
                       <select
                         disabled={busy}
-                        value={b.status}
-                        onChange={(e) => updateBookingStatus(b.id, e.target.value as BookingStatus)}
-                        className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[b.status]}`}
+                        value={order.status}
+                        onChange={(e) => updateOrderStatus(order.id, e.target.value as OrderStatus)}
+                        className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[order.status]}`}
                       >
-                        <option value="pending">⏳ รอดำเนินการ</option>
-                        <option value="confirmed">✅ ยืนยันแล้ว</option>
-                        <option value="cancelled">❌ ยกเลิก</option>
+                        <option value="pending_deposit">{STATUS_LABEL.pending_deposit}</option>
+                        <option value="deposit_paid">{STATUS_LABEL.deposit_paid}</option>
+                        <option value="confirmed">{STATUS_LABEL.confirmed}</option>
+                        <option value="checked_in">{STATUS_LABEL.checked_in}</option>
+                        <option value="completed">{STATUS_LABEL.completed}</option>
+                        <option value="cancelled">{STATUS_LABEL.cancelled}</option>
+                        <option value="refunded">{STATUS_LABEL.refunded}</option>
                       </select>
                     </td>
                     <td className="whitespace-nowrap px-4 py-3">
                       <div className="flex items-center gap-1.5">
                         <button
-                          onClick={() => printBookingSummary(b)}
+                          onClick={() => printOrderSummary(order)}
                           title="พิมพ์สรุป"
                           className="rounded-lg border border-slate-200 px-2 py-1 text-sm hover:border-primary hover:bg-primary-light"
                         >
                           🖨️
                         </button>
                         <button
-                          onClick={() => sendBookingViaWhatsApp(b)}
+                          onClick={() => sendOrderViaWhatsApp(order)}
                           title="ส่งทาง WhatsApp"
                           className="rounded-lg border border-slate-200 px-2 py-1 text-sm hover:border-primary hover:bg-primary-light"
                         >
                           📱
                         </button>
                         <button
-                          onClick={() => sendBookingViaLine(b)}
+                          onClick={() => sendOrderViaLine(order)}
                           title="ส่งทาง LINE"
                           className="rounded-lg border border-slate-200 px-2 py-1 text-sm hover:border-primary hover:bg-primary-light"
                         >

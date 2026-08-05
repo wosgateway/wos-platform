@@ -7,6 +7,7 @@ import { PartnerLogos } from '@/components/PartnerLogos';
 import { JourneyTimeline } from '@/components/JourneyTimeline';
 import { Testimonials } from '@/components/Testimonials';
 import { FAQ } from '@/components/FAQ';
+import { HowItWorks } from '@/components/HowItWorks';
 import HeroSlider from '@/components/HeroSlider';
 
 const HERO_SLIDES = [
@@ -93,6 +94,9 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* ===== HOW WOS WORKS (NEW) ===== */}
+      <HowItWorks />
 
       {/* ===== TESTIMONIALS (NEW) ===== */}
       <Testimonials />
