@@ -8,7 +8,7 @@ const intlMiddleware = createMiddleware(routing);
 
 // Routes ที่ไม่ต้องมี locale prefix และไม่ต้องผ่าน auth guard ของ partner portal
 // (เว็บสาธารณะทุก route จะมี locale prefix เสมอ — /admin กับ /login เป็นข้อยกเว้นเดียว)
-const PUBLIC_NON_LOCALE_ROUTES = ['/admin', '/login'];
+const PUBLIC_NON_LOCALE_ROUTES = ['/admin', '/login', '/quote'];
 
 function isNonLocaleRoute(pathname: string): boolean {
   return PUBLIC_NON_LOCALE_ROUTES.some(

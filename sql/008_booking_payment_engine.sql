@@ -319,26 +319,37 @@ ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
 CREATE POLICY "Anyone can view active deposit rules" ON public.deposit_rules
     FOR SELECT USING (active = true);
 
--- order_items: partner staff see items belonging to their org (uses the
--- same user_metadata JWT claim pattern as migration 007 / RLS Policy.sql)
+-- order_items: partner staff see items belonging to their org.
+-- NOTE: migration 007 found that auth.jwt() -> 'user_metadata' is NEVER
+-- set for real users in this project and silently blocks everyone — see
+-- PROJECT_STRUCTURE.md section 5.3-5.4. Use the SECURITY DEFINER helper
+-- (current_user_organization_id()) instead, same as every other
+-- partner-portal table.
 CREATE POLICY "Partners can view their organization's order items" ON public.order_items
-    FOR SELECT USING (organization_id = (auth.jwt() -> 'user_metadata' ->> 'organization_id')::UUID);
+    FOR SELECT USING (organization_id = public.current_user_organization_id());
 
 CREATE POLICY "Partners can update their organization's order items" ON public.order_items
-    FOR UPDATE USING (organization_id = (auth.jwt() -> 'user_metadata' ->> 'organization_id')::UUID);
+    FOR UPDATE USING (organization_id = public.current_user_organization_id());
 
 -- payments: partner staff can view payments tied to their own order_items
 CREATE POLICY "Partners can view payments for their order items" ON public.payments
     FOR SELECT USING (
         order_item_id IN (
             SELECT id FROM public.order_items
-            WHERE organization_id = (auth.jwt() -> 'user_metadata' ->> 'organization_id')::UUID
+            WHERE organization_id = public.current_user_organization_id()
         )
     );
 
+-- Deliberately no INSERT/UPDATE policy for partners on `payments`.
+-- Slip verification touches money (deposit_paid → balance_remaining →
+-- settlements via triggers) and needs role + amount validation that RLS
+-- alone can't express, so it goes through a server route using the
+-- service role key instead — see src/app/api/partner/payments/[id]/verify
+-- and .../reject.
+
 -- settlements: partner staff see only their own org's settlements
 CREATE POLICY "Partners can view their organization's settlements" ON public.settlements
-    FOR SELECT USING (organization_id = (auth.jwt() -> 'user_metadata' ->> 'organization_id')::UUID);
+    FOR SELECT USING (organization_id = public.current_user_organization_id());
 
 -- orders / invoices: NOT organization-scoped (customer-owned, cross-partner).
 -- No customer-facing RLS policy yet — customers currently authenticate via

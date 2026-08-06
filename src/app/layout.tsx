@@ -1,4 +1,8 @@
 import type { ReactNode } from 'react';
+import { Geist } from "next/font/google";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
+
 
 // This root layout only exists because Next.js requires one at src/app.
 // All real markup (html/body/fonts/providers) lives further down:
