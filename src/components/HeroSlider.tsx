@@ -60,6 +60,11 @@ export default function HeroSlider({ slides }: { slides: Slide[] }) {
       {/* Overlay สีแบรนด์ ให้ text อ่านง่าย + ดูเป็น WOS ไม่ใช่ template ทั่วไป */}
       <div className="absolute inset-0 bg-gradient-to-br from-primary/80 via-primary/50 to-slate-900/40" />
 
+      {/* เพิ่ม: dark vignette เฉพาะโซนล่าง — จุดที่ TrustBar (ตัวเลข 1,000+ / 50+ ฯลฯ)
+          และ CTA วางอยู่ เดิม overlay ด้านบนไม่เข้มพอเมื่อพื้นหลังตรงนั้นสว่าง
+          (เช่นเสื้อขาว/ท้องฟ้า) ทำให้ตัวหนังสือขาวกลืนไปกับรูป */}
+      <div className="absolute inset-x-0 bottom-0 h-[45%] bg-gradient-to-t from-slate-950/70 via-slate-950/30 to-transparent" />
+
       {slides.length > 1 && (
         <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex gap-2">
           {slides.map((_, index) => (

@@ -11,7 +11,9 @@ export default async function CompanyPage() {
         <h1 className="text-2xl font-bold text-slate-900">ข้อมูลบริษัท</h1>
         <p className="text-sm text-slate-500">แก้ไขโปรไฟล์และข้อมูลติดต่อของ {user.organization.name}</p>
       </div>
-      <CompanyProfile organizationId={user.organization_id} userId={user.id} />
+      <CompanyProfile
+  organizationId={user.organization_id}
+/>
     </div>
   );
 }

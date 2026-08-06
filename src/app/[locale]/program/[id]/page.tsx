@@ -13,6 +13,7 @@ export default async function ProgramDetailPage({
   params: { id: string };
 }) {
   const t = await getTranslations('common');
+  const tBooking = await getTranslations('booking.summary');
 
   let pkg;
   try {
@@ -86,6 +87,19 @@ export default async function ProgramDetailPage({
               <span className="ml-auto text-sm text-slate-400">⏱ {pkg.duration as string}</span>
             ) : null}
           </div>
+
+          {pkg.suggested_hotel_name ? (
+            <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50/60 p-5">
+              <span className="text-2xl" aria-hidden>🏨</span>
+              <div>
+                <p className="font-semibold text-slate-900">{pkg.suggested_hotel_name as string}</p>
+                {pkg.suggested_hotel_price_note ? (
+                  <p className="text-sm text-slate-500">{pkg.suggested_hotel_price_note as string}</p>
+                ) : null}
+                <p className="mt-1 text-xs text-slate-400">{tBooking('disclaimer')}</p>
+              </div>
+            </div>
+          ) : null}
 
           <div className="mt-8">
             <Link

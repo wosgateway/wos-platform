@@ -5,6 +5,8 @@ import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 import type { Package } from '@/lib/data';
+import { DatePicker } from '@/components/ui/DatePicker';
+import { TimePicker } from '@/components/ui/TimePicker';
 
 type TransportMode = 'one_way' | 'round_trip' | 'daily';
 
@@ -52,6 +54,16 @@ const initialState: FormState = {
   attachment: null,
 };
 
+// Formats a YYYY-MM-DD string as วัน/เดือน/ปี (DD/MM/YYYY) for display only.
+// The underlying form/payload value stays ISO (YYYY-MM-DD) — this is purely
+// cosmetic for the review step.
+function formatDisplayDate(iso: string): string {
+  if (!iso) return '';
+  const [y, m, d] = iso.split('-');
+  if (!y || !m || !d) return iso;
+  return `${d}/${m}/${y}`;
+}
+
 function packagePrice(pkg: Package | undefined): number {
   if (!pkg) return 0;
   return Number((pkg.special_price as number) ?? (pkg.original_price as number) ?? 0);
@@ -85,6 +97,11 @@ export function BookingForm({
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
+  const [orderResult, setOrderResult] = useState<{
+    order_number: string;
+    total_deposit_required: number;
+    currency: string;
+  } | null>(null);
 
   const totalSteps = 3;
 
@@ -169,44 +186,72 @@ export function BookingForm({
 
       const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
 
-      // Payload shape kept identical to the old booking.html insert so the
-      // existing `bookings` table / RLS policies / admin CSV export all
-      // keep working with zero schema changes. hotel_nights is now derived
-      // from checkin/checkout instead of being typed in manually.
+      // Main package is always a resolved, priced item.
+      const items: Record<string, unknown>[] = [
+        {
+          package_id: pkg.id,
+          quantity: 1,
+          scheduled_date: form.bookingDate,
+          scheduled_time: form.bookingTime,
+        },
+      ];
+
+      if (form.needHotel) {
+        items.push({
+          // Empty hotelPartnerId = "let team decide" -> send
+          // service_type instead of package_id (see migration
+          // 013/014). Otherwise send the chosen package_id.
+          ...(form.hotelPartnerId
+            ? { package_id: form.hotelPartnerId }
+            : { service_type: 'hotel' as const }),
+          quantity: nights || 1,
+          scheduled_date: form.hotelCheckinDate || null,
+          hotel_checkout_date: form.hotelCheckoutDate || null,
+        });
+      }
+
+      if (form.needTransport) {
+        items.push({
+          ...(form.transportPartnerId
+            ? { package_id: form.transportPartnerId }
+            : { service_type: 'transport' as const }),
+          quantity: form.transportMode === 'daily' ? form.transportDays || 1 : 1,
+          scheduled_date: form.transportPickupDate || null,
+          scheduled_time: form.transportPickupTime || null,
+          transport_mode: form.transportMode,
+          transport_return_date:
+            form.transportMode === 'round_trip' ? form.transportReturnDate || null : null,
+          transport_return_time:
+            form.transportMode === 'round_trip' ? form.transportReturnTime || null : null,
+        });
+      }
+
       const payload = {
-        package_id: pkg.id,
-        customer_name: form.customerName.trim(),
-        customer_phone: form.customerPhone.trim(),
-        customer_line: form.customerLine.trim() || null,
-        country: form.country,
-        booking_date: form.bookingDate,
-        booking_time: form.bookingTime,
-        need_transport: form.needTransport,
-        need_hotel: form.needHotel,
-        transport_package_id: form.transportPartnerId || null,
-        hotel_package_id: form.hotelPartnerId || null,
-        hotel_checkin_date: form.needHotel ? form.hotelCheckinDate || null : null,
-        hotel_nights: form.needHotel ? nights || 1 : null,
-        transport_mode: form.needTransport ? form.transportMode : null,
-        transport_pickup_date: form.needTransport ? form.transportPickupDate || null : null,
-        transport_pickup_time: form.needTransport ? form.transportPickupTime || null : null,
-        transport_return_date:
-          form.needTransport && form.transportMode === 'round_trip'
-            ? form.transportReturnDate || null
-            : null,
-        transport_return_time:
-          form.needTransport && form.transportMode === 'round_trip'
-            ? form.transportReturnTime || null
-            : null,
-        transport_days:
-          form.needTransport && form.transportMode === 'daily' ? form.transportDays || 1 : null,
+        customer: {
+          full_name: form.customerName.trim(),
+          phone: form.customerPhone.trim(),
+          line_id: form.customerLine.trim() || null,
+          country: form.country,
+        },
+        items,
         attachment_url: attachmentUrl,
-        status: 'pending',
       };
 
-      const { error: insertError } = await supabase.from('bookings').insert(payload);
-      if (insertError) throw insertError;
+      const res = await fetch('/api/orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const result = await res.json();
+      if (!res.ok) {
+        throw new Error(result?.error ?? t('errorGeneric'));
+      }
 
+      setOrderResult({
+        order_number: result.order_number,
+        total_deposit_required: result.total_deposit_required,
+        currency: result.currency,
+      });
       setDone(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : t('errorGeneric'));
@@ -221,6 +266,15 @@ export function BookingForm({
         <div className="mb-3 text-4xl">✅</div>
         <h2 className="text-lg font-bold text-slate-900">{t('successTitle')}</h2>
         <p className="mt-2 text-sm text-slate-500">{t('successBody')}</p>
+        {orderResult ? (
+          <div className="mt-4 rounded-xl bg-primary-light/40 px-4 py-3 text-sm text-slate-600">
+            <p className="font-medium text-slate-800">{orderResult.order_number}</p>
+            <p className="mt-1">
+              {t('summary.total')}: {formatTHB(orderResult.total_deposit_required)}{' '}
+              {orderResult.currency}
+            </p>
+          </div>
+        ) : null}
       </div>
     );
   }
@@ -257,23 +311,20 @@ export function BookingForm({
       {/* Step 1: schedule + optional hotel/transport */}
       {step === 1 ? (
         <div className="space-y-5">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="form-label">{t('fields.date')} *</label>
-              <input
-                type="date"
-                className="form-input"
+              <DatePicker
                 value={form.bookingDate}
-                onChange={(e) => update('bookingDate', e.target.value)}
+                onChange={(v) => update('bookingDate', v)}
+                min={new Date().toISOString().slice(0, 10)}
               />
             </div>
             <div>
               <label className="form-label">{t('fields.time')} *</label>
-              <input
-                type="time"
-                className="form-input"
+              <TimePicker
                 value={form.bookingTime}
-                onChange={(e) => update('bookingTime', e.target.value)}
+                onChange={(v) => update('bookingTime', v)}
               />
             </div>
           </div>
@@ -311,33 +362,27 @@ export function BookingForm({
                 <option value="round_trip">{t('fields.roundTrip')}</option>
                 <option value="daily">{t('fields.daily')}</option>
               </select>
-              <div className="grid grid-cols-2 gap-4">
-                <input
-                  type="date"
-                  className="form-input"
+              <div className="space-y-2">
+                <DatePicker
                   value={form.transportPickupDate}
-                  onChange={(e) => update('transportPickupDate', e.target.value)}
+                  onChange={(v) => update('transportPickupDate', v)}
+                  min={new Date().toISOString().slice(0, 10)}
                 />
-                <input
-                  type="time"
-                  className="form-input"
+                <TimePicker
                   value={form.transportPickupTime}
-                  onChange={(e) => update('transportPickupTime', e.target.value)}
+                  onChange={(v) => update('transportPickupTime', v)}
                 />
               </div>
               {form.transportMode === 'round_trip' ? (
-                <div className="grid grid-cols-2 gap-4">
-                  <input
-                    type="date"
-                    className="form-input"
+                <div className="space-y-2">
+                  <DatePicker
                     value={form.transportReturnDate}
-                    onChange={(e) => update('transportReturnDate', e.target.value)}
+                    onChange={(v) => update('transportReturnDate', v)}
+                    min={form.transportPickupDate || new Date().toISOString().slice(0, 10)}
                   />
-                  <input
-                    type="time"
-                    className="form-input"
+                  <TimePicker
                     value={form.transportReturnTime}
-                    onChange={(e) => update('transportReturnTime', e.target.value)}
+                    onChange={(v) => update('transportReturnTime', v)}
                   />
                 </div>
               ) : null}
@@ -378,15 +423,13 @@ export function BookingForm({
                 ))}
               </select>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="form-label">{t('fields.hotelCheckin')} *</label>
-                  <input
-                    type="date"
-                    className="form-input"
+                  <DatePicker
                     value={form.hotelCheckinDate}
-                    onChange={(e) => {
-                      const newCheckin = e.target.value;
+                    min={new Date().toISOString().slice(0, 10)}
+                    onChange={(newCheckin) => {
                       update('hotelCheckinDate', newCheckin);
                       // If checkout is no longer after the new checkin, clear it
                       // so the customer can't submit an invalid range.
@@ -398,12 +441,10 @@ export function BookingForm({
                 </div>
                 <div>
                   <label className="form-label">{t('fields.hotelCheckout')} *</label>
-                  <input
-                    type="date"
-                    className="form-input"
-                    min={form.hotelCheckinDate || undefined}
+                  <DatePicker
                     value={form.hotelCheckoutDate}
-                    onChange={(e) => update('hotelCheckoutDate', e.target.value)}
+                    min={form.hotelCheckinDate || undefined}
+                    onChange={(v) => update('hotelCheckoutDate', v)}
                   />
                 </div>
               </div>
@@ -507,7 +548,7 @@ export function BookingForm({
 
           <div className="space-y-1 rounded-xl border border-slate-100 px-4 py-3 text-sm text-slate-600">
             <p>
-              {t('summary.reviewDate')}: {form.bookingDate} {form.bookingTime}
+              {t('summary.reviewDate')}: {formatDisplayDate(form.bookingDate)} {form.bookingTime}
             </p>
             <p>
               {t('summary.reviewContact')}: {form.customerName} · {form.customerPhone}

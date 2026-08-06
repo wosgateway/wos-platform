@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import type { Partner } from '@/lib/data';
 
@@ -297,7 +298,14 @@ export function PartnersManager() {
               />
               {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
               {form.cover_image_url ? (
-                <img src={form.cover_image_url} alt="" className="mt-2 h-20 w-20 rounded-lg object-cover" />
+                <Image
+                  src={form.cover_image_url}
+                  alt=""
+                  width={80}
+                  height={80}
+                  className="mt-2 h-20 w-20 rounded-lg object-cover"
+                  unoptimized
+                />
               ) : null}
             </div>
 

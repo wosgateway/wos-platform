@@ -5,16 +5,18 @@ export function TrustBar() {
   const items = t.raw('items') as { value: string; label: string }[];
 
   return (
-    <div className="mt-10 flex flex-wrap items-center justify-center">
-      {items.map((item, i) => (
-        <div key={item.label} className="flex items-center">
-          <div className="px-5 py-1 text-center sm:px-8">
-            <p className="text-2xl font-bold text-primary md:text-3xl">{item.value}</p>
-            <p className="mt-0.5 whitespace-nowrap text-xs text-slate-500">{item.label}</p>
-          </div>
-          {i < items.length - 1 && (
-            <span className="hidden h-8 w-px bg-slate-200 sm:block" aria-hidden />
-          )}
+    <div className="mt-10 flex flex-wrap items-center justify-center gap-3">
+      {items.map((item) => (
+        <div
+          key={item.label}
+          className="rounded-2xl border border-white/15 bg-slate-950/35 px-5 py-3 text-center backdrop-blur-md sm:px-7"
+        >
+          <p className="text-2xl font-bold text-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.55)] md:text-3xl">
+            {item.value}
+          </p>
+          <p className="mt-0.5 whitespace-nowrap text-xs font-medium text-white/85 drop-shadow-[0_1px_3px_rgba(0,0,0,0.5)]">
+            {item.label}
+          </p>
         </div>
       ))}
     </div>

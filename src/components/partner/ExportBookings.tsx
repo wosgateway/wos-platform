@@ -9,6 +9,20 @@ interface ExportBookingsProps {
   onExport?: () => void;
 }
 
+interface PartnerBookingRow {
+  id: string;
+  customer_name: string;
+  customer_phone: string;
+  customer_line: string | null;
+  customer_country: string | null;
+  booking_date: string | null;
+  booking_time: string | null;
+  status: string;
+  total_price: number | null;
+  created_at: string;
+  packages: { title: string } | null;
+}
+
 export function ExportBookings({ organizationId, onExport }: ExportBookingsProps) {
   const supabase = createClient();
   const [exporting, setExporting] = useState(false);
@@ -61,7 +75,7 @@ export function ExportBookings({ organizationId, onExport }: ExportBookingsProps
       'วันที่แจ้ง',
     ];
 
-    const rows = data.map((b: any) => [
+    const rows = (data as unknown as PartnerBookingRow[]).map((b) => [
       b.id,
       b.customer_name,
       b.customer_phone,

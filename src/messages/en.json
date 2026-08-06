@@ -1,11 +1,77 @@
 {
   "home": {
     "hero": {
-      "badge": "Cross-border Healthcare Platform",
-      "title": "One Platform Connecting Care Between Laos and Thailand",
-      "subtitle": "WOS coordinates hospitals, hotels, and transport in a single system, so cross-border patients can book and track their care with confidence — from appointment to the trip home.",
-      "ctaPrimary": "Find a Doctor / Book",
+      "badge": "Cross-border Health & Longevity Platform",
+      "title": "Complete Cross-border Health Journey",
+      "subtitle": "Seamlessly managing every step of your health journey—from program selection, appointments, travel, and accommodation to post-care—with a trusted Concierge team.",
+      "ctaPrimary": "Explore Health Programs",
       "ctaSecondary": "For Partners"
+    },
+    "trustBar": {
+      "items": [
+        {
+          "value": "1,000+",
+          "label": "patients per month"
+        },
+        {
+          "value": "50+",
+          "label": "verified partners"
+        },
+        {
+          "value": "24/7",
+          "label": "support team"
+        },
+        {
+          "value": "2 countries",
+          "label": "Thailand–Laos"
+        }
+      ]
+    },
+    "partners": {
+      "label": "Trusted by leading partners",
+      "names": [
+        "Leading Hospital Network",
+        "Certified Aesthetic Clinics",
+        "Premium Spa & Wellness",
+        "4-5 Star Hotels",
+        "VIP Transport Service"
+      ]
+    },
+    "journey": {
+      "title": "Your Care Journey with WOS",
+      "subtitle": "From first contact to traveling home with confidence",
+      "steps": [
+        {
+          "icon": "💬",
+          "title": "Get in Touch",
+          "desc": "Reach out via LINE/WhatsApp or our website"
+        },
+        {
+          "icon": "📋",
+          "title": "Choose a Program",
+          "desc": "Our team helps you find the right program and partner"
+        },
+        {
+          "icon": "✅",
+          "title": "Confirm Booking",
+          "desc": "Book your program with hotel and transport in one place"
+        },
+        {
+          "icon": "✈️",
+          "title": "Travel to Thailand",
+          "desc": "We coordinate your trip and meet you on arrival"
+        },
+        {
+          "icon": "🏥",
+          "title": "Receive Care",
+          "desc": "Get treated by our verified partners"
+        },
+        {
+          "icon": "🏡",
+          "title": "Travel Home",
+          "desc": "We follow up and support you until you're home"
+        }
+      ]
     },
     "why": {
       "title": "Why WOS",
@@ -28,56 +94,80 @@
         }
       ]
     },
-    "categoriesTitle": "Browse Categories",
-    "categoriesSubtitle": "Choose a category to see partners and programs that fit you",
-    "trustBar": {
-      "items": [
-        { "value": "500+", "label": "Patients cared for" },
-        { "value": "20+", "label": "Hospital & clinic partners" },
-        { "value": "98%", "label": "Satisfaction rate" },
-        { "value": "24/7", "label": "Support team" }
-      ]
-    },
-    "partners": {
-      "label": "Trusted Partners",
-      "names": ["Hospital A", "Clinic B", "Hotel C", "Dental Clinic D", "Spa E"]
-    },
-    "journey": {
-      "title": "Your Care Journey",
-      "subtitle": "6 steps, from consultation to the trip home",
+    "categoriesTitle": "Choose Your Health Goal",
+    "categoriesSubtitle": "Whether it's prevention, recovery, or treatment, we'll connect you with the right partner",
+    "howItWorks": {
+      "title": "How WOS Works",
+      "subtitle": "Three simple steps, from finding a program to traveling home with confidence",
       "steps": [
-        { "icon": "💬", "title": "Consult", "desc": "Tell our team what you need via Line/WhatsApp" },
-        { "icon": "📋", "title": "Choose a Program", "desc": "Pick the package and partner that fits you" },
-        { "icon": "📅", "title": "Book", "desc": "Confirm the date, hotel, and transport" },
-        { "icon": "✈️", "title": "Travel", "desc": "Our team coordinates your cross-border trip" },
-        { "icon": "🏥", "title": "Receive Care", "desc": "Get treated by a verified partner" },
-        { "icon": "🏠", "title": "Return Home", "desc": "We follow up with you until you're safely home" }
+        {
+          "icon": "🔍",
+          "title": "Choose Your Health Goal",
+          "desc": "From checkups to recovery to aesthetics — pick what matters to you"
+        },
+        {
+          "icon": "🤝",
+          "title": "Book Everything in One Place",
+          "desc": "Add hotel and transport to your program in a single booking, with clear pricing"
+        },
+        {
+          "icon": "🌿",
+          "title": "Travel with Confidence",
+          "desc": "Our team supports you the whole way, from appointment to the trip home"
+        }
       ]
     },
     "testimonials": {
       "title": "What Our Patients Say",
       "items": [
-        { "quote": "The team coordinated everything from the appointment to the hotel — so convenient.", "name": "Ms. Somying", "meta": "Vientiane" },
-        { "quote": "Clear pricing with no hidden costs made planning easy.", "name": "Mr. Bounmy", "meta": "Savannakhet" },
-        { "quote": "Support team replied quickly on Line throughout the whole trip.", "name": "Ms. Lily", "meta": "Luang Prabang" }
+        {
+          "quote": "The team took care of everything from start to finish.",
+          "name": "Suda",
+          "meta": "Laos"
+        },
+        {
+          "quote": "Easy to book, transparent pricing, no hidden fees.",
+          "name": "John",
+          "meta": "International patient"
+        },
+        {
+          "quote": "They arranged the hotel and transport perfectly.",
+          "name": "Malee",
+          "meta": "Thailand"
+        }
       ]
     },
     "faq": {
       "title": "Frequently Asked Questions",
       "items": [
-        { "q": "What is WOS?", "a": "WOS is a Healthcare Hospitality platform connecting hospitals, hotels, and transport in one system for cross-border Thailand–Laos patients." },
-        { "q": "Are there extra fees for booking through WOS?", "a": "There are no extra fees for booking through WOS — prices shown come directly from our partners." },
-        { "q": "How do I book through WOS?", "a": "Choose a category, pick a program, and fill in the booking form on the website. Our team will contact you to confirm." },
-        { "q": "What if I need a hotel or transport?", "a": "You can request a hotel and transport during booking — our team handles it all in one invoice." },
-        { "q": "How can I reach the team?", "a": "You can reach us via Line or WhatsApp throughout your trip, as listed on our contact page." }
+        {
+          "q": "Does WOS charge extra fees on top of the program price?",
+          "a": "The price shown for each program is the final price — no hidden fees."
+        },
+        {
+          "q": "Do I need to pay in advance?",
+          "a": "It depends on the program. Our team will explain the payment details clearly before confirming your booking."
+        },
+        {
+          "q": "Can I cancel or reschedule my booking?",
+          "a": "Contact our team via LINE/WhatsApp to reschedule or cancel, subject to each partner's terms."
+        },
+        {
+          "q": "How are WOS partners verified?",
+          "a": "Every hospital and clinic must pass a license and standards check before joining our network."
+        },
+        {
+          "q": "How do I communicate with the doctor if I don't speak Thai?",
+          "a": "Our team provides interpreters and multilingual support throughout your trip."
+        }
       ]
     }
   },
   "categories": {
-    "hospital": "Hospitals",
-    "clinic": "Clinics & Aesthetics",
+    "hospital": "Checkups & Treatment",
+    "clinic": "Aesthetic Clinics",
     "dental": "Dental",
-    "wellness": "Wellness & Alternative Medicine",
+    "wellness": "Wellness & Longevity",
     "spa": "Spa & Relaxation",
     "hotel_transport": "Hotels & Transport"
   },
@@ -96,7 +186,11 @@
     "noPrograms": "No programs in this filter yet",
     "programsAndServices": "Programs & Services",
     "bookNow": "Book this program",
-    "promotion": "Promotion"
+    "promotion": "Promotion",
+    "viewPackagesAndBook": "View Packages & Book",
+    "reviewsSuffix": "reviews",
+    "searchPlaceholder": "Search partner name or province...",
+    "noSearchResults": "No partners match your search"
   },
   "booking": {
     "back": "Back",
@@ -106,7 +200,6 @@
     "errorSchedule": "Please choose a date and time",
     "errorContact": "Please fill in your name, phone, and country",
     "errorGeneric": "Something went wrong, please try again",
-    "errorHotelDates": "Please select valid check-in and check-out dates (check-out must be after check-in)",
     "successTitle": "Booking received",
     "successBody": "Our team will contact you via Line or phone within 24 hours to confirm details",
     "fields": {
@@ -114,8 +207,6 @@
       "time": "Preferred time",
       "needTransport": "🚗 Need transport",
       "needHotel": "🏨 Need a hotel",
-      "hotelCheckin": "Check-in date",
-      "hotelCheckout": "Check-out date",
       "letTeamDecide": "-- Let the team decide --",
       "oneWay": "🚗 One way only",
       "roundTrip": "🔁 Round trip",
@@ -126,39 +217,71 @@
       "country": "Current country of residence",
       "select": "-- Select --",
       "other": "Other",
-      "attachment": "Upload documents/results (optional)"
+      "attachment": "Upload documents/results (optional)",
+      "hour": "Hour",
+      "minute": "Minute",
+      "hotelCheckin": "Check-in date",
+      "hotelCheckout": "Check-out date",
+      "hotelCheckinPlaceholder": "Select check-in date",
+      "hotelCheckoutPlaceholder": "Select check-out date",
+      "hv": "Adults",
+      "mv": "Children"
     },
     "summary": {
       "main": "Main program",
       "hotel": "Hotel",
       "transport": "Transport",
       "total": "Total",
-      "nightsCount": "{count} nights",
       "disclaimer": "*Hotel/transport prices are estimates — our team will confirm the final price",
       "reviewDate": "Appointment date",
-      "reviewContact": "Contact"
-    }
+      "reviewContact": "Contact",
+      "nightsCount": "{count} night(s)"
+    },
+    "errorHotelDates": "Please select a valid check-in and check-out date"
   },
   "becomePartner": {
-    "meta": { "title": "WOS — For Business Partners" },
+    "meta": {
+      "title": "WOS — For Business Partners"
+    },
     "hero": {
       "title": "Join as a WOS Partner",
-      "subtitle": "Expand your business into the fastest-growing Healthcare Hospitality ecosystem in the region, connecting with 1,000+ cross-border patients per month"
+      "subtitle": "Expand your business into the fastest-growing Health & Longevity ecosystem in the region, connecting with 1,000+ cross-border patients per month"
     },
     "benefits": {
       "title": "Benefits You'll Get",
       "items": [
-        { "icon": "📈", "title": "Increase Customers", "desc": "Connect with 1,000+ cross-border patients per month" },
-        { "icon": "🔗", "title": "Smart Integration", "desc": "Receive alerts and manage cases via central Dashboard" },
-        { "icon": "🌏", "title": "Expand International Reach", "desc": "Reach Lao patients seeking quality services in Thailand" }
+        {
+          "icon": "📈",
+          "title": "Increase Customers",
+          "desc": "Connect with 1,000+ cross-border patients per month"
+        },
+        {
+          "icon": "🔗",
+          "title": "Smart Integration",
+          "desc": "Receive alerts and manage cases via central Dashboard"
+        },
+        {
+          "icon": "🌏",
+          "title": "Expand International Reach",
+          "desc": "Reach Lao patients seeking quality services in Thailand"
+        }
       ]
     },
     "howItWorks": {
       "title": "How to Apply",
       "steps": [
-        { "title": "Fill in Info", "desc": "Fill in your business information in the form below" },
-        { "title": "Team Contacts You", "desc": "WOS team will contact you within 24 hours" },
-        { "title": "Start Partnership", "desc": "Start using the system and receive patient cases immediately" }
+        {
+          "title": "Fill in Info",
+          "desc": "Fill in your business information in the form below"
+        },
+        {
+          "title": "Team Contacts You",
+          "desc": "WOS team will contact you within 24 hours"
+        },
+        {
+          "title": "Start Partnership",
+          "desc": "Start using the system and receive patient cases immediately"
+        }
       ]
     },
     "form": {
@@ -180,19 +303,40 @@
       "validationError": "⚠️ Please fill in all required fields",
       "success": "✅ Submitted successfully! WOS team will contact you as soon as possible",
       "errorPrefix": "❌ "
-    }
+    },
+    "alreadyPartner": "Already a partner with us?",
+    "loginLink": "Log in here"
   },
   "footer": {
-    "tagline": "A Healthcare Hospitality platform connecting cross-border care",
+    "tagline": "A Health & Longevity platform connecting cross-border care",
     "servicesTitle": "Services",
-    "services": ["Consult", "Checkup", "Aesthetics", "Dental"],
+    "services": [
+      "Consult",
+      "Checkup",
+      "Aesthetics",
+      "Dental"
+    ],
     "partnersTitle": "Partners",
-    "partners": ["Join Network", "Investor", "Hospital", "Hotel"],
+    "partners": [
+      "Join Network",
+      "Investor",
+      "Hospital",
+      "Hotel"
+    ],
     "contactTitle": "Contact",
     "contactPhoneTh": "Call (Thailand): 085-590-7666",
     "contactPhoneLo": "Call (Laos): +856 20 9872 4718",
     "companyLine": "Royal Bridge 99 Ltd. · 211 Moo 3, Mittraphap Rd., Ban Chan, Mueang, Udon Thani 41000 · Business Registration: 0413568000586",
     "rightsReserved": "All rights reserved.",
     "privacyPolicy": "Privacy Policy"
+  },
+  "partnerDirectory": {
+    "title": "Browse All Partners",
+    "subtitle": "Find the right partner for you — search or filter by category and province",
+    "searchPlaceholder": "Search partner name or province...",
+    "allCategories": "All",
+    "allProvinces": "All Provinces",
+    "noResults": "No partners match your search",
+    "loadError": "Unable to load partner data right now. Please try again."
   }
 }

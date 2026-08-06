@@ -1,7 +1,7 @@
 // src/components/partner/NotificationBell.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Notification {
@@ -15,12 +15,12 @@ interface Notification {
 }
 
 export function NotificationBell({ organizationId }: { organizationId: string }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showDropdown, setShowDropdown] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  async function loadNotifications() {
+  const loadNotifications = useCallback(async () => {
     const { data, error } = await supabase
       .from('notifications')
       .select('*')
@@ -35,7 +35,7 @@ export function NotificationBell({ organizationId }: { organizationId: string })
 
     setNotifications(data || []);
     setUnreadCount((data || []).filter((n: Notification) => !n.read).length);
-  }
+  }, [supabase, organizationId]);
 
   useEffect(() => {
     loadNotifications();
@@ -60,7 +60,7 @@ export function NotificationBell({ organizationId }: { organizationId: string })
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [organizationId]);
+  }, [organizationId, supabase, loadNotifications]);
 
   async function markAsRead(id: string) {
     await supabase.from('notifications').update({ read: true }).eq('id', id);

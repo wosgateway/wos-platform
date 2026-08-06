@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+﻿import type { ReactNode } from 'react';
 
 // This root layout only exists because Next.js requires one at src/app.
 // All real markup (html/body/fonts/providers) lives further down:
