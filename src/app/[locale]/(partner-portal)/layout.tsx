@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Prompt } from 'next/font/google';
-import '../globals.css';
+import '../../globals.css';
 import { requirePartnerAuth } from '@/lib/partner/auth';
 import { PartnerSidebar } from '@/components/partner/PartnerSidebar';
 import { PartnerHeader } from '@/components/partner/PartnerHeader';

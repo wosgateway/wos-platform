@@ -1,19 +1,3 @@
-// app/api/admin/orders/route.ts
-//
-// Lists all orders for the admin bookings view, with order_items,
-// customer, package, and partner data joined in application code —
-// same 3-step pattern as order-items/pending/route.ts. FK constraint
-// names for orders/order_items/customers/packages/partners weren't
-// confirmed from the migration files reviewed (008 wasn't available),
-// so nested PostgREST selects are deliberately avoided here to
-// prevent a silent naming-mismatch failure.
-//
-// Assumes ALLOWED status values are 'pending' | 'confirmed' | 'cancelled'
-// (kept identical to the old bookings.status vocabulary for continuity
-// with BookingsManager.tsx). If migration 008 defines a different set,
-// update ALLOWED_STATUSES in this file and in
-// app/api/admin/orders/[id]/route.ts together.
-
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -34,6 +18,23 @@ interface OrderItemRow {
   transport_return_date: string | null;
   transport_return_time: string | null;
 }
+
+interface PackageRow {
+  id: string;
+  title: string;
+  original_price: number | null;
+  special_price: number | null;
+}
+
+interface PartnerRow {
+  id: string;
+  name: string;
+}
+
+type OrderItemWithRelations = OrderItemRow & {
+  package: PackageRow | null;
+  partner: PartnerRow | null;
+};
 
 export async function GET() {
   const auth = await requireAdmin();
@@ -97,10 +98,16 @@ export async function GET() {
   const [packagesRes, partnersRes] = await Promise.all([
     packageIds.length
       ? supabase.from('packages').select('id, title, original_price, special_price').in('id', packageIds)
-      : Promise.resolve({ data: [] as any[], error: null }),
+      : Promise.resolve({
+          data: [] as PackageRow[],
+          error: null,
+        }),
     partnerIds.length
       ? supabase.from('partners').select('id, name').in('id', partnerIds)
-      : Promise.resolve({ data: [] as any[], error: null }),
+      : Promise.resolve({
+          data: [] as PartnerRow[],
+          error: null,
+        }),
   ]);
 
   if (packagesRes.error) {
@@ -116,7 +123,7 @@ export async function GET() {
   const packageById = new Map((packagesRes.data ?? []).map((p) => [p.id, p]));
   const partnerById = new Map((partnersRes.data ?? []).map((p) => [p.id, p]));
 
-  const itemsByOrder = new Map<string, any[]>();
+  const itemsByOrder = new Map<string, OrderItemWithRelations[]>();
   for (const item of (items ?? []) as OrderItemRow[]) {
     const list = itemsByOrder.get(item.order_id) ?? [];
     list.push({

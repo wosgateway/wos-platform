@@ -8,6 +8,13 @@ import { createClient } from '@/lib/supabase/client';
 const BUSINESS_TYPES = ['clinic_hospital', 'hotel_resort', 'transport_agent', 'investor'] as const;
 type BusinessType = (typeof BUSINESS_TYPES)[number];
 
+const BUSINESS_TYPE_LABEL_KEYS: Record<BusinessType, string> = {
+  clinic_hospital: 'typeClinic',
+  hotel_resort: 'typeHotel',
+  transport_agent: 'typeTransport',
+  investor: 'typeInvestor',
+};
+
 interface FormState {
   contactName: string;
   companyName: string;
@@ -145,10 +152,11 @@ export function BecomePartnerForm() {
                 value={form.partnerType}
                 onChange={(e) => setForm({ ...form, partnerType: e.target.value as BusinessType })}
               >
-                <option value="clinic_hospital">{t('typeClinic')}</option>
-                <option value="hotel_resort">{t('typeHotel')}</option>
-                <option value="transport_agent">{t('typeTransport')}</option>
-                <option value="investor">{t('typeInvestor')}</option>
+                {BUSINESS_TYPES.map((type) => (
+                  <option key={type} value={type}>
+                    {t(BUSINESS_TYPE_LABEL_KEYS[type])}
+                  </option>
+                ))}
               </select>
             </div>
 

@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 
@@ -370,7 +371,14 @@ export function PackagesManager({ partnerId }: { partnerId: string }) {
                 {uploading && <p className="mt-1 text-xs text-slate-400">⏳ กำลังอัปโหลด...</p>}
                 {form.image_url && (
                   <div className="mt-2 flex items-center gap-3">
-                    <img src={form.image_url} alt="preview" className="h-16 w-16 rounded-lg object-cover" />
+                    <Image
+                      src={form.image_url}
+                      alt="preview"
+                      width={64}
+                      height={64}
+                      className="h-16 w-16 rounded-lg object-cover"
+                      unoptimized
+                    />
                     <button
                       type="button"
                       onClick={() => setForm({ ...form, image_url: '' })}

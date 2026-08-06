@@ -6,7 +6,7 @@ import { Prompt } from 'next/font/google';
 import { routing } from '@/i18n/routing';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
-import '../globals.css';
+import '@/app/globals.css';
 
 const prompt = Prompt({
   subsets: ['thai', 'latin'],

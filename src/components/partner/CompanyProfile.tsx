@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 
 interface Organization {
@@ -53,10 +54,8 @@ const DEFAULT_COLORS = ['#0d7c66', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '
 
 export function CompanyProfile({
   organizationId,
-  userId,
 }: {
   organizationId: string;
-  userId: string;
 }) {
   const supabase = createClient();
   const [org, setOrg] = useState<Organization | null>(null);
@@ -230,10 +229,13 @@ export function CompanyProfile({
       {/* Cover Image */}
       <div className="relative rounded-xl overflow-hidden bg-slate-100 h-48">
         {form.cover_image_url ? (
-          <img
+          <Image
             src={form.cover_image_url}
             alt="Cover"
-            className="w-full h-full object-cover"
+            fill
+            sizes="(max-width: 768px) 100vw, 768px"
+            className="object-cover"
+            unoptimized
           />
         ) : (
           <div className="w-full h-full flex items-center justify-center text-slate-400">
@@ -257,9 +259,16 @@ export function CompanyProfile({
       {/* Logo */}
       <div className="flex items-start gap-6 -mt-10 relative z-10 px-4">
         <div className="relative">
-          <div className="w-24 h-24 rounded-2xl bg-white border-4 border-white shadow-card overflow-hidden">
+          <div className="relative w-24 h-24 rounded-2xl bg-white border-4 border-white shadow-card overflow-hidden">
             {form.logo_url ? (
-              <img src={form.logo_url} alt="Logo" className="w-full h-full object-cover" />
+              <Image
+                src={form.logo_url}
+                alt="Logo"
+                fill
+                sizes="96px"
+                className="object-cover"
+                unoptimized
+              />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-3xl text-slate-300">
                 🏢

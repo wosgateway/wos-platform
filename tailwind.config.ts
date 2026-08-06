@@ -1,10 +1,49 @@
 import type { Config } from 'tailwindcss';
-
 const config: Config = {
   content: ['./src/**/*.{ts,tsx}'],
   theme: {
     extend: {
       colors: {
+        // ===== shadcn/ui base tokens — map to CSS variables in globals.css =====
+        // These are required because globals.css uses border-border, bg-background,
+        // text-foreground, outline-ring/50 etc. Without these, Tailwind doesn't
+        // recognize those utility classes and the build fails.
+        border: 'var(--border)',
+        input: 'var(--input)',
+        ring: 'var(--ring)',
+        background: 'var(--background)',
+        foreground: 'var(--foreground)',
+        card: {
+          DEFAULT: 'var(--card)',
+          foreground: 'var(--card-foreground)',
+        },
+        popover: {
+          DEFAULT: 'var(--popover)',
+          foreground: 'var(--popover-foreground)',
+        },
+        secondary: {
+          DEFAULT: 'var(--secondary)',
+          foreground: 'var(--secondary-foreground)',
+        },
+        muted: {
+          DEFAULT: 'var(--muted)',
+          foreground: 'var(--muted-foreground)',
+        },
+        destructive: {
+          DEFAULT: 'var(--destructive)',
+          foreground: 'var(--primary-foreground)',
+        },
+        sidebar: {
+          DEFAULT: 'var(--sidebar)',
+          foreground: 'var(--sidebar-foreground)',
+          primary: 'var(--sidebar-primary)',
+          'primary-foreground': 'var(--sidebar-primary-foreground)',
+          accent: 'var(--sidebar-accent)',
+          'accent-foreground': 'var(--sidebar-accent-foreground)',
+          border: 'var(--sidebar-border)',
+          ring: 'var(--sidebar-ring)',
+        },
+
         // ===== Rebrand: Hospital-first -> Life-first =====
         // เดิม: primary #0d7c66 (เขียวเข้มโทน medical), accent #f59e0b (amber)
         // ใหม่: soft sage green + warm sand/gold -> ความรู้สึก premium wellness
@@ -37,5 +76,4 @@ const config: Config = {
   },
   plugins: [],
 };
-
 export default config;

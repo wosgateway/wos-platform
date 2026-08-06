@@ -57,15 +57,7 @@ export async function POST(request: NextRequest) {
 
   if (channel === 'whatsapp') {
     // TODO: ใช้ WhatsApp Business API หรือ Twilio
-    // ตัวอย่าง: ใช้ Twilio
     try {
-      // const twilio = require('twilio');
-      // const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
-      // await client.messages.create({
-      //   body: message,
-      //   from: `whatsapp:${process.env.TWILIO_WHATSAPP_NUMBER}`,
-      //   to: `whatsapp:${phoneNumber}`,
-      // });
       success = true;
     } catch (e) {
       errorMessage = String(e);
@@ -73,13 +65,6 @@ export async function POST(request: NextRequest) {
   } else if (channel === 'sms') {
     // TODO: ใช้ SMS Gateway
     try {
-      // const twilio = require('twilio');
-      // const client = twilio(process.env.TWILIO_SID, process.env.TWILIO_AUTH_TOKEN);
-      // await client.messages.create({
-      //   body: message,
-      //   from: process.env.TWILIO_PHONE_NUMBER,
-      //   to: phoneNumber,
-      // });
       success = true;
     } catch (e) {
       errorMessage = String(e);
@@ -95,6 +80,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({
     success,
     quoteUrl,
-    message: success ? 'ส่งสำเร็จ' : errorMessage,
+    messageText: message,
+    status: success ? 'ส่งสำเร็จ' : errorMessage,
   });
 }

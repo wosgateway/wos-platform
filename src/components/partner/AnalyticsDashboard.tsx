@@ -1,7 +1,7 @@
 // src/components/partner/AnalyticsDashboard.tsx
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 
@@ -92,7 +92,7 @@ function formatMonthLabel(month: string): string {
 }
 
 export function AnalyticsDashboard({ organizationId }: { organizationId: string }) {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [period, setPeriod] = useState<Period>('30d');
   const [data, setData] = useState<AnalyticsData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -132,7 +132,7 @@ export function AnalyticsDashboard({ organizationId }: { organizationId: string 
     return () => {
       cancelled = true;
     };
-  }, [organizationId, period]);
+  }, [organizationId, period, supabase]);
 
   if (loading) {
     return (

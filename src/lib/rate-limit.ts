@@ -1,45 +1,60 @@
-// lib/rate-limit.ts
+// src/lib/rate-limit.ts
 //
-// Rate limiting for public, unauthenticated endpoints (currently:
-// POST /api/orders). Uses Upstash Redis because it works from
-// Vercel's serverless/edge functions — a plain in-memory counter
-// does NOT work reliably on Vercel, since each invocation can land
-// on a different instance with its own memory, so the count never
-// adds up.
-//
-// Setup required before this works:
-//   1. npm install @upstash/ratelimit @upstash/redis
-//   2. Create a free Redis DB at https://console.upstash.com
-//   3. Add to Vercel env vars (and .env.local for dev):
-//        UPSTASH_REDIS_REST_URL=...
-//        UPSTASH_REDIS_REST_TOKEN=...
-//
-// ---------------------------------------------------------------
-// Simpler alternative, zero code: Vercel's own Firewall has a
-// built-in rate-limiting rule you can attach to a path (e.g.
-// /api/orders) entirely from the dashboard — Project → Firewall →
-// Rate Limiting. No package install, no Redis to provision. Good
-// enough if you just need "block an IP hammering this route" and
-// don't need the limit tied to anything app-specific (like phone
-// number). Use the code below instead if you want that extra
-// specificity, or want the 429 body to say something custom.
-// ---------------------------------------------------------------
+// Simple in-memory rate limiter. Good enough for a single-instance
+// deployment (Vercel serverless functions share memory per warm instance,
+// so this resets on cold start — acceptable for admin-triggered actions
+// like sending quotations, not meant for high-traffic public endpoints).
+// If this ever needs to survive cold starts / work across instances,
+// swap the Map for a Redis-backed store (e.g. Upstash) — the function
+// signature below wouldn't need to change.
 
-import { Ratelimit } from '@upstash/ratelimit';
-import { Redis } from '@upstash/redis';
-
-// 5 requests per phone-scoped identity per 10 minutes. Adjust to
-// taste — this is a starting point, not a business-reviewed number
-// (same caveat as the deposit percentages: confirm with the team
-// before relying on a specific threshold).
-const ratelimit = new Ratelimit({
-  redis: Redis.fromEnv(),
-  limiter: Ratelimit.slidingWindow(5, '10 m'),
-  analytics: true,
-  prefix: 'ratelimit:orders',
-});
-
-export async function checkOrderRateLimit(identifier: string) {
-  const { success, limit, remaining, reset } = await ratelimit.limit(identifier);
-  return { success, limit, remaining, reset };
+interface RateLimitEntry {
+  count: number;
+  resetAt: number;
 }
+
+const store = new Map<string, RateLimitEntry>();
+
+export interface RateLimitResult {
+  allowed: boolean;
+  remaining: number;
+  resetAt: number;
+}
+
+/**
+ * Checks and increments a rate-limit counter for `key`.
+ * @param key Unique identifier for the thing being limited — e.g.
+ *   `send-quotation:${ip}` or `send-quotation:${orderId}`.
+ * @param limit Max allowed calls within the window. Default 5.
+ * @param windowMs Window size in ms. Default 1 hour.
+ */
+export function simpleRateLimit(
+  key: string,
+  limit = 5,
+  windowMs = 60 * 60 * 1000
+): RateLimitResult {
+  const now = Date.now();
+  const entry = store.get(key);
+
+  if (!entry || now > entry.resetAt) {
+    store.set(key, { count: 1, resetAt: now + windowMs });
+    return { allowed: true, remaining: limit - 1, resetAt: now + windowMs };
+  }
+
+  if (entry.count >= limit) {
+    return { allowed: false, remaining: 0, resetAt: entry.resetAt };
+  }
+
+  entry.count += 1;
+  return { allowed: true, remaining: limit - entry.count, resetAt: entry.resetAt };
+}
+
+// Periodic cleanup so the Map doesn't grow forever on a long-lived
+// warm instance. Not critical — Vercel functions recycle often — but
+// cheap insurance for local dev / long-running processes.
+setInterval(() => {
+  const now = Date.now();
+  for (const [key, entry] of store.entries()) {
+    if (now > entry.resetAt) store.delete(key);
+  }
+}, 10 * 60 * 1000).unref?.();

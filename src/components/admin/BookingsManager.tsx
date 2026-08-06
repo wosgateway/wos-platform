@@ -22,6 +22,7 @@
 // booking fields.
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import { formatTHB } from '@/lib/format';
 
 // Matches public.orders.status CHECK constraint (migration 008,
@@ -564,7 +565,12 @@ export function BookingsManager() {
                 return (
                   <tr key={order.id} className="border-b border-slate-50 align-top hover:bg-slate-50">
                     <td className="whitespace-nowrap px-4 py-3">
-                      <div className="font-medium text-slate-800">{order.order_number || order.id.slice(0, 8)}</div>
+                      <Link
+                        href={`/admin/orders/${order.id}`}
+                        className="font-medium text-slate-800 hover:text-primary hover:underline"
+                      >
+                        {order.order_number || order.id.slice(0, 8)}
+                      </Link>
                       <div className="text-xs text-slate-400">{createdAt}</div>
                     </td>
                     <td className="px-4 py-3">

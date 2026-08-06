@@ -1,6 +1,7 @@
 // src/lib/partner/auth.ts
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
+import type { Session } from '@supabase/supabase-js';
 
 export interface PartnerUser {
   id: string;
@@ -27,7 +28,7 @@ export interface PartnerUser {
   } | null;
 }
 
-export async function getPartnerSession(): Promise<{ user: PartnerUser | null; session: any }> {
+export async function getPartnerSession(): Promise<{ user: PartnerUser | null; session: Session | null }> {
   const supabase = createClient();
   const { data: { session } } = await supabase.auth.getSession();
 

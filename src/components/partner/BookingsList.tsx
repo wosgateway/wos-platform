@@ -31,13 +31,6 @@ const STATUS_BADGE: Record<BookingStatus, string> = {
   cancelled: 'bg-red-100 text-red-800',
 };
 
-const STATUS_LABEL: Record<BookingStatus, string> = {
-  pending: 'รอดำเนินการ',
-  confirmed: 'ยืนยันแล้ว',
-  in_progress: 'กำลังดำเนินการ',
-  completed: 'เสร็จสิ้น',
-  cancelled: 'ยกเลิก',
-};
 
 const STATUS_OPTIONS: { value: BookingStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'ทั้งหมด' },
@@ -62,7 +55,7 @@ export function BookingsList({ organizationId }: { organizationId: string }) {
     setLoading(true);
     setError(null);
 
-    let query = supabase
+    const query = supabase
       .from('partner_bookings')
       .select(`
         id,
