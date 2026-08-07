@@ -1,4 +1,4 @@
-import { useTranslations } from 'next-intl';
+import { getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { CATEGORIES } from '@/lib/categories';
 import { WHY_IMAGES } from '@/lib/why';
@@ -21,8 +21,8 @@ const HERO_SLIDES = [
 ];
 
 export default async function HomePage() {
-  const t = useTranslations('home');
-  const tCat = useTranslations('categories');
+  const t = await getTranslations('home');
+  const tCat = await getTranslations('categories');
 
   const whyItems = t.raw('why.items') as { title: string; desc: string }[];
 
