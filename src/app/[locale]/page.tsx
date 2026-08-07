@@ -1,10 +1,14 @@
 import { useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { CATEGORIES } from '@/lib/categories';
+import { WHY_IMAGES } from '@/lib/why';
+import { fetchFeaturedPackages } from '@/lib/data';
 import { CategoryCard } from '@/components/CategoryCard';
+import { WhyCard } from '@/components/WhyCard';
 import { TrustBar } from '@/components/TrustBar';
 import { PartnerLogos } from '@/components/PartnerLogos';
 import { JourneyTimeline } from '@/components/JourneyTimeline';
+import { FeaturedProgramsSlider } from '@/components/FeaturedProgramsSlider';
 import { Testimonials } from '@/components/Testimonials';
 import { FAQ } from '@/components/FAQ';
 import { HowItWorks } from '@/components/HowItWorks';
@@ -16,11 +20,20 @@ const HERO_SLIDES = [
   { src: '/images/hero/hero-3.webp', alt: 'บริการข้ามพรมแดนไทย-ลาว' },
 ];
 
-export default function HomePage() {
+export default async function HomePage() {
   const t = useTranslations('home');
   const tCat = useTranslations('categories');
 
   const whyItems = t.raw('why.items') as { title: string; desc: string }[];
+
+  // ดึงแพ็กเกจโปรโมชันมาแสดงเป็นสไลด์ "โปรแกรมแนะนำ" — กันพังทั้งหน้า
+  // ถ้า query ล้มเหลว (เช่น ยังไม่มีแพ็กเกจติด is_promotion) ให้ fallback เป็น [] เฉยๆ
+  let featuredPackages: Awaited<ReturnType<typeof fetchFeaturedPackages>> = [];
+  try {
+    featuredPackages = await fetchFeaturedPackages();
+  } catch (err) {
+    console.error('fetchFeaturedPackages failed', err);
+  }
 
   return (
     <main>
@@ -69,13 +82,13 @@ export default function HomePage() {
           </h2>
           <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {whyItems.map((item, i) => (
-              <div key={i} className="card-shadow rounded-2xl border border-slate-100 bg-white p-6">
-                <div className="mb-3 flex h-10 w-10 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  ✓
-                </div>
-                <h3 className="font-semibold text-slate-900">{item.title}</h3>
-                <p className="mt-2 text-sm text-slate-500">{item.desc}</p>
-              </div>
+              <WhyCard
+                key={i}
+                image={WHY_IMAGES[i]?.image ?? '/images/hero/hero-main.webp'}
+                alt={WHY_IMAGES[i]?.alt ?? item.title}
+                title={item.title}
+                desc={item.desc}
+              />
             ))}
           </div>
         </div>
@@ -94,6 +107,9 @@ export default function HomePage() {
           ))}
         </div>
       </section>
+
+      {/* ===== FEATURED PROGRAMS SLIDER (NEW) ===== */}
+      <FeaturedProgramsSlider packages={featuredPackages} />
 
       {/* ===== HOW WOS WORKS (NEW) ===== */}
       <HowItWorks />

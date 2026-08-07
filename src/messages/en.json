@@ -96,6 +96,12 @@
     },
     "categoriesTitle": "Choose Your Health Goal",
     "categoriesSubtitle": "Whether it's prevention, recovery, or treatment, we'll connect you with the right partner",
+    "featured": {
+      "title": "Featured Programs",
+      "subtitle": "Handpicked promotions and popular programs from our partners",
+      "prev": "Previous program",
+      "next": "Next program"
+    },
     "howItWorks": {
       "title": "How WOS Works",
       "subtitle": "Three simple steps, from finding a program to traveling home with confidence",

@@ -79,6 +79,22 @@ export async function fetchPackageById(id: string): Promise<Package> {
   return data;
 }
 
+// ใช้สำหรับสไลด์ "โปรแกรมแนะนำ" หน้า home — ดึงแพ็กเกจโปรโมชันจากพันธมิตรที่ active
+// เรียงตามล่าสุดก่อน จำกัดจำนวนไม่ให้สไลด์ยาวเกินไป
+export async function fetchFeaturedPackages(limit = 8): Promise<Package[]> {
+  const supabase = createClient();
+  const { data, error } = await supabase
+    .from('packages')
+    .select('*, partners!inner(id, name, category, status)')
+    .eq('is_promotion', true)
+    .eq('status', 'published')
+    .eq('partners.status', 'active')
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function fetchPackagesByCategory(dbCategories: string[]): Promise<Package[]> {
   const supabase = createClient();
   const { data, error } = await supabase
