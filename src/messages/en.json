@@ -2,8 +2,8 @@
   "home": {
     "hero": {
       "badge": "Cross-border Health & Longevity Platform",
-      "title": "Complete Cross-border Health Journey",
-      "subtitle": "Seamlessly managing every step of your health journey—from program selection, appointments, travel, and accommodation to post-care—with a trusted Concierge team.",
+      "title": "Complete Wellness & Recovery Journey",
+      "subtitle": "Supporting you at every step — from selecting programs, transportation, accommodation to post-treatment recovery.",
       "ctaPrimary": "Explore Health Programs",
       "ctaSecondary": "For Partners"
     },
@@ -96,6 +96,12 @@
     },
     "categoriesTitle": "Choose Your Health Goal",
     "categoriesSubtitle": "Whether it's prevention, recovery, or treatment, we'll connect you with the right partner",
+    "featured": {
+      "title": "Featured Programs",
+      "subtitle": "Handpicked promotions and popular programs from our partners",
+      "prev": "Previous program",
+      "next": "Next program"
+    },
     "howItWorks": {
       "title": "How WOS Works",
       "subtitle": "Three simple steps, from finding a program to traveling home with confidence",
@@ -338,5 +344,10 @@
     "allProvinces": "All Provinces",
     "noResults": "No partners match your search",
     "loadError": "Unable to load partner data right now. Please try again."
+  },
+  "whatsapp": {
+    "tooltip": "Chat with us on WhatsApp",
+    "ariaLabel": "Chat with WOS on WhatsApp",
+    "message": "Hi, I'd like to ask about WOS health programs."
   }
 }
