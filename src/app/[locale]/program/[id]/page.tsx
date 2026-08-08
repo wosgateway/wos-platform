@@ -6,6 +6,7 @@ import { formatTHB } from '@/lib/format';
 import { normalizeImageSrc } from '@/lib/image';
 import { Breadcrumb } from '@/components/Breadcrumb';
 import { Link } from '@/i18n/navigation';
+import { AddToJourneyButton } from '@/components/journey/AddToJourneyButton';
 
 export default async function ProgramDetailPage({
   params: { id },
@@ -101,13 +102,14 @@ export default async function ProgramDetailPage({
             </div>
           ) : null}
 
-          <div className="mt-8">
+          <div className="mt-8 flex flex-col gap-3 sm:flex-row sm:items-center">
             <Link
               href={`/booking/${pkg.id}`}
               className="btn-primary w-full justify-center text-base sm:w-auto"
             >
               {t('bookNow')}
             </Link>
+            <AddToJourneyButton pkg={pkg} />
           </div>
 
           <div className="mt-10 text-center">

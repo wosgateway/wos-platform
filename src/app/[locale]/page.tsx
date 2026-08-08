@@ -48,7 +48,7 @@ export default async function HomePage() {
           <h1 className="mt-5 text-3xl font-bold leading-tight text-white md:text-5xl drop-shadow-md">
             {t('hero.title')}
           </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-white/90 md:text-lg">
+          <p className="mx-auto mt-4 max-w-2xl text-white/90 drop-shadow-md md:text-lg">
             {t('hero.subtitle')}
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-4">

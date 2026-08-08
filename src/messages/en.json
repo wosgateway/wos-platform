@@ -745,5 +745,19 @@
         ]
       }
     }
+  },
+  "journey": {
+    "addToJourney": "Add to My Journey",
+    "added": "Added",
+    "cartBarLabel": "My Health Journey",
+    "remove": "Remove",
+    "goToBooking": "Go to booking",
+    "title": "Book Your Health Journey",
+    "itemsCount": "{count} items selected",
+    "tripDate": "Trip start date",
+    "tripTime": "Preferred start time",
+    "emptyTitle": "Your journey is empty",
+    "emptyBody": "Pick programs or services you're interested in and tap \"+ Add to My Journey\" to bundle several bookings into one.",
+    "emptyCta": "Browse programs"
   }
 }

@@ -7,6 +7,8 @@ import { routing } from '@/i18n/routing';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { WhatsAppButton } from '@/components/WhatsAppButton';
+import { JourneyProvider } from '@/lib/journey/context';
+import { JourneyCartBar } from '@/components/journey/JourneyCartBar';
 import '@/app/globals.css';
 
 const prompt = Prompt({
@@ -36,10 +38,13 @@ export default async function LocaleLayout({
     <html lang={locale} className={prompt.variable}>
       <body className="font-sans bg-white text-slate-900">
         <NextIntlClientProvider messages={messages}>
-          <Header />
-          {children}
-          <Footer />
-          <WhatsAppButton />
+          <JourneyProvider>
+            <Header />
+            {children}
+            <Footer />
+            <WhatsAppButton />
+            <JourneyCartBar />
+          </JourneyProvider>
         </NextIntlClientProvider>
       </body>
     </html>

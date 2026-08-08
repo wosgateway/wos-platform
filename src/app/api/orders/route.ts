@@ -28,6 +28,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import { notifyNewOrder } from '@/lib/notify/order-notify';
 
 interface CustomerInput {
   full_name: string;
@@ -224,6 +225,53 @@ export async function POST(req: NextRequest) {
       { order_number: data.order_number, error: 'order created, failed to load totals — refresh to retry' },
       { status: 207 }
     );
+  }
+
+  // --- Fire the instant Admin notification (LINE/Telegram/webhook). ---
+  // Best-effort and non-blocking to the *customer* (they already have
+  // their order_number either way), but we do await it here rather
+  // than truly fire-and-forget — on serverless (Vercel) an un-awaited
+  // promise can get killed the instant this function returns its
+  // response, so an un-awaited call here would silently never fire.
+  // notifyNewOrder() itself never throws, so this can't turn into a
+  // 500 for the customer even if every channel is down.
+  try {
+    // order_items has no admin-readable RLS policy (see
+    // BookingsManager.tsx comment) — must read via the service-role
+    // client, which we already have in scope here.
+    const { data: orderItems, error: itemsErr } = await supabase
+      .from('order_items')
+      .select('service_type, scheduled_date, needs_assignment, package:packages(title), partner:partners(name)')
+      .eq('order_id', data.order_id);
+
+    if (itemsErr) {
+      console.error('failed to load order_items for notification:', itemsErr);
+    }
+
+    const notifyItems = (orderItems ?? []).map((item) => {
+      const packageTitle = item.package?.[0]?.title as string | undefined;
+      const partnerName = item.partner?.[0]?.name as string | undefined;
+      const label = item.needs_assignment
+        ? `${item.service_type === 'hotel' ? '🏨' : '🚗'} ${item.service_type} (ให้ทีมงานจัด)`
+        : [packageTitle, partnerName].filter(Boolean).join(' — ') || item.service_type;
+      return { label, scheduledDate: item.scheduled_date as string | null };
+    });
+
+    await notifyNewOrder({
+      orderId: data.order_id,
+      orderNumber: order.order_number,
+      customerName: customer.full_name.trim(),
+      customerPhone: phone,
+      totalAmount: order.total_amount,
+      totalDepositRequired: order.total_deposit_required,
+      currency: order.currency,
+      items: notifyItems,
+    });
+  } catch (notifyErr) {
+    // Belt-and-suspenders — notifyNewOrder() already swallows its own
+    // per-channel errors, but never let ANY notification issue affect
+    // the customer-facing response.
+    console.error('order notification dispatch failed:', notifyErr);
   }
 
   return NextResponse.json(
