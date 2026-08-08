@@ -1,0 +1,54 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad1" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4efe4"/>
+      <stop offset="100%" stop-color="#e9e1cf"/>
+    </linearGradient>
+    <linearGradient id="riverGrad" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#a9c6bd"/>
+      <stop offset="100%" stop-color="#8fb6ac"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#bgGrad1)"/>
+
+  <!-- two riverbanks representing the border crossing -->
+  <path d="M0 300 Q 200 260 400 300 T 800 300 V450 H0 Z" fill="#dcd3bb"/>
+  <path d="M0 330 Q 220 290 400 330 T 800 330 V450 H0 Z" fill="#cfc4a6"/>
+
+  <!-- river / border line -->
+  <path d="M0 300 Q 200 250 400 295 T 800 290" fill="none" stroke="url(#riverGrad)" stroke-width="34" stroke-linecap="round"/>
+
+  <!-- dashed travel route arcing over the river, echoing JourneyTimeline motif -->
+  <path d="M150 260 Q 400 130 650 250" fill="none" stroke="#5b8c6e" stroke-width="4" stroke-dasharray="2 14" stroke-linecap="round"/>
+
+  <!-- small circle waypoints along the route -->
+  <circle cx="150" cy="260" r="8" fill="#5b8c6e"/>
+  <circle cx="650" cy="250" r="8" fill="#5b8c6e"/>
+
+  <!-- passport card, centered as the hero object -->
+  <g transform="translate(310,150)">
+    <rect x="0" y="0" width="180" height="130" rx="14" fill="#3f6b53"/>
+    <rect x="10" y="10" width="160" height="110" rx="8" fill="#5b8c6e"/>
+    <!-- emblem -->
+    <circle cx="90" cy="55" r="22" fill="#f4efe4" opacity="0.9"/>
+    <path d="M90 42 L96 55 L90 68 L84 55 Z" fill="#3f6b53"/>
+    <rect x="45" y="90" width="90" height="8" rx="4" fill="#f4efe4" opacity="0.7"/>
+    <rect x="60" y="104" width="60" height="6" rx="3" fill="#f4efe4" opacity="0.5"/>
+  </g>
+
+  <!-- simple house/clinic marker on the right bank -->
+  <g transform="translate(600,300)">
+    <rect x="-30" y="-10" width="60" height="45" fill="#ffffff"/>
+    <path d="M-38 -10 L0 -42 L38 -10 Z" fill="#3f6b53"/>
+    <rect x="-8" y="8" width="16" height="27" fill="#5b8c6e"/>
+    <rect x="-22" y="0" width="12" height="10" fill="#d7cdb0"/>
+    <rect x="10" y="0" width="12" height="10" fill="#d7cdb0"/>
+  </g>
+
+  <!-- small figure walking toward the crossing, on the left bank -->
+  <g transform="translate(170,300)">
+    <circle cx="0" cy="-32" r="9" fill="#3f6b53"/>
+    <path d="M0 -22 L0 6 M0 -14 L-14 -4 M0 -14 L14 -4 M0 6 L-10 26 M0 6 L10 26" stroke="#3f6b53" stroke-width="5" stroke-linecap="round"/>
+  </g>
+</svg>
