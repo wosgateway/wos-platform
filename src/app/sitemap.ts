@@ -2,6 +2,7 @@ import type { MetadataRoute } from 'next';
 import { createClient } from '@supabase/supabase-js';
 import { routing } from '@/i18n/routing';
 import { CATEGORIES } from '@/lib/categories';
+import { KNOWLEDGE_ARTICLES } from '@/lib/knowledge';
 
 // Dynamic sitemap replacing the old static public/sitemap.xml.
 // Next.js serves this at /sitemap.xml automatically (App Router convention:
@@ -94,7 +95,23 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   }
 
-  // 3. Partner detail pages — real IDs from Supabase, per locale
+  // 3. Knowledge Center — listing page + each article, per locale
+  for (const locale of LOCALES) {
+    entries.push({
+      url: `${SITE_URL}/${locale}/knowledge`,
+      changeFrequency: 'monthly',
+      priority: 0.5,
+    });
+    for (const article of KNOWLEDGE_ARTICLES) {
+      entries.push({
+        url: `${SITE_URL}/${locale}/knowledge/${article.slug}`,
+        changeFrequency: 'monthly',
+        priority: 0.5,
+      });
+    }
+  }
+
+  // 4. Partner detail pages — real IDs from Supabase, per locale
   for (const locale of LOCALES) {
     for (const partner of partners) {
       entries.push({
@@ -105,7 +122,7 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     }
   }
 
-  // 4. Program (package) detail pages — real IDs from Supabase, per locale
+  // 5. Program (package) detail pages — real IDs from Supabase, per locale
   for (const locale of LOCALES) {
     for (const pkg of packages) {
       entries.push({

@@ -102,27 +102,6 @@
       "prev": "Previous program",
       "next": "Next program"
     },
-    "howItWorks": {
-      "title": "How WOS Works",
-      "subtitle": "Three simple steps, from finding a program to traveling home with confidence",
-      "steps": [
-        {
-          "icon": "🔍",
-          "title": "Choose Your Health Goal",
-          "desc": "From checkups to recovery to aesthetics — pick what matters to you"
-        },
-        {
-          "icon": "🤝",
-          "title": "Book Everything in One Place",
-          "desc": "Add hotel and transport to your program in a single booking, with clear pricing"
-        },
-        {
-          "icon": "🌿",
-          "title": "Travel with Confidence",
-          "desc": "Our team supports you the whole way, from appointment to the trip home"
-        }
-      ]
-    },
     "testimonials": {
       "title": "What Our Patients Say",
       "items": [
@@ -167,6 +146,26 @@
           "a": "Our team provides interpreters and multilingual support throughout your trip."
         }
       ]
+    },
+    "knowledge": {
+      "title": "Learn Before You Go",
+      "subtitle": "Knowledge Center — answers for your medical trip to Thailand",
+      "readMore": "Read more →",
+      "viewAll": "View all articles →",
+      "articles": {
+        "lao-cross-border-treatment": {
+          "title": "Can Lao citizens get treatment in Thailand?",
+          "teaser": "A quick answer on the documents and steps to know before crossing over for care"
+        },
+        "insurance-coverage": {
+          "title": "Does my health insurance work at Thai hospitals?",
+          "teaser": "Coverage varies by policy — here's what to check before you travel"
+        },
+        "clinic-vs-hospital": {
+          "title": "What's the difference between a clinic and a hospital?",
+          "teaser": "Understand the difference so you can pick the right place for your needs"
+        }
+      }
     }
   },
   "categories": {
@@ -349,5 +348,67 @@
     "tooltip": "Chat with us on WhatsApp",
     "ariaLabel": "Chat with WOS on WhatsApp",
     "message": "Hi, I'd like to ask about WOS health programs."
+  },
+  "knowledge": {
+    "pageTitle": "Knowledge Center",
+    "pageSubtitle": "Answers for your medical trip to Thailand",
+    "readMore": "Read more →",
+    "disclaimer": "This is general information to help you prepare — not medical, immigration, or binding insurance advice. Please confirm details with the hospital or clinic, immigration checkpoint, or your insurer before you travel.",
+    "articles": {
+      "lao-cross-border-treatment": {
+        "title": "Can Lao citizens get treatment in Thailand?",
+        "teaser": "A quick answer on the documents and steps to know before crossing over for care",
+        "sections": [
+          {
+            "heading": "In general, yes",
+            "body": "Most private hospitals and clinics in Thailand accept self-paying foreign patients regardless of nationality. You'll need a valid passport plus a border pass or visa for the checkpoint you're using — requirements can vary depending on how long you plan to stay and which crossing you use."
+          },
+          {
+            "heading": "Documents you'll usually need",
+            "body": "A passport valid for several more months, the border pass or visa required for your entry point, the destination hospital's contact details, and — if you've been treated before — a translated copy of your medical records in case the doctor needs to reference them."
+          },
+          {
+            "heading": "What to confirm with the hospital beforehand",
+            "body": "Call or message ahead to ask whether they have a foreign-patient coordination team or a Lao-Thai interpreter, what payment methods they accept, and if your condition is more complex, book an appointment in advance so a specialist is available."
+          }
+        ]
+      },
+      "insurance-coverage": {
+        "title": "Does my health insurance work at Thai hospitals?",
+        "teaser": "Coverage varies by policy — here's what to check before you travel",
+        "sections": [
+          {
+            "heading": "Your domestic health insurance",
+            "body": "Most national or domestic health insurance plans only cover treatment received within your own country. Care at a Thai hospital usually isn't covered unless your policy explicitly states it includes cross-border treatment."
+          },
+          {
+            "heading": "Travel or international health insurance",
+            "body": "Some travel or international health insurance plans cover emergency treatment abroad. Check whether pre-existing conditions are covered, and whether the plan covers planned (non-emergency) treatment as well as emergencies."
+          },
+          {
+            "heading": "Pay first, claim later",
+            "body": "Many patients pay the Thai hospital directly, then submit receipts and a medical report to their insurer for reimbursement afterward. Ask your insurer in advance exactly which documents they need, and whether those documents need to be translated."
+          }
+        ]
+      },
+      "clinic-vs-hospital": {
+        "title": "What's the difference between a clinic and a hospital?",
+        "teaser": "Understand the difference so you can pick the right place for your needs",
+        "sections": [
+          {
+            "heading": "Size and scope of care",
+            "body": "Clinics are typically small and focused on a specific specialty — dental, dermatology, or minor procedures that don't require an overnight stay — with shorter wait times. Hospitals are larger, cover many departments, and can handle surgery, inpatient stays, and complex or emergency cases."
+          },
+          {
+            "heading": "Which one fits your situation",
+            "body": "For routine checkups, dental work, or minor cosmetic procedures, a clinic is usually faster and works well. For surgery, hospital admission, complex diagnostics, or an emergency, a hospital is the safer choice."
+          },
+          {
+            "heading": "Cost and time",
+            "body": "Clinics tend to be cheaper and quicker for straightforward cases. Hospitals may charge additional facility fees, but offer more backup and continuity of care if complications come up."
+          }
+        ]
+      }
+    }
   }
 }

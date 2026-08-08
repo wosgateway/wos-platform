@@ -1,0 +1,40 @@
+<svg viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad2" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eef2ee"/>
+      <stop offset="100%" stop-color="#dfe8e0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#bgGrad2)"/>
+
+  <!-- soft backdrop circle -->
+  <circle cx="400" cy="225" r="170" fill="#d9e6dc"/>
+
+  <!-- receipt / claim document, tucked behind the shield -->
+  <g transform="translate(430,120) rotate(8)">
+    <rect x="0" y="0" width="130" height="170" rx="8" fill="#ffffff" stroke="#c9d6cb" stroke-width="2"/>
+    <rect x="16" y="24" width="98" height="8" rx="4" fill="#a9c6bd"/>
+    <rect x="16" y="44" width="98" height="6" rx="3" fill="#dbe4dc"/>
+    <rect x="16" y="58" width="70" height="6" rx="3" fill="#dbe4dc"/>
+    <rect x="16" y="82" width="98" height="6" rx="3" fill="#dbe4dc"/>
+    <rect x="16" y="96" width="60" height="6" rx="3" fill="#dbe4dc"/>
+    <path d="M16 130 L28 142 L48 118" fill="none" stroke="#5b8c6e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="16" y="150" width="98" height="6" rx="3" fill="#dbe4dc"/>
+  </g>
+
+  <!-- shield, hero object -->
+  <g transform="translate(255,90)">
+    <path d="M110 0 C170 20 210 26 220 30 C220 130 190 210 110 250 C30 210 0 130 0 30 C10 26 50 20 110 0 Z" fill="#3f6b53"/>
+    <path d="M110 18 C162 35 196 40 205 43 C205 128 178 198 110 232 C42 198 15 128 15 43 C24 40 58 35 110 18 Z" fill="#5b8c6e"/>
+    <!-- cross / heart motif -->
+    <rect x="94" y="70" width="32" height="110" rx="8" fill="#f4efe4"/>
+    <rect x="55" y="109" width="110" height="32" rx="8" fill="#f4efe4"/>
+  </g>
+
+  <!-- checkmark badge floating near shield -->
+  <g transform="translate(200,310)">
+    <circle cx="0" cy="0" r="26" fill="#ffffff" stroke="#5b8c6e" stroke-width="3"/>
+    <path d="M-11 0 L-3 9 L13 -10" fill="none" stroke="#5b8c6e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

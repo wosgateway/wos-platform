@@ -11,7 +11,7 @@ import { JourneyTimeline } from '@/components/JourneyTimeline';
 import { FeaturedProgramsSlider } from '@/components/FeaturedProgramsSlider';
 import { Testimonials } from '@/components/Testimonials';
 import { FAQ } from '@/components/FAQ';
-import { HowItWorks } from '@/components/HowItWorks';
+import { KnowledgeCenter } from '@/components/KnowledgeCenter';
 import HeroSlider from '@/components/HeroSlider';
 
 const HERO_SLIDES = [
@@ -111,8 +111,8 @@ export default async function HomePage() {
       {/* ===== FEATURED PROGRAMS SLIDER (NEW) ===== */}
       <FeaturedProgramsSlider packages={featuredPackages} />
 
-      {/* ===== HOW WOS WORKS (NEW) ===== */}
-      <HowItWorks />
+      {/* ===== KNOWLEDGE CENTER (replaces old HowItWorks 3-step block) ===== */}
+      <KnowledgeCenter />
 
       {/* ===== TESTIMONIALS (NEW) ===== */}
       <Testimonials />
