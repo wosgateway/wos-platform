@@ -4,8 +4,13 @@
 // เนื้อหาเต็มดึงจาก messages/*.json namespace `knowledge.articles.<slug>`
 // เหมือนแพทเทิร์นของ app/[locale]/category/[slug]/page.tsx (notFound() ถ้า
 // slug ไม่รู้จัก หรือไม่มีเนื้อหาแปลไว้)
+//
+// หมายเหตุ: ใช้ <img> ธรรมดาแทน next/image <Image> สำหรับรูป SVG ใน
+// knowledge center ทั้งหมด (เหมือนที่แก้ใน components/KnowledgeCenter.tsx)
+// เพราะ Next Image Optimizer คืน "received null" กับไฟล์ SVG พวกนี้ทุกไฟล์
+// แม้ตรวจสอบแล้วว่าไฟล์ถูกต้อง — SVG เล็ก ๆ พวกนี้ไม่ได้ประโยชน์จาก
+// optimization อยู่แล้ว จึงเลี่ยงปัญหาด้วยการ serve ตรง ๆ
 
-import Image from 'next/image';
 import { getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { Breadcrumb } from '@/components/Breadcrumb';
@@ -47,13 +52,11 @@ export default async function KnowledgeArticlePage({
       <article className="pb-16 pt-4">
         <div className="mx-auto max-w-2xl px-4 sm:px-6">
           <div className="relative h-48 w-full overflow-hidden rounded-2xl sm:h-64">
-            <Image
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
               src={meta.image}
               alt={article.title}
-              fill
-              priority
-              className="object-cover"
-              sizes="(max-width: 768px) 100vw, 672px"
+              className="absolute inset-0 h-full w-full object-cover"
             />
           </div>
 

@@ -3,8 +3,13 @@
 // (components/KnowledgeCenter.tsx) เนื้อหาการ์ดดึงจาก messages/*.json
 // namespace `knowledge.articles.<slug>` (คนละ namespace กับ home.knowledge
 // ที่ใช้บนหน้าแรก เพราะ teaser อาจอยากปรับให้ต่างกันได้ในอนาคต)
+//
+// หมายเหตุ: ใช้ <img> ธรรมดาแทน next/image <Image> สำหรับรูป SVG ใน
+// knowledge center ทั้งหมด (เหมือนที่แก้ใน components/KnowledgeCenter.tsx)
+// เพราะ Next Image Optimizer คืน "received null" กับไฟล์ SVG พวกนี้ทุกไฟล์
+// แม้ตรวจสอบแล้วว่าไฟล์ถูกต้อง — SVG เล็ก ๆ พวกนี้ไม่ได้ประโยชน์จาก
+// optimization อยู่แล้ว จึงเลี่ยงปัญหาด้วยการ serve ตรง ๆ
 
-import Image from 'next/image';
 import { getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
 import { Breadcrumb } from '@/components/Breadcrumb';
@@ -40,12 +45,11 @@ export default async function KnowledgeIndexPage() {
                   className="card-shadow group flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white text-left transition hover:-translate-y-0.5"
                 >
                   <div className="relative h-36 w-full overflow-hidden">
-                    <Image
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
                       src={image}
                       alt={article.title}
-                      fill
-                      className="object-cover transition-transform duration-300 group-hover:scale-105"
-                      sizes="(max-width: 768px) 100vw, 33vw"
+                      className="absolute inset-0 h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                     />
                   </div>
                   <div className="flex flex-1 flex-col items-start p-6">

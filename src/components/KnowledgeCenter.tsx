@@ -7,10 +7,9 @@
 // เป็น server component (ไม่ใช้ 'use client' เหมือนไฟล์เดิม) เพราะไม่มีส่วนที่
 // ต้อง interactive ฝั่ง client เลย — ใช้ getTranslations แบบเดียวกับ page.tsx
 
-import Image from 'next/image';
 import { getTranslations } from 'next-intl/server';
 import { Link } from '@/i18n/navigation';
-import { KNOWLEDGE_ARTICLES } from '@/lib/knowledge';
+import { getFeaturedKnowledgeArticles } from '@/lib/knowledge';
 
 interface KnowledgeCardText {
   title: string;
@@ -20,6 +19,7 @@ interface KnowledgeCardText {
 export async function KnowledgeCenter() {
   const t = await getTranslations('home.knowledge');
   const cards = t.raw('articles') as Record<string, KnowledgeCardText>;
+  const featuredArticles = getFeaturedKnowledgeArticles();
 
   return (
     <section className="bg-sand py-16 md:py-20">
@@ -28,7 +28,7 @@ export async function KnowledgeCenter() {
         <p className="mx-auto mt-3 max-w-xl text-slate-600">{t('subtitle')}</p>
 
         <div className="mt-12 grid gap-6 md:grid-cols-3">
-          {KNOWLEDGE_ARTICLES.map(({ slug, icon, image }) => {
+          {featuredArticles.map(({ slug, icon, image }) => {
             const card = cards[slug];
             if (!card) return null;
 
@@ -39,12 +39,11 @@ export async function KnowledgeCenter() {
                 className="card-shadow group flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white text-left transition hover:-translate-y-0.5"
               >
                 <div className="relative h-36 w-full overflow-hidden">
-                  <Image
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
                     src={image}
                     alt={card.title}
-                    fill
-                    className="object-cover transition-transform duration-300 group-hover:scale-105"
-                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
                   />
                 </div>
                 <div className="flex flex-1 flex-col items-start p-6">

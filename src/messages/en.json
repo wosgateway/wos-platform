@@ -2,8 +2,8 @@
   "home": {
     "hero": {
       "badge": "Cross-border Health & Longevity Platform",
-      "title": "Complete Wellness & Recovery Journey",
-      "subtitle": "Supporting you at every step — from selecting programs, transportation, accommodation to post-treatment recovery.",
+      "title": "Complete Cross-border Health Journey",
+      "subtitle": "Seamlessly managing every step of your health journey—from program selection, appointments, travel, and accommodation to post-care—with a trusted Concierge team.",
       "ctaPrimary": "Explore Health Programs",
       "ctaSecondary": "For Partners"
     },
@@ -102,6 +102,27 @@
       "prev": "Previous program",
       "next": "Next program"
     },
+    "howItWorks": {
+      "title": "How WOS Works",
+      "subtitle": "Three simple steps, from finding a program to traveling home with confidence",
+      "steps": [
+        {
+          "icon": "🔍",
+          "title": "Choose Your Health Goal",
+          "desc": "From checkups to recovery to aesthetics — pick what matters to you"
+        },
+        {
+          "icon": "🤝",
+          "title": "Book Everything in One Place",
+          "desc": "Add hotel and transport to your program in a single booking, with clear pricing"
+        },
+        {
+          "icon": "🌿",
+          "title": "Travel with Confidence",
+          "desc": "Our team supports you the whole way, from appointment to the trip home"
+        }
+      ]
+    },
     "testimonials": {
       "title": "What Our Patients Say",
       "items": [
@@ -148,22 +169,22 @@
       ]
     },
     "knowledge": {
-      "title": "Learn Before You Go",
-      "subtitle": "Knowledge Center — answers for your medical trip to Thailand",
+      "title": "Learn Before You Begin Treatment",
+      "subtitle": "Knowledge Center — answers for your journey to receive treatment in Thailand",
       "readMore": "Read more →",
       "viewAll": "View all articles →",
       "articles": {
         "lao-cross-border-treatment": {
-          "title": "Can Lao citizens get treatment in Thailand?",
-          "teaser": "A quick answer on the documents and steps to know before crossing over for care"
+          "title": "Can Lao Citizens Receive Medical Treatment in Thailand?",
+          "teaser": "A quick answer on the documents and steps you should know before crossing over for treatment in Thailand"
         },
         "insurance-coverage": {
-          "title": "Does my health insurance work at Thai hospitals?",
-          "teaser": "Coverage varies by policy — here's what to check before you travel"
+          "title": "Does Health Insurance Cover Treatment at Thai Hospitals?",
+          "teaser": "Different policies have different terms — here's what to check before you travel"
         },
         "clinic-vs-hospital": {
-          "title": "What's the difference between a clinic and a hospital?",
-          "teaser": "Understand the difference so you can pick the right place for your needs"
+          "title": "What's the Difference Between a Clinic and a Hospital?",
+          "teaser": "Understand the difference so you can choose the right facility for your needs"
         }
       }
     }
@@ -347,65 +368,379 @@
   "whatsapp": {
     "tooltip": "Chat with us on WhatsApp",
     "ariaLabel": "Chat with WOS on WhatsApp",
-    "message": "Hi, I'd like to ask about WOS health programs."
+    "message": "Hello, I'd like to ask about WOS health programs."
   },
   "knowledge": {
     "pageTitle": "Knowledge Center",
-    "pageSubtitle": "Answers for your medical trip to Thailand",
+    "pageSubtitle": "Answers for your journey to receive treatment in Thailand",
     "readMore": "Read more →",
-    "disclaimer": "This is general information to help you prepare — not medical, immigration, or binding insurance advice. Please confirm details with the hospital or clinic, immigration checkpoint, or your insurer before you travel.",
+    "disclaimer": "The content above is general information for basic preparation, not binding medical advice, immigration law, or insurance policy terms. Please verify the details with the relevant facility, immigration checkpoint, or your insurance company again before you travel.",
     "articles": {
       "lao-cross-border-treatment": {
-        "title": "Can Lao citizens get treatment in Thailand?",
-        "teaser": "A quick answer on the documents and steps to know before crossing over for care",
+        "title": "Can Lao Citizens Receive Medical Treatment in Thailand?",
+        "teaser": "A quick answer on the documents and steps you should know before crossing over for treatment in Thailand",
         "sections": [
           {
-            "heading": "In general, yes",
-            "body": "Most private hospitals and clinics in Thailand accept self-paying foreign patients regardless of nationality. You'll need a valid passport plus a border pass or visa for the checkpoint you're using — requirements can vary depending on how long you plan to stay and which crossing you use."
+            "heading": "Generally, Yes",
+            "body": "Most private hospitals and clinics in Thailand accept self-paying foreign patients regardless of nationality. What you need is a passport that hasn't expired, along with the border-crossing document or visa required for your entry point — requirements can vary depending on length of stay and which crossing you use."
           },
           {
-            "heading": "Documents you'll usually need",
-            "body": "A passport valid for several more months, the border pass or visa required for your entry point, the destination hospital's contact details, and — if you've been treated before — a translated copy of your medical records in case the doctor needs to reference them."
+            "heading": "Documents You'll Typically Need",
+            "body": "A passport valid for at least several more months, a border pass or visa as required at the checkpoint, the contact number and name of your destination facility, and if you've been treated before, a translated copy of your medical history in case the doctor needs to reference it."
           },
           {
-            "heading": "What to confirm with the hospital beforehand",
-            "body": "Call or message ahead to ask whether they have a foreign-patient coordination team or a Lao-Thai interpreter, what payment methods they accept, and if your condition is more complex, book an appointment in advance so a specialist is available."
+            "heading": "What to Check With the Facility Before You Travel",
+            "body": "Call or message ahead to ask whether the hospital has a foreign patient coordination team or a Lao-Thai interpreter, what payment methods they accept, and if your condition is complex, book an appointment in advance so a specialist is ready to see you."
           }
         ]
       },
       "insurance-coverage": {
-        "title": "Does my health insurance work at Thai hospitals?",
-        "teaser": "Coverage varies by policy — here's what to check before you travel",
+        "title": "Does Health Insurance Cover Treatment at Thai Hospitals?",
+        "teaser": "Different policies have different terms — here's what to check before you travel",
         "sections": [
           {
-            "heading": "Your domestic health insurance",
-            "body": "Most national or domestic health insurance plans only cover treatment received within your own country. Care at a Thai hospital usually isn't covered unless your policy explicitly states it includes cross-border treatment."
+            "heading": "Your Domestic Health Insurance",
+            "body": "Mandatory or domestic health insurance usually only covers treatment received within your home country. Treatment at a Thai hospital is typically not covered unless the policy explicitly states it covers cross-border care."
           },
           {
-            "heading": "Travel or international health insurance",
-            "body": "Some travel or international health insurance plans cover emergency treatment abroad. Check whether pre-existing conditions are covered, and whether the plan covers planned (non-emergency) treatment as well as emergencies."
+            "heading": "Travel or International Health Insurance",
+            "body": "Some travel insurance or international health plans cover emergency treatment abroad, but you should confirm whether pre-existing conditions are covered before buying the policy, and whether scheduled (non-emergency) treatment is included as well."
           },
           {
-            "heading": "Pay first, claim later",
-            "body": "Many patients pay the Thai hospital directly, then submit receipts and a medical report to their insurer for reimbursement afterward. Ask your insurer in advance exactly which documents they need, and whether those documents need to be translated."
+            "heading": "Pay First, Claim Reimbursement Later",
+            "body": "Many patients choose to pay the Thai hospital directly first, then submit receipts and a medical certificate to their insurer afterward for reimbursement. It's worth asking your insurer in advance exactly which documents they require and what language they need to be in."
           }
         ]
       },
       "clinic-vs-hospital": {
-        "title": "What's the difference between a clinic and a hospital?",
-        "teaser": "Understand the difference so you can pick the right place for your needs",
+        "title": "What's the Difference Between a Clinic and a Hospital?",
+        "teaser": "Understand the difference so you can choose the right facility for your needs",
         "sections": [
           {
-            "heading": "Size and scope of care",
-            "body": "Clinics are typically small and focused on a specific specialty — dental, dermatology, or minor procedures that don't require an overnight stay — with shorter wait times. Hospitals are larger, cover many departments, and can handle surgery, inpatient stays, and complex or emergency cases."
+            "heading": "Size and Scope of Care",
+            "body": "Clinics are usually small and focus on specific treatments — dentistry, dermatology, or minor procedures that don't require an overnight stay — with short wait times. Hospitals are larger, with multiple departments that can handle surgery, inpatient care, and emergency or complex cases."
           },
           {
-            "heading": "Which one fits your situation",
-            "body": "For routine checkups, dental work, or minor cosmetic procedures, a clinic is usually faster and works well. For surgery, hospital admission, complex diagnostics, or an emergency, a hospital is the safer choice."
+            "heading": "Which One Fits Your Situation",
+            "body": "For a general checkup, dental work, or a minor cosmetic procedure, a clinic is usually a good and faster fit. But if you need surgery, an inpatient stay, complex diagnostics, or you're facing an emergency, a fully-equipped hospital is the better choice."
           },
           {
-            "heading": "Cost and time",
-            "body": "Clinics tend to be cheaper and quicker for straightforward cases. Hospitals may charge additional facility fees, but offer more backup and continuity of care if complications come up."
+            "heading": "Cost and Time",
+            "body": "Clinics generally cost less and involve shorter waits for straightforward cases, while hospitals may add facility fees but offer more reassurance if complications arise that need ongoing care."
+          }
+        ]
+      },
+      "documents-checklist": {
+        "title": "What Documents Do You Need Before Coming to Thailand for Treatment?",
+        "teaser": "A checklist of documents to prepare before you travel to Thailand for treatment",
+        "sections": [
+          {
+            "heading": "Identity Documents to Carry",
+            "body": "A passport with enough remaining validity (usually at least 6 months), the border pass or visa required for your crossing point, and it's worth carrying an extra copy of these documents in case the originals are lost."
+          },
+          {
+            "heading": "Medical Documents You Should Have",
+            "body": "If you've had tests or treatment before, bring your results, medical history, and a list of current medications. If these documents are in Lao, a rough translation into Thai or English will help the doctor understand faster."
+          },
+          {
+            "heading": "Financial and Contact Information",
+            "body": "Prepare your payment method (cash, card, or QR), the name and contact number of your destination facility, and the phone number of a relative or trusted contact in case of an emergency."
+          }
+        ]
+      },
+      "private-vs-public-hospital": {
+        "title": "Private vs. Public Hospitals — Which Should You Choose?",
+        "teaser": "Comparing the strengths and limits of public and private hospitals for foreign patients",
+        "sections": [
+          {
+            "heading": "Speed of Service",
+            "body": "Private hospitals usually move faster, with easy appointment booking and a dedicated team for foreign patients. Public hospitals may involve longer queues, especially in busy departments."
+          },
+          {
+            "heading": "Cost",
+            "body": "Public hospitals generally cost less and suit non-urgent treatment, while private hospitals charge more but offer greater convenience and more predictable appointment times."
+          },
+          {
+            "heading": "Language and Communication",
+            "body": "Larger private hospitals often have interpreters or staff who communicate well in Lao or English, which helps reduce confusion when describing symptoms and understanding the doctor's advice."
+          }
+        ]
+      },
+      "health-checkup-budget": {
+        "title": "How Much Should You Budget for a Health Checkup in Thailand?",
+        "teaser": "An overview of general checkup price ranges to help you plan your budget ahead of time",
+        "sections": [
+          {
+            "heading": "Basic General Checkups",
+            "body": "Basic checkup packages — blood tests, urine tests, chest X-ray, and a general physical exam — usually start at a modest price and don't take long, making them suitable for an annual health check."
+          },
+          {
+            "heading": "Specialized Tests or Advanced Packages",
+            "body": "If you need specialized screening — such as cardiac checks, cancer screening, or advanced packages using specialized equipment — costs rise along with the number of tests included."
+          },
+          {
+            "heading": "How to Plan Your Budget",
+            "body": "Ask the hospital or clinic directly for package prices in advance, and set aside extra budget for other costs such as accommodation, travel, and any additional tests the doctor may recommend after the initial screening."
+          }
+        ]
+      },
+      "appointment-before-travel": {
+        "title": "Can Lao Patients Book a Doctor's Appointment Before Traveling?",
+        "teaser": "How to book an appointment in advance to reduce your wait time on arrival",
+        "sections": [
+          {
+            "heading": "Booking Ahead Is Entirely Possible",
+            "body": "Most hospitals and clinics in Thailand allow advance booking by phone, app, or online, so you don't need to arrive in person first to make an appointment."
+          },
+          {
+            "heading": "Information to Prepare When Booking",
+            "body": "Be ready to describe your symptoms, the department you'd like to see, and your preferred travel date. If you have prior test results or medical history, share them with the hospital in advance so they can review them."
+          },
+          {
+            "heading": "Benefits of Booking Ahead",
+            "body": "Advance booking reduces queue time, lets the specialist prepare more precisely for your case, and helps you plan the exact number of days you'll need to stay in Thailand."
+          }
+        ]
+      },
+      "how-many-days-stay": {
+        "title": "How Many Days Do You Need to Stay for Treatment in Thailand?",
+        "teaser": "Approximate stay lengths depending on the type of treatment",
+        "sections": [
+          {
+            "heading": "Checkups or Minor Procedures",
+            "body": "General checkups, dental work, or minor cosmetic procedures that don't require long recovery usually take just 1-2 days, letting you travel home the same day or the next."
+          },
+          {
+            "heading": "Surgery or Procedures Requiring Recovery",
+            "body": "For surgery or procedures that need post-treatment monitoring, the stay may run 5-14 days, depending on the type of treatment and your doctor's recommendations."
+          },
+          {
+            "heading": "Factors That Affect the Length of Stay",
+            "body": "The actual recovery time depends on individual healing, any complications that arise, and the doctor's judgment. Ask the facility for an estimated timeframe before planning your travel."
+          }
+        ]
+      },
+      "travel-vientiane-to-udon": {
+        "title": "Traveling from Vientiane to Hospitals in Udon Thani",
+        "teaser": "Common routes and cross-border travel options",
+        "sections": [
+          {
+            "heading": "Crossing the Thai-Lao Friendship Bridge",
+            "body": "The most popular route is crossing the 1st Thai-Lao Friendship Bridge from Vientiane to Nong Khai, then continuing by car or bus to Udon Thani — a total trip of about 1-2 hours depending on checkpoint traffic."
+          },
+          {
+            "heading": "Transport Options",
+            "body": "You can choose a taxi, a passenger van, or a transfer service offered by some hospitals that picks up patients directly at the Nong Khai checkpoint, cutting down on multiple transfers."
+          },
+          {
+            "heading": "What to Allow Extra Time For",
+            "body": "Allow extra time for immigration procedures on both sides, especially during rush hours or long holidays when checkpoints tend to be busier than usual."
+          }
+        ]
+      },
+      "cosmetic-surgery-hospital-or-clinic": {
+        "title": "Should You Choose a Hospital or a Clinic for Cosmetic Surgery?",
+        "teaser": "Factors to weigh before choosing where to have cosmetic surgery",
+        "sections": [
+          {
+            "heading": "How Complex the Procedure Is",
+            "body": "Minor procedures, such as filler or Botox injections, can usually be done at a general aesthetic clinic. But for major surgery, such as structural rhinoplasty or liposuction, choose a facility equipped with a proper operating room and an anesthesia team."
+          },
+          {
+            "heading": "Safety and Standards",
+            "body": "Check that the clinic or hospital holds a valid operating license, that the practicing doctor holds the relevant specialist qualification, and that there's a plan in place for handling complications."
+          },
+          {
+            "heading": "Aftercare",
+            "body": "Ask in advance whether you can contact the same facility if problems arise after the procedure, and whether they offer remote consultations for patients who have already returned to Laos."
+          }
+        ]
+      },
+      "mri-vs-ct-scan": {
+        "title": "What's the Difference Between an MRI and a CT Scan?",
+        "teaser": "General information for basic understanding, not personalized medical advice",
+        "sections": [
+          {
+            "heading": "How They Work Differently",
+            "body": "MRI uses magnetic fields to produce detailed images of soft tissue, such as the brain, muscles, and joints. CT scans use X-rays to produce fast cross-sectional images that show bone structure and internal organs clearly."
+          },
+          {
+            "heading": "Duration and Suitability",
+            "body": "CT scans are usually quicker and suit emergency cases where fast results are needed, while MRIs take longer but provide clearer soft-tissue detail in certain cases."
+          },
+          {
+            "heading": "Your Doctor Decides Which Scan Is Right",
+            "body": "Which scan to use depends on your symptoms and your doctor's judgment for your individual case. Consult your doctor directly to find out which type of scan best fits your condition."
+          }
+        ]
+      },
+      "anti-aging-basics": {
+        "title": "What Is Anti-Aging Treatment, and Who Is It For?",
+        "teaser": "General information about the anti-aging concept for basic understanding",
+        "sections": [
+          {
+            "heading": "The Basic Idea Behind Anti-Aging",
+            "body": "Anti-aging covers a range of approaches and procedures aimed at keeping skin and the body looking younger — from basic skincare and vitamin supplements to medical procedures that must be performed by a specialist."
+          },
+          {
+            "heading": "Common Forms",
+            "body": "These range from skincare with specialized products, to various types of cosmetic injections, to procedures that must be done at a facility under a doctor's supervision — each with a different level of intensity and results."
+          },
+          {
+            "heading": "Consult a Doctor Before Starting",
+            "body": "Since everyone's skin and health condition differ, consult a specialist before starting any program to assess suitability and individual risk."
+          }
+        ]
+      },
+      "stem-cell-basics": {
+        "title": "What Are Stem Cells, and What Are Their Limitations?",
+        "teaser": "General information about stem cells for basic understanding before you decide",
+        "sections": [
+          {
+            "heading": "What Stem Cells Are, Generally",
+            "body": "Stem cells are cells capable of developing into other cell types. This concept is now being applied in a number of fields, in both medicine and aesthetics."
+          },
+          {
+            "heading": "Limitations to Be Aware Of",
+            "body": "Some stem cell treatments are still under research and may not be officially approved for every use. Results and safety can vary depending on the method and the source of the cells."
+          },
+          {
+            "heading": "What to Check Before Deciding",
+            "body": "Ask the facility about the source of the cells, safety standards, and relevant licenses, and consult a specialist to understand the benefits and limitations before deciding on any procedure."
+          }
+        ]
+      },
+      "iv-drip-vitamin": {
+        "title": "What Are the Benefits of Vitamin IV Drips?",
+        "teaser": "General information about intravenous vitamin therapy for basic understanding",
+        "sections": [
+          {
+            "heading": "What Is an IV Drip",
+            "body": "An IV drip delivers vitamins or supplemental nutrients directly into the body through a vein. Some formulas are marketed as helping with energy or skin appearance."
+          },
+          {
+            "heading": "What to Consider",
+            "body": "The formula and dosage should be administered under the supervision of a doctor or licensed nurse, since delivering nutrients directly into the bloodstream carries different risks than taking them orally. Always disclose any existing conditions to the doctor beforehand."
+          },
+          {
+            "heading": "Choose a Facility That Meets Proper Standards",
+            "body": "Choose a location with medical staff supervising the entire process and that takes a health history before the service, for the safety of the person receiving it."
+          }
+        ]
+      },
+      "qr-payment": {
+        "title": "Can Lao Patients Use QR Payment for Treatment in Thailand?",
+        "teaser": "An overview of common payment methods available to patients from Laos",
+        "sections": [
+          {
+            "heading": "Common Payment Methods",
+            "body": "Many large hospitals and clinics in Thailand accept several payment methods, including cash, credit/debit cards, and QR scanning through banking apps, depending on the system each facility has set up."
+          },
+          {
+            "heading": "What to Check in Advance",
+            "body": "Cross-border QR systems may only work with certain banks or apps. Check with the facility or your own bank in advance to confirm compatibility before you travel."
+          },
+          {
+            "heading": "Backup Options",
+            "body": "Keep cash or a backup card on hand in case the QR system fails or isn't accepted at certain points, so it doesn't disrupt your access to care."
+          }
+        ]
+      },
+      "post-surgery-recovery": {
+        "title": "Where Should You Recover After Surgery?",
+        "teaser": "Recovery location options commonly chosen by cross-border patients",
+        "sections": [
+          {
+            "heading": "Recovering in the Hospital",
+            "body": "For major surgery, or when the doctor recommends close monitoring, you'll typically need to recover in the hospital until the doctor assesses that it's safe to be discharged."
+          },
+          {
+            "heading": "Recovering at a Hotel or Nearby Accommodation",
+            "body": "For less complex procedures, some patients choose to recover at a hotel or accommodation near the facility, for the convenience of returning easily for follow-up checks."
+          },
+          {
+            "heading": "What to Prepare for Recovery",
+            "body": "Ask the doctor about post-surgery restrictions — how many days to avoid long-distance travel, whether you need a caregiver nearby, and whether a follow-up appointment is scheduled before you return to Laos."
+          }
+        ]
+      },
+      "symptoms-after-returning": {
+        "title": "What Should You Do If You Have Unusual Symptoms After Returning to Laos?",
+        "teaser": "Basic guidance for unusual symptoms after returning from treatment in Thailand",
+        "sections": [
+          {
+            "heading": "Contact the Treating Facility First",
+            "body": "If you notice unusual symptoms, contact the hospital or clinic that treated you as soon as possible using the number they provided, to get initial advice or a remote consultation if that option is available."
+          },
+          {
+            "heading": "In Case of Severe or Emergency Symptoms",
+            "body": "If symptoms are severe or an emergency, go to the nearest facility in Laos immediately without waiting to contact Thailand first, then inform the original facility afterward."
+          },
+          {
+            "heading": "Documents to Always Keep With You",
+            "body": "Keep your treatment summary, prescriptions, and the treating doctor's contact number with you after returning home, so any new facility you visit can reference your information quickly."
+          }
+        ]
+      },
+      "choose-hospital-for-condition": {
+        "title": "How to Choose a Hospital in Thailand That Fits Your Condition",
+        "teaser": "Guidance for choosing a facility that matches your treatment needs",
+        "sections": [
+          {
+            "heading": "Consider Specialist Expertise",
+            "body": "Different hospitals have different areas of strength — some excel in cardiology, others in orthopedics. Research or ask whether the hospital you're considering has expertise matching your condition."
+          },
+          {
+            "heading": "Consider Distance and Convenience",
+            "body": "Distance from the border checkpoint or a convenient stopover, along with readiness to transport foreign patients, are additional factors worth weighing in your decision."
+          },
+          {
+            "heading": "Ask Questions Before Deciding",
+            "body": "Contact the hospital directly to ask about the specialist who will oversee your care, estimated costs, and support services for foreign patients before choosing where to be treated."
+          }
+        ]
+      },
+      "faq-lao-patients": {
+        "title": "Frequently Asked Questions About Medical Treatment in Thailand for Lao Patients",
+        "teaser": "Common questions gathered in one place for those planning treatment in Thailand",
+        "sections": [
+          {
+            "heading": "What Documents Are Needed",
+            "body": "You'll generally need an unexpired passport and the border pass or visa required at your crossing point. If you have prior medical records, bring them along."
+          },
+          {
+            "heading": "Is It Much More Expensive Than in Laos",
+            "body": "Costs vary depending on the type of treatment and facility chosen. Ask the hospital directly for prices in advance so you can plan your budget appropriately."
+          },
+          {
+            "heading": "Can You Book an Appointment in Advance",
+            "body": "Most hospitals allow advance booking by phone or online, which helps reduce your wait time on arrival."
+          },
+          {
+            "heading": "What to Do If Problems Arise After Returning to Laos",
+            "body": "Contact the treating facility as soon as possible, or seek care at a nearby facility in an emergency, and always keep your treatment summary with you."
+          }
+        ]
+      },
+      "beginner-guide-lao-patients": {
+        "title": "A Beginner's Guide for Lao Patients Seeking Treatment in Thailand",
+        "teaser": "An overview of the process from initial planning through your return trip",
+        "sections": [
+          {
+            "heading": "Step 1: Plan and Choose a Facility",
+            "body": "Start by assessing your symptoms or needs, research hospitals with expertise matching what you need, and reach out for initial information before deciding."
+          },
+          {
+            "heading": "Step 2: Prepare Documents and Book an Appointment",
+            "body": "Prepare your passport, border pass, and prior medical history (if any), then book an appointment in advance with your chosen facility."
+          },
+          {
+            "heading": "Step 3: Travel and Receive Treatment",
+            "body": "Plan your travel route, allow extra time for immigration procedures, and prepare your payment method before arriving at the facility."
+          },
+          {
+            "heading": "Step 4: Recover and Monitor Your Symptoms",
+            "body": "Follow your doctor's recovery instructions, and if you notice unusual symptoms after returning to Laos, contact the original facility or seek nearby care immediately depending on severity."
           }
         ]
       }
