@@ -1,0 +1,50 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad5" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#f4efe4"/>
+      <stop offset="100%" stop-color="#e9e1cf"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#bgGrad5)"/>
+
+  <!-- ground -->
+  <rect x="0" y="330" width="800" height="120" fill="#dcd3bb"/>
+
+  <!-- road -->
+  <path d="M0 340 Q 260 300 400 320 T 800 300" fill="none" stroke="#c9bd9a" stroke-width="70" stroke-linecap="round"/>
+  <path d="M0 340 Q 260 300 400 320 T 800 300" fill="none" stroke="#f4efe4" stroke-width="4" stroke-dasharray="18 18" stroke-linecap="round"/>
+
+  <!-- border marker posts -->
+  <g transform="translate(390,220)">
+    <rect x="-4" y="0" width="8" height="90" fill="#5b8c6e"/>
+    <rect x="-22" y="-14" width="44" height="24" rx="4" fill="#3f6b53"/>
+  </g>
+
+  <!-- van, hero object -->
+  <g transform="translate(150,240)">
+    <rect x="0" y="30" width="150" height="60" rx="10" fill="#3f6b53"/>
+    <rect x="10" y="10" width="90" height="40" rx="8" fill="#5b8c6e"/>
+    <rect x="24" y="18" width="30" height="22" rx="4" fill="#dbe4dc"/>
+    <rect x="60" y="18" width="26" height="22" rx="4" fill="#dbe4dc"/>
+    <circle cx="34" cy="94" r="16" fill="#2f4f3d"/>
+    <circle cx="34" cy="94" r="7" fill="#dbe4dc"/>
+    <circle cx="118" cy="94" r="16" fill="#2f4f3d"/>
+    <circle cx="118" cy="94" r="7" fill="#dbe4dc"/>
+  </g>
+
+  <!-- clock, top right, representing travel time / days -->
+  <g transform="translate(600,110)">
+    <circle cx="0" cy="0" r="60" fill="#ffffff" stroke="#5b8c6e" stroke-width="6"/>
+    <line x1="0" y1="0" x2="0" y2="-34" stroke="#3f6b53" stroke-width="6" stroke-linecap="round"/>
+    <line x1="0" y1="0" x2="24" y2="10" stroke="#3f6b53" stroke-width="6" stroke-linecap="round"/>
+    <circle cx="0" cy="0" r="5" fill="#3f6b53"/>
+  </g>
+
+  <!-- small house/hospital marker at destination -->
+  <g transform="translate(660,300)">
+    <rect x="-28" y="-8" width="56" height="42" fill="#ffffff"/>
+    <path d="M-36 -8 L0 -38 L36 -8 Z" fill="#3f6b53"/>
+    <rect x="-8" y="10" width="16" height="24" fill="#5b8c6e"/>
+  </g>
+</svg>

@@ -1,0 +1,51 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad8" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eef2ee"/>
+      <stop offset="100%" stop-color="#dfe8e0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#bgGrad8)"/>
+  <circle cx="400" cy="225" r="170" fill="#d9e6dc"/>
+
+  <!-- phone, hero object -->
+  <g transform="translate(300,80)">
+    <rect x="0" y="0" width="150" height="280" rx="22" fill="#3f6b53"/>
+    <rect x="10" y="16" width="130" height="230" rx="8" fill="#ffffff"/>
+    <circle cx="75" cy="262" r="10" fill="#5b8c6e"/>
+
+    <!-- QR code grid on screen -->
+    <g transform="translate(35,40)" fill="#3f6b53">
+      <rect x="0" y="0" width="16" height="16"/>
+      <rect x="24" y="0" width="8" height="8"/>
+      <rect x="64" y="0" width="16" height="16"/>
+      <rect x="0" y="24" width="8" height="8"/>
+      <rect x="40" y="24" width="8" height="8"/>
+      <rect x="72" y="24" width="8" height="8"/>
+      <rect x="0" y="64" width="16" height="16"/>
+      <rect x="32" y="48" width="16" height="16"/>
+      <rect x="64" y="64" width="16" height="16"/>
+      <rect x="16" y="80" width="8" height="8"/>
+      <rect x="48" y="80" width="24" height="8"/>
+    </g>
+  </g>
+
+  <!-- coin with QR-scan arc, floating right -->
+  <g transform="translate(590,300)">
+    <circle cx="0" cy="0" r="46" fill="#5b8c6e"/>
+    <text x="0" y="10" text-anchor="middle" font-size="34" fill="#f4efe4" font-family="sans-serif" font-weight="bold">฿</text>
+    <path d="M-64 -30 A72 72 0 0 1 -20 -68" fill="none" stroke="#3f6b53" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 10"/>
+    <path d="M64 30 A72 72 0 0 1 20 68" fill="none" stroke="#3f6b53" stroke-width="5" stroke-linecap="round" stroke-dasharray="2 10"/>
+  </g>
+
+  <!-- small bank-app icon, top left -->
+  <g transform="translate(180,300)">
+    <rect x="-40" y="-30" width="80" height="60" rx="12" fill="#ffffff" stroke="#c9d6cb" stroke-width="2"/>
+    <path d="M-24 -6 L0 -22 L24 -6 Z" fill="#5b8c6e"/>
+    <rect x="-20" y="-6" width="8" height="18" fill="#a9c6bd"/>
+    <rect x="-4" y="-6" width="8" height="18" fill="#a9c6bd"/>
+    <rect x="12" y="-6" width="8" height="18" fill="#a9c6bd"/>
+    <rect x="-24" y="14" width="48" height="6" fill="#5b8c6e"/>
+  </g>
+</svg>

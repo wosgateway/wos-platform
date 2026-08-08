@@ -1,0 +1,47 @@
+<svg width="800" height="450" viewBox="0 0 800 450" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgGrad10" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#eef2ee"/>
+      <stop offset="100%" stop-color="#dfe8e0"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="800" height="450" fill="url(#bgGrad10)"/>
+  <circle cx="400" cy="225" r="170" fill="#d9e6dc"/>
+
+  <!-- open book, hero object -->
+  <g transform="translate(250,150)">
+    <path d="M0 20 Q150 -20 300 20 L300 190 Q150 150 0 190 Z" fill="#ffffff" stroke="#c9d6cb" stroke-width="2"/>
+    <path d="M150 20 L150 190" stroke="#c9d6cb" stroke-width="2"/>
+    <path d="M0 20 Q150 -20 300 20" fill="none" stroke="#3f6b53" stroke-width="4"/>
+
+    <!-- left page lines -->
+    <rect x="24" y="46" width="100" height="8" rx="4" fill="#a9c6bd"/>
+    <rect x="24" y="66" width="90" height="6" rx="3" fill="#dbe4dc"/>
+    <rect x="24" y="86" width="100" height="6" rx="3" fill="#dbe4dc"/>
+    <rect x="24" y="106" width="70" height="6" rx="3" fill="#dbe4dc"/>
+
+    <!-- right page checklist -->
+    <g fill="#5b8c6e">
+      <rect x="182" y="42" width="14" height="14" rx="3"/>
+      <rect x="182" y="68" width="14" height="14" rx="3"/>
+      <rect x="182" y="94" width="14" height="14" rx="3"/>
+    </g>
+    <rect x="204" y="45" width="80" height="8" rx="4" fill="#dbe4dc"/>
+    <rect x="204" y="71" width="80" height="8" rx="4" fill="#dbe4dc"/>
+    <rect x="204" y="97" width="60" height="8" rx="4" fill="#dbe4dc"/>
+  </g>
+
+  <!-- question mark badge, top left -->
+  <g transform="translate(200,100)">
+    <circle cx="0" cy="0" r="34" fill="#3f6b53"/>
+    <text x="0" y="12" text-anchor="middle" font-size="36" fill="#f4efe4" font-family="sans-serif" font-weight="bold">?</text>
+  </g>
+
+  <!-- footprints / step markers, bottom, representing a step-by-step guide -->
+  <g fill="#8fb6ac">
+    <ellipse cx="540" cy="330" rx="10" ry="16" transform="rotate(-15 540 330)"/>
+    <ellipse cx="590" cy="310" rx="10" ry="16" transform="rotate(-10 590 310)"/>
+    <ellipse cx="640" cy="295" rx="10" ry="16" transform="rotate(-5 640 295)"/>
+  </g>
+</svg>
