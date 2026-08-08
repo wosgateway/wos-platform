@@ -6,18 +6,15 @@
 // cards, featured slugs only) and `knowledge.articles.<slug>` (full article
 // body, all 20 slugs).
 //
-// 20 articles total, sharing ~9 illustration themes instead of one bespoke
-// SVG per article (see /public/images/knowledge/):
-//   - lao-cross-border-treatment.svg  → eligibility / documents-before-travel theme
-//   - insurance-coverage.svg          → insurance theme (used once)
-//   - clinic-vs-hospital.svg          → hospital-vs-clinic comparison theme
-//   - budget-checkup.svg              → cost / budget theme
-//   - travel-vientiane-udon.svg       → travel & logistics theme
-//   - medical-imaging.svg             → diagnostic equipment theme
-//   - aesthetic-treatments.svg        → wellness / aesthetic treatments theme
-//   - payment-qr.svg                  → cross-border payment theme
-//   - aftercare-recovery.svg          → recovery / follow-up theme
-//   - complete-guide.svg              → FAQ / starter-guide overview theme
+// UPDATED: 20 articles now each have their own dedicated illustration
+// (see /public/images/knowledge/). Previously several slugs shared one of
+// ~9 theme SVGs; that fallback sharing is gone except for
+// `how-many-days-stay`, which still shares travel-vientiane-udon.svg with
+// `travel-vientiane-to-udon` since no dedicated image exists for it yet.
+//
+// Spare file not currently referenced by any slug: telemedicine-follow-up.svg
+// (kept in /public/images/knowledge/ for a possible future "remote follow-up
+// consultation" article).
 
 export type KnowledgeSlug =
   // original 3
@@ -83,27 +80,27 @@ export const KNOWLEDGE_ARTICLES: KnowledgeMeta[] = [
   {
     slug: 'documents-checklist',
     icon: '📋',
-    image: '/images/knowledge/lao-cross-border-treatment.svg',
+    image: '/images/knowledge/eligibility-lao-patients.svg',
   },
   {
     slug: 'appointment-before-travel',
     icon: '📅',
-    image: '/images/knowledge/lao-cross-border-treatment.svg',
+    image: '/images/knowledge/advance-appointment-booking.svg',
   },
   {
     slug: 'private-vs-public-hospital',
     icon: '🏨',
-    image: '/images/knowledge/clinic-vs-hospital.svg',
+    image: '/images/knowledge/private-vs-public-hospital.svg',
   },
   {
     slug: 'cosmetic-surgery-hospital-or-clinic',
     icon: '💉',
-    image: '/images/knowledge/clinic-vs-hospital.svg',
+    image: '/images/knowledge/cosmetic-surgery-hospital-or-clinic.svg',
   },
   {
     slug: 'choose-hospital-for-condition',
     icon: '🔍',
-    image: '/images/knowledge/clinic-vs-hospital.svg',
+    image: '/images/knowledge/choose-hospital-by-disease.svg',
   },
   {
     slug: 'health-checkup-budget',
@@ -128,12 +125,12 @@ export const KNOWLEDGE_ARTICLES: KnowledgeMeta[] = [
   {
     slug: 'anti-aging-basics',
     icon: '✨',
-    image: '/images/knowledge/aesthetic-treatments.svg',
+    image: '/images/knowledge/anti-aging-medicine.svg',
   },
   {
     slug: 'stem-cell-basics',
     icon: '🧬',
-    image: '/images/knowledge/aesthetic-treatments.svg',
+    image: '/images/knowledge/stem-cell-therapy.svg',
   },
   {
     slug: 'iv-drip-vitamin',
@@ -148,7 +145,7 @@ export const KNOWLEDGE_ARTICLES: KnowledgeMeta[] = [
   {
     slug: 'post-surgery-recovery',
     icon: '🛏️',
-    image: '/images/knowledge/aftercare-recovery.svg',
+    image: '/images/knowledge/post-surgery-recovery-center.svg',
   },
   {
     slug: 'symptoms-after-returning',
@@ -158,7 +155,7 @@ export const KNOWLEDGE_ARTICLES: KnowledgeMeta[] = [
   {
     slug: 'faq-lao-patients',
     icon: '❓',
-    image: '/images/knowledge/complete-guide.svg',
+    image: '/images/knowledge/faq-lao-patients.svg',
   },
   {
     slug: 'beginner-guide-lao-patients',
