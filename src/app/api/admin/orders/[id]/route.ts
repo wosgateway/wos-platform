@@ -18,7 +18,8 @@ import { createServiceClient } from '@/lib/supabase/service';
 // updating that constraint.
 const ALLOWED_STATUSES = [
   'draft',
-  'pending_deposit',
+    'pending_deposit',
+  'pending_verification',
   'deposit_paid',
   'confirmed',
   'checked_in',

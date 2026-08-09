@@ -4,18 +4,17 @@
 //
 // Public page a customer opens from the WhatsApp/LINE/SMS link sent by
 // send-quotation/route.tsx. Shows the program + total/deposit, and lets
-// the customer confirm the order (draft -> pending_deposit). No payment
-// happens here yet — admin follows up with the customer to collect the
-// deposit afterward (Phase 3).
+// the customer confirm the order (draft -> pending_deposit).
 //
-// Single-package-per-order for now (per current data model) — the
-// items list below already loops, so if the order model grows to
-// support multiple selectable package options later, this page's
-// fetch/display logic won't need to change, only the confirm action
-// would need to carry which item(s) were chosen.
+// UPDATED: after confirming (or on revisiting an already-confirmed
+// quote), links to /my-trip/[orderNumber] — the new Booking
+// Confirmation / My Trip status page where the customer can see their
+// booking status and pay the deposit (see /my-trip/[orderNumber]/page.tsx
+// and /my-trip/[orderNumber]/payment/page.tsx).
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
+import { Link } from '@/i18n/navigation';
 
 type ServiceType = 'clinic' | 'hotel' | 'transport' | 'wellness' | 'insurance';
 
@@ -124,6 +123,7 @@ export default function QuotePage() {
   if (!quote) return null;
 
   const canConfirm = quote.status === 'draft' && !confirmed;
+  const isConfirmedOrLater = confirmed || quote.status !== 'draft';
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-6">
@@ -174,9 +174,17 @@ export default function QuotePage() {
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-600">{error}</div>
       ) : null}
 
-      {confirmed || quote.status !== 'draft' ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center text-sm text-emerald-700">
-          ✅ ยืนยันรายการแล้ว — ทีมงานจะติดต่อกลับเพื่อแจ้งขั้นตอนการชำระมัดจำ
+      {isConfirmedOrLater ? (
+        <div className="space-y-3">
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-center text-sm text-emerald-700">
+            ✅ ยืนยันรายการแล้ว — ไปต่อที่ขั้นตอนชำระมัดจำได้เลย
+          </div>
+          <Link
+            href={`/my-trip/${orderNumber}`}
+            className="block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-white"
+          >
+            ดูสถานะการจอง / ชำระมัดจำ →
+          </Link>
         </div>
       ) : (
         <button

@@ -4,7 +4,10 @@
 // Body: { "reason": "slip amount doesn't match, please resend" }
 //
 // Companion to verify/route.ts — same auth/ownership model, but marks
-// the payment rejected instead of rolling it into deposit_paid.
+// the payment rejected instead of rolling it into deposit_paid. Uses
+// the same atomic-claim UPDATE ... WHERE status IN (...) pattern as
+// admin reject, so two concurrent reject calls (or a reject racing a
+// verify) on the same payment can't both appear to succeed.
 
 import { NextResponse } from 'next/server';
 import { getPartnerSession, hasPermission } from '@/lib/partner/auth';
@@ -32,7 +35,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const supabase = createClient();
   const { data: payment, error: fetchError } = await supabase
     .from('payments')
-    .select('id, status, order_item_id')
+    .select('id, order_item_id')
     .eq('id', paymentId)
     .single();
 
@@ -40,15 +43,15 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
   }
 
-  if (payment.status !== 'waiting_verification' && payment.status !== 'pending') {
+  if (!payment.order_item_id) {
     return NextResponse.json(
-      { error: `Payment is already "${payment.status}" and cannot be rejected.` },
-      { status: 409 }
+      { error: 'This payment is not tied to a single order item and cannot be rejected here.' },
+      { status: 400 }
     );
   }
 
   const service = createServiceClient();
-  const { error: updateError } = await service
+  const { data: rejected, error: updateError } = await service
     .from('payments')
     .update({
       status: 'rejected',
@@ -56,10 +59,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
       verified_at: new Date().toISOString(),
       rejection_reason: reason,
     })
-    .eq('id', paymentId);
+    .in('status', ['waiting_verification', 'pending'])
+    .eq('id', paymentId)
+    .select('id');
 
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
+  }
+
+  if (!rejected || rejected.length === 0) {
+    return NextResponse.json(
+      { error: 'Payment is already handled (or was just handled) and cannot be rejected.' },
+      { status: 409 }
+    );
   }
 
   // No deposit_paid change — rejected payments never counted toward the

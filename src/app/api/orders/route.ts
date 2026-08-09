@@ -20,6 +20,14 @@
 // attachment_url is uploaded client-side to Supabase Storage first
 // (see BookingForm.tsx) and only the resulting URL is sent here.
 //
+// UPDATED (with migration 021): also returns payment_access_token —
+// order_number alone is a predictable sequence
+// ('WOS-YYYYMMDD-00001', ...), not a secret, so the customer-facing
+// /my-trip/[orderNumber] and /my-trip/[orderNumber]/payment pages
+// require this token too. BookingForm.tsx uses it to build the link
+// it shows the customer after a successful booking — see its
+// "done" screen.
+//
 // TODO before this goes live for real traffic: no rate-limiting or
 // captcha yet. This is a public unauthenticated endpoint that can
 // create rows in `customers`/`orders`/`order_items` — worth putting
@@ -210,17 +218,20 @@ export async function POST(req: NextRequest) {
     );
   }
 
+  // payment_access_token: added by migration 021, generated
+  // automatically via column default — every order has one from the
+  // moment it's created, this is just reading it back.
   const { data: order, error: fetchErr } = await supabase
     .from('orders')
-    .select('order_number, total_amount, total_deposit_required, currency')
+    .select('order_number, total_amount, total_deposit_required, currency, payment_access_token')
     .eq('id', data.order_id)
     .single();
 
   if (fetchErr || !order) {
     console.error('order created but totals fetch failed:', fetchErr);
     // Order (and customer) did get created — don't claim total
-    // failure, but we can't hand back deposit amounts for the
-    // payment screen.
+    // failure, but we can't hand back deposit amounts (or the
+    // payment token) for the payment screen.
     return NextResponse.json(
       { order_number: data.order_number, error: 'order created, failed to load totals — refresh to retry' },
       { status: 207 }
@@ -280,6 +291,7 @@ export async function POST(req: NextRequest) {
       total_amount: order.total_amount,
       total_deposit_required: order.total_deposit_required,
       currency: order.currency,
+      payment_access_token: order.payment_access_token,
     },
     { status: 201 }
   );

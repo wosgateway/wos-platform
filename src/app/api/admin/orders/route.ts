@@ -2,6 +2,11 @@ import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
 import { createServiceClient } from '@/lib/supabase/service';
 
+// สำคัญ: ป้องกัน Next.js cache ผลลัพธ์ของ route นี้แบบ static
+// ถ้าไม่มีบรรทัดนี้ หลังเปลี่ยนแพ็กเกจ/สถานะแล้วเรียก GET ซ้ำ
+// อาจได้ข้อมูลเก่าที่ cache ไว้กลับมา ทำให้หน้าจอดูเหมือนไม่อัปเดต
+export const dynamic = "force-dynamic";
+
 interface OrderItemRow {
   id: string;
   order_id: string;
@@ -48,7 +53,7 @@ export async function GET() {
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select(
-      'id, order_number, patient_id, status, notes, attachment_url, total_amount, total_deposit_required, currency, created_at'
+      'id, order_number, patient_id, status, notes, attachment_url, total_amount, total_deposit_required, currency, created_at, payment_access_token'
     )
     .order('created_at', { ascending: false });
 

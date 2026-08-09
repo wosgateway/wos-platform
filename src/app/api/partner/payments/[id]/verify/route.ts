@@ -7,6 +7,18 @@
 // migration 008 comments) — this route is the only place partner staff
 // can write to `payments`, so validation/role checks/audit fields live
 // here in one spot instead of being re-implemented per client call.
+//
+// The claim (status -> verified) + amount validation + deposit_paid
+// update all happen inside `partner_verify_payment` (migration 022),
+// a single Postgres function. That closes the race that existed here
+// before: this route used to SELECT the payment, check its status in
+// JS, then UPDATE separately — two DIFFERENT partner requests hitting
+// verify on the same payment at (almost) the same instant could both
+// pass the JS check and both add the amount to deposit_paid. The RPC's
+// UPDATE ... WHERE status IN (...) claim + SELECT ... FOR UPDATE lock
+// on the order_item row make that impossible: only one caller can win
+// the claim, and a second payment on the same item verified
+// concurrently serializes on the row lock instead of racing.
 
 import { NextResponse } from 'next/server';
 import { getPartnerSession, hasPermission } from '@/lib/partner/auth';
@@ -28,28 +40,25 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   const paymentId = params.id;
 
-  // 2. Load the payment scoped to the user's own organization. We use
-  //    the normal (RLS-enforced) client here on purpose: the SELECT
-  //    policy on `payments` already restricts rows to order_items whose
-  //    organization_id matches the caller's org, so a payment belonging
-  //    to another partner simply won't be returned — defense in depth
-  //    on top of the permission check above.
+  // 2. Ownership check via the RLS-enforced client, on purpose: the
+  //    SELECT policy on `payments` already restricts rows to
+  //    order_items whose organization_id matches the caller's org, so
+  //    a payment belonging to another partner simply won't be
+  //    returned — defense in depth on top of the permission check
+  //    above. Also used here to build a friendlier "amount exceeds
+  //    balance" message before calling the RPC (the RPC is still the
+  //    authoritative check — this is display only).
   const supabase = createClient();
   const { data: payment, error: fetchError } = await supabase
     .from('payments')
     .select(
       `
       id,
-      order_id,
       order_item_id,
       amount,
-      currency,
-      status,
       order_items (
         id,
-        organization_id,
         price,
-        deposit_required,
         deposit_paid
       )
     `
@@ -63,9 +72,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
   }
 
-  const orderItem = Array.isArray(payment.order_items)
-    ? payment.order_items[0]
-    : payment.order_items;
+  const orderItem = Array.isArray(payment.order_items) ? payment.order_items[0] : payment.order_items;
 
   if (!orderItem) {
     // Whole-order payments (order_item_id IS NULL) aren't scoped to a
@@ -78,61 +85,40 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 
-  if (payment.status !== 'waiting_verification' && payment.status !== 'pending') {
-    return NextResponse.json(
-      { error: `Payment is already "${payment.status}" and cannot be re-verified.` },
-      { status: 409 }
-    );
-  }
-
-  // 3. Sanity-check the amount against what's still owed. Doesn't hard
-  //    block on mismatch (partial/overpayments happen in real life) but
-  //    flags anything that looks wrong so the UI can warn before/while
-  //    confirming, rather than silently accepting typos from a slip.
-  const remainingBeforeThis = Number(orderItem.price) - Number(orderItem.deposit_paid);
-  const amountLooksOff = Number(payment.amount) > remainingBeforeThis + 0.01;
-
   const body = await request.json().catch(() => ({}));
-  if (amountLooksOff && !body.confirmOverpayment) {
-    return NextResponse.json(
-      {
-        error: 'amount_exceeds_balance',
-        message: `Payment amount (${payment.amount}) exceeds the remaining balance (${remainingBeforeThis}). Resubmit with { "confirmOverpayment": true } to proceed anyway.`,
-        remainingBeforeThis,
-      },
-      { status: 409 }
-    );
-  }
+  const confirmOverpayment = body?.confirmOverpayment === true;
 
-  // 4. Write via the service-role client — this is the one place that's
-  //    allowed to bypass RLS on `payments` / `order_items`.
+  // 3. Claim + validate + write, atomically, via the RPC.
   const service = createServiceClient();
+  const { data, error } = await service.rpc('partner_verify_payment', {
+    p_payment_id: paymentId,
+    p_partner_id: user.id,
+    p_confirm_overpayment: confirmOverpayment,
+  });
 
-  const { error: updatePaymentError } = await service
-    .from('payments')
-    .update({
-      status: 'verified',
-      verified_by: user.id,
-      verified_at: new Date().toISOString(),
-    })
-    .eq('id', paymentId);
-
-  if (updatePaymentError) {
-    return NextResponse.json({ error: updatePaymentError.message }, { status: 500 });
+  if (error) {
+    if (error.message.includes('payment_not_claimable')) {
+      return NextResponse.json(
+        { error: 'Payment is already verified/rejected (or was just handled) and cannot be re-verified.' },
+        { status: 409 }
+      );
+    }
+    if (error.message.includes('order_item_not_found')) {
+      return NextResponse.json({ error: 'Order item not found for this payment' }, { status: 404 });
+    }
+    if (error.message.includes('amount_exceeds_balance')) {
+      const remainingBeforeThis = Number(orderItem.price) - Number(orderItem.deposit_paid);
+      return NextResponse.json(
+        {
+          error: 'amount_exceeds_balance',
+          message: `Payment amount (${payment.amount}) exceeds the remaining balance (${remainingBeforeThis}). Resubmit with { "confirmOverpayment": true } to proceed anyway.`,
+          remainingBeforeThis,
+        },
+        { status: 409 }
+      );
+    }
+    return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const newDepositPaid = Number(orderItem.deposit_paid) + Number(payment.amount);
-
-  const { error: updateItemError } = await service
-    .from('order_items')
-    .update({ deposit_paid: newDepositPaid })
-    // sync_order_item_balance trigger recalculates balance_remaining,
-    // and sync_order_totals then rolls everything up into `orders`.
-    .eq('id', orderItem.id);
-
-  if (updateItemError) {
-    return NextResponse.json({ error: updateItemError.message }, { status: 500 });
-  }
-
-  return NextResponse.json({ success: true, paymentId, orderItemId: orderItem.id, newDepositPaid });
+  return NextResponse.json({ success: true, ...data });
 }

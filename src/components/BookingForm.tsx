@@ -7,6 +7,7 @@ import { formatTHB } from '@/lib/format';
 import type { Package } from '@/lib/data';
 import { DatePicker } from '@/components/ui/DatePicker';
 import { TimePicker } from '@/components/ui/TimePicker';
+import { Link } from '@/i18n/navigation';
 
 type TransportMode = 'one_way' | 'round_trip' | 'daily';
 
@@ -101,6 +102,7 @@ export function BookingForm({
     order_number: string;
     total_deposit_required: number;
     currency: string;
+    payment_access_token?: string;
   } | null>(null);
 
   const totalSteps = 3;
@@ -251,6 +253,11 @@ export function BookingForm({
         order_number: result.order_number,
         total_deposit_required: result.total_deposit_required,
         currency: result.currency,
+        // Required by /my-trip/[orderNumber] and its /payment page —
+        // order_number alone isn't a secret (predictable sequence),
+        // so this token is what actually lets the customer (and only
+        // the customer) view/pay their own order. See migration 021.
+        payment_access_token: result.payment_access_token,
       });
       setDone(true);
     } catch (e) {
@@ -274,6 +281,19 @@ export function BookingForm({
               {orderResult.currency}
             </p>
           </div>
+        ) : null}
+        {orderResult?.payment_access_token ? (
+          <Link
+            href={`/my-trip/${orderResult.order_number}?token=${encodeURIComponent(
+              orderResult.payment_access_token
+            )}`}
+            className="mt-4 inline-block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-white"
+          >
+            {/* TODO: replace with a proper t('viewOrderStatus') key in
+                your locale JSON files once you add one — hardcoded
+                here so this doesn't throw at runtime for a missing key */}
+            ดูสถานะการจอง / ชำระเงิน
+          </Link>
         ) : null}
       </div>
     );

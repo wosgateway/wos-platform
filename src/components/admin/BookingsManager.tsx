@@ -23,6 +23,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { formatTHB } from '@/lib/format';
 
 // Matches public.orders.status CHECK constraint (migration 008,
@@ -30,6 +31,7 @@ import { formatTHB } from '@/lib/format';
 type OrderStatus =
   | 'draft'
   | 'pending_deposit'
+  | 'pending_verification'
   | 'deposit_paid'
   | 'confirmed'
   | 'checked_in'
@@ -84,6 +86,7 @@ interface Order {
   total_deposit_required: number | null;
   currency: string | null;
   created_at: string;
+  payment_access_token: string | null;
   customer: Customer | null;
   items: OrderItem[];
 }
@@ -99,6 +102,7 @@ interface PickerPackage {
 const STATUS_LABEL: Record<OrderStatus, string> = {
   draft: '📝 ฉบับร่าง',
   pending_deposit: '⏳ รอชำระมัดจำ',
+  pending_verification: '🔍 รอตรวจสลิป',
   deposit_paid: '💰 ชำระมัดจำแล้ว',
   confirmed: '✅ ยืนยันแล้ว',
   checked_in: '🏥 เช็คอินแล้ว',
@@ -110,6 +114,7 @@ const STATUS_LABEL: Record<OrderStatus, string> = {
 const STATUS_BADGE_CLASS: Record<OrderStatus, string> = {
   draft: 'bg-slate-100 text-slate-500',
   pending_deposit: 'bg-amber-100 text-amber-800',
+  pending_verification: 'bg-yellow-100 text-yellow-800',
   deposit_paid: 'bg-sky-100 text-sky-800',
   confirmed: 'bg-emerald-100 text-emerald-800',
   checked_in: 'bg-indigo-100 text-indigo-800',
@@ -202,6 +207,50 @@ function toWhatsAppNumber(phone: string | null | undefined, country: string | nu
     digits = (isLao ? '856' : '66') + digits.slice(1);
   }
   return digits;
+}
+
+// Same th/lo detection heuristic as toWhatsAppNumber, reused so the
+// payment link points at the locale the customer actually reads.
+function detectLocale(country: string | null | undefined): 'th' | 'lo' {
+  return country && /lao|laos|ลาว/i.test(country) ? 'lo' : 'th';
+}
+
+// null when the order hasn't got a token yet (e.g. API route not
+// selecting the column) — callers must handle that by disabling UI.
+function buildPaymentLink(order: Order): string | null {
+  if (!order.payment_access_token || !order.order_number) return null;
+  const locale = detectLocale(order.customer?.country);
+  const origin = typeof window !== 'undefined' ? window.location.origin : '';
+  return `${origin}/${locale}/my-trip/${order.order_number}?token=${order.payment_access_token}`;
+}
+
+function buildPaymentLinkMessage(order: Order, link: string): string {
+  const lines: string[] = [];
+  lines.push('🏥 WOS.os — ลิงก์ชำระเงิน');
+  lines.push('');
+  lines.push(`เลขที่คำสั่งจอง: ${order.order_number || order.id}`);
+  lines.push(`ลูกค้า: ${order.customer?.full_name || '-'}`);
+  lines.push(`ยอดรวม: ${formatTHB(order.total_amount ?? 0)}`);
+  lines.push('');
+  lines.push('ชำระเงิน/ดูรายละเอียดการจองได้ที่ลิงก์นี้:');
+  lines.push(link);
+  lines.push('');
+  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/message/BVJXBWDYR2UHN1');
+  lines.push('TH 085-590-7666 · LA +856 20 9872 4718');
+  return lines.join('\n');
+}
+
+// Separate from sendOrderViaWhatsApp on purpose — that one sends a
+// booking summary only, no payment link. This sends the link itself.
+function sendPaymentLinkViaWhatsApp(order: Order) {
+  const link = buildPaymentLink(order);
+  if (!link) return;
+  const text = buildPaymentLinkMessage(order, link);
+  const number = toWhatsAppNumber(order.customer?.phone, order.customer?.country);
+  const url = number
+    ? `https://wa.me/${number}?text=${encodeURIComponent(text)}`
+    : `https://wa.me/?text=${encodeURIComponent(text)}`;
+  window.open(url, '_blank');
 }
 
 function sendOrderViaWhatsApp(order: Order) {
@@ -308,6 +357,7 @@ function printOrderSummary(order: Order) {
 }
 
 export function BookingsManager() {
+  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -321,6 +371,8 @@ export function BookingsManager() {
   const [transportPackages, setTransportPackages] = useState<PickerPackage[]>([]);
 
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Shows a temporary ✅ on the copy-link button after a successful copy.
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   // Hotel/transport packages still live in the public `packages` table
   // (see PROJECT_STRUCTURE.md decision: `packages` is the single source
@@ -328,7 +380,7 @@ export function BookingsManager() {
   // old BookingsManager.
   async function loadHotelTransportPackages() {
     try {
-      const res = await fetch('/api/admin/packages/pickers?categories=Hotel,Transport');
+      const res = await fetch('/api/admin/packages/pickers?categories=Hotel,Transport', { cache: 'no-store' });
       if (!res.ok) throw new Error('failed to load hotel/transport packages');
       const result = await res.json();
       setHotelPackages(result.hotel ?? []);
@@ -343,7 +395,7 @@ export function BookingsManager() {
     setLoading(true);
     setListError(null);
     try {
-      const res = await fetch('/api/admin/orders');
+      const res = await fetch('/api/admin/orders', { cache: 'no-store' });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error ?? 'failed to load orders');
       setOrders(result.orders as Order[]);
@@ -447,9 +499,26 @@ export function BookingsManager() {
     }
   }
 
+  // Clipboard API needs a secure context (https/localhost); falls back
+  // to a prompt() the admin can manually Ctrl/Cmd+C from on older
+  // browsers or plain-http deployments.
+  async function copyPaymentLink(order: Order) {
+    const link = buildPaymentLink(order);
+    if (!link) return;
+    try {
+      if (!navigator.clipboard || !window.isSecureContext) throw new Error('clipboard api unavailable');
+      await navigator.clipboard.writeText(link);
+    } catch {
+      window.prompt('คัดลอกลิงก์นี้ด้วยตนเอง (Ctrl/Cmd+C แล้ว Enter):', link);
+    }
+    setCopiedId(order.id);
+    setTimeout(() => setCopiedId((cur) => (cur === order.id ? null : cur)), 1500);
+  }
+
   const statusPills: { value: 'all' | OrderStatus; label: string }[] = [
     { value: 'all', label: 'ทั้งหมด' },
     { value: 'pending_deposit', label: STATUS_LABEL.pending_deposit },
+    { value: 'pending_verification', label: STATUS_LABEL.pending_verification },
     { value: 'deposit_paid', label: STATUS_LABEL.deposit_paid },
     { value: 'confirmed', label: STATUS_LABEL.confirmed },
     { value: 'checked_in', label: STATUS_LABEL.checked_in },
@@ -563,7 +632,17 @@ export function BookingsManager() {
                 const busy = savingId === order.id;
 
                 return (
-                  <tr key={order.id} className="border-b border-slate-50 align-top hover:bg-slate-50">
+                  <tr
+                    key={order.id}
+                    onClick={(e) => {
+                      // อย่า navigate ถ้าคลิกโดน select/button/a ในแถว
+                      // (dropdown เลือกโรงแรม, ปุ่มพิมพ์/ส่ง WhatsApp/LINE ฯลฯ)
+                      const target = e.target as HTMLElement;
+                      if (target.closest('select, button, a')) return;
+                      router.push(`/admin/orders/${order.id}`);
+                    }}
+                    className="cursor-pointer border-b border-slate-50 align-top hover:bg-slate-50"
+                  >
                     <td className="whitespace-nowrap px-4 py-3">
                       <Link
                         href={`/admin/orders/${order.id}`}
@@ -694,6 +773,7 @@ export function BookingsManager() {
                         className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[order.status]}`}
                       >
                         <option value="pending_deposit">{STATUS_LABEL.pending_deposit}</option>
+                        <option value="pending_verification">{STATUS_LABEL.pending_verification}</option>
                         <option value="deposit_paid">{STATUS_LABEL.deposit_paid}</option>
                         <option value="confirmed">{STATUS_LABEL.confirmed}</option>
                         <option value="checked_in">{STATUS_LABEL.checked_in}</option>
@@ -713,7 +793,7 @@ export function BookingsManager() {
                         </button>
                         <button
                           onClick={() => sendOrderViaWhatsApp(order)}
-                          title="ส่งทาง WhatsApp"
+                          title="ส่งสรุปการจองทาง WhatsApp"
                           className="rounded-lg border border-slate-200 px-2 py-1 text-sm hover:border-primary hover:bg-primary-light"
                         >
                           📱
@@ -724,6 +804,30 @@ export function BookingsManager() {
                           className="rounded-lg border border-slate-200 px-2 py-1 text-sm hover:border-primary hover:bg-primary-light"
                         >
                           💬
+                        </button>
+                        <button
+                          onClick={() => copyPaymentLink(order)}
+                          disabled={!order.payment_access_token}
+                          title={
+                            order.payment_access_token
+                              ? 'คัดลอกลิงก์ชำระเงิน'
+                              : 'ยังไม่มีลิงก์ชำระเงิน (payment_access_token ไม่มีค่า)'
+                          }
+                          className="rounded-lg border border-slate-200 px-2 py-1 text-sm hover:border-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-slate-200 disabled:hover:bg-transparent"
+                        >
+                          {copiedId === order.id ? '✅' : '🔗'}
+                        </button>
+                        <button
+                          onClick={() => sendPaymentLinkViaWhatsApp(order)}
+                          disabled={!order.payment_access_token}
+                          title={
+                            order.payment_access_token
+                              ? 'ส่งลิงก์ชำระเงินทาง WhatsApp'
+                              : 'ยังไม่มีลิงก์ชำระเงิน (payment_access_token ไม่มีค่า)'
+                          }
+                          className="rounded-lg border border-slate-200 px-2 py-1 text-sm hover:border-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:border-slate-200 disabled:hover:bg-transparent"
+                        >
+                          💳
                         </button>
                       </div>
                     </td>
