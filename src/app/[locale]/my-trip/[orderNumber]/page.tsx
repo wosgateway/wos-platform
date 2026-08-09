@@ -21,6 +21,7 @@ import { Link } from '@/i18n/navigation';
 type OrderStatus =
   | 'draft'
   | 'pending_deposit'
+  | 'pending_verification'
   | 'deposit_paid'
   | 'confirmed'
   | 'checked_in'
@@ -68,10 +69,15 @@ const STATUS_META: Record<OrderStatus, { label: string; color: string; desc: str
     color: 'bg-amber-100 text-amber-800',
     desc: 'ยืนยันรายการแล้ว กรุณาชำระมัดจำเพื่อยืนยันการจอง',
   },
-  deposit_paid: {
+  pending_verification: {
     label: '🔍 รอตรวจสอบการชำระเงิน',
     color: 'bg-blue-100 text-blue-800',
     desc: 'ทีมงานได้รับสลิปแล้ว กำลังตรวจสอบ (ปกติภายใน 24 ชม.)',
+  },
+  deposit_paid: {
+    label: '✅ ชำระมัดจำแล้ว',
+    color: 'bg-emerald-100 text-emerald-800',
+    desc: 'ทีมงานตรวจสอบและยืนยันการชำระมัดจำแล้ว',
   },
   confirmed: {
     label: '✅ ยืนยันการจองแล้ว',
@@ -97,7 +103,12 @@ const PAYMENT_STATUS_LABEL: Record<string, string> = {
 // deposit requirement was met, not that the full total is paid, so a
 // customer with balance_remaining > 0 should still be able to pay it
 // off after confirmation.
-const NON_PAYABLE_STATUSES = ['draft', 'cancelled', 'refunded', 'completed'];
+// 'pending_verification' IS in this list (unlike the backend's
+// blockedStatuses) purely for UX: a whole-order payment is already
+// waiting_verification, and payments_one_pending_whole_order_idx
+// (migration 021) will reject a second one with a 409 — better to
+// hide the button than let the customer hit that error.
+const NON_PAYABLE_STATUSES = ['draft', 'pending_verification', 'cancelled', 'refunded', 'completed'];
 
 function formatMoney(amount: number | null, currency: string | null) {
   const value = (amount ?? 0).toLocaleString('th-TH');

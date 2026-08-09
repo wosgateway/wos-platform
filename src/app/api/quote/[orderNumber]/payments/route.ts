@@ -29,6 +29,23 @@ import { simpleRateLimit } from '@/lib/rate-limit';
 const ALLOWED_METHODS = ['bank_transfer', 'qr'] as const;
 type PaymentMethod = (typeof ALLOWED_METHODS)[number];
 
+// `payments.payment_method` (the original NOT NULL column from
+// migration 008) has a CHECK constraint allowing only:
+//   'one_bank_qr' | 'bank_transfer' | 'promptpay' | 'cash_at_clinic' | 'cash_at_hotel'
+// The app-facing ALLOWED_METHODS above ('bank_transfer' | 'qr') don't
+// line up 1:1 with that — 'qr' is NOT a valid payment_method value,
+// only 'one_bank_qr' is. Map every accepted client value to a value
+// that satisfies chk_payment_method.
+// Background: migration 019 added a second, unconstrained `method`
+// column instead of reusing `payment_method`, so the insert below
+// must populate BOTH columns — a straight copy isn't enough because
+// of the 'qr' vs 'one_bank_qr' naming mismatch.
+const METHOD_TO_PAYMENT_METHOD: Record<PaymentMethod, string> = {
+  bank_transfer: 'bank_transfer',
+  qr: 'one_bank_qr',
+};
+const DEFAULT_PAYMENT_METHOD = 'bank_transfer'; // payment_method is NOT NULL; used when the client omits `method`
+
 interface CreatePaymentBody {
   amount: number;
   method?: PaymentMethod;
@@ -181,6 +198,10 @@ export async function POST(
       amount,
       currency,
       method: method ?? null,
+      // Legacy NOT NULL column with its own CHECK constraint — see
+      // METHOD_TO_PAYMENT_METHOD comment above. Must always be a
+      // non-null value from chk_payment_method's allowed list.
+      payment_method: method ? METHOD_TO_PAYMENT_METHOD[method] : DEFAULT_PAYMENT_METHOD,
       slip_url: body.slip_url,
       status: 'waiting_verification',
       submitted_at: new Date().toISOString(),
@@ -198,6 +219,14 @@ export async function POST(
         { error: 'มีสลิปที่ส่งไว้แล้วรอการตรวจสอบอยู่ กรุณารอทีมงานตรวจสอบก่อนส่งใหม่' },
         { status: 409 }
       );
+    }
+    if (insertErr.code === '23514') {
+      // chk_payment_method (or another CHECK constraint) rejected the
+      // row — most likely METHOD_TO_PAYMENT_METHOD is missing an entry
+      // for a newly added ALLOWED_METHODS value. Logged distinctly so
+      // this isn't confused with a generic failure.
+      console.error('create payment failed — CHECK constraint violation (likely METHOD_TO_PAYMENT_METHOD out of sync):', insertErr);
+      return NextResponse.json({ error: 'ส่งสลิปไม่สำเร็จ กรุณาลองใหม่' }, { status: 500 });
     }
     console.error('create payment failed:', insertErr);
     return NextResponse.json({ error: 'ส่งสลิปไม่สำเร็จ กรุณาลองใหม่' }, { status: 500 });

@@ -31,6 +31,7 @@
 
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
+import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { Link } from '@/i18n/navigation';
 
@@ -92,6 +93,7 @@ function formatMoney(amount: number | null, currency: string | null) {
 }
 
 export default function PaymentPage() {
+  const t = useTranslations('payment');
   const params = useParams();
   const orderNumber = params?.orderNumber as string;
   // Required alongside order_number — see migration 021 /
@@ -124,7 +126,7 @@ export default function PaymentPage() {
       try {
         const res = await fetch(`/api/quote/${orderNumber}/payments?token=${encodeURIComponent(token)}`);
         const result = await res.json();
-        if (!res.ok) throw new Error(result?.error ?? 'โหลดข้อมูลไม่สำเร็จ');
+        if (!res.ok) throw new Error(result?.error ?? t('errorLoad'));
         setOrder(result.order);
         const remaining =
           result.order.total_balance_remaining ??
@@ -158,11 +160,11 @@ export default function PaymentPage() {
 
     const numericAmount = Number(amount);
     if (!numericAmount || numericAmount <= 0) {
-      setSubmitError('กรุณาระบุจำนวนเงินที่โอน');
+      setSubmitError(t('errorAmount'));
       return;
     }
     if (!file) {
-      setSubmitError('กรุณาแนบไฟล์สลิปการโอนเงิน');
+      setSubmitError(t('errorFile'));
       return;
     }
 
@@ -186,11 +188,11 @@ export default function PaymentPage() {
         }),
       });
       const result = await res.json();
-      if (!res.ok) throw new Error(result?.error ?? 'ส่งสลิปไม่สำเร็จ');
+      if (!res.ok) throw new Error(result?.error ?? t('errorSubmitGeneric'));
 
       setSubmitted(true);
     } catch (e) {
-      setSubmitError(e instanceof Error ? e.message : 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+      setSubmitError(e instanceof Error ? e.message : t('errorSubmitCatch'));
     } finally {
       setSubmitting(false);
     }
@@ -209,7 +211,7 @@ export default function PaymentPage() {
     return (
       <div className="mx-auto max-w-lg p-6">
         <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
-          {loadError ?? 'ไม่พบข้อมูล'}
+          {loadError ?? t('errorNotFound')}
         </div>
       </div>
     );
@@ -233,12 +235,12 @@ export default function PaymentPage() {
   if (NON_PAYABLE_STATUSES.includes(order.status)) {
     return (
       <div className="mx-auto max-w-lg space-y-4 p-6 text-center">
-        <p className="text-sm text-slate-500">รายการนี้ไม่สามารถชำระเงินได้ในสถานะปัจจุบัน</p>
+        <p className="text-sm text-slate-500">{t('notPayableStatus')}</p>
         <Link
           href={`/my-trip/${orderNumber}?token=${encodeURIComponent(token)}`}
           className="inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white"
         >
-          กลับไปดูสถานะการจอง
+          {t('backToStatus')}
         </Link>
       </div>
     );
@@ -247,12 +249,12 @@ export default function PaymentPage() {
   if (balanceRemaining <= 0) {
     return (
       <div className="mx-auto max-w-lg space-y-4 p-6 text-center">
-        <p className="text-sm text-slate-500">✅ ชำระเงินครบถ้วนแล้ว ไม่มียอดคงเหลือ</p>
+        <p className="text-sm text-slate-500">{t('fullyPaid')}</p>
         <Link
           href={`/my-trip/${orderNumber}?token=${encodeURIComponent(token)}`}
           className="inline-block rounded-xl bg-primary px-5 py-2.5 text-sm font-semibold text-white"
         >
-          กลับไปดูสถานะการจอง
+          {t('backToStatus')}
         </Link>
       </div>
     );
@@ -262,14 +264,14 @@ export default function PaymentPage() {
     return (
       <div className="mx-auto max-w-lg space-y-4 p-6">
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-6 text-center">
-          <p className="text-lg font-bold text-emerald-700">✅ ส่งสลิปสำเร็จ</p>
-          <p className="mt-1 text-sm text-emerald-600">ทีมงานจะตรวจสอบและยืนยันภายใน 24 ชั่วโมง</p>
+          <p className="text-lg font-bold text-emerald-700">{t('submittedTitle')}</p>
+          <p className="mt-1 text-sm text-emerald-600">{t('submittedBody')}</p>
         </div>
         <Link
           href={`/my-trip/${orderNumber}?token=${encodeURIComponent(token)}`}
           className="block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-white"
         >
-          กลับไปดูสถานะการจอง
+          {t('backToStatus')}
         </Link>
       </div>
     );
@@ -280,10 +282,10 @@ export default function PaymentPage() {
   return (
     <div className="mx-auto max-w-lg space-y-4 p-6">
       <div className="rounded-2xl border border-slate-100 bg-white p-6 shadow-sm">
-        <h1 className="text-lg font-bold text-slate-900">💳 ชำระเงิน</h1>
-        <p className="mt-1 text-sm text-slate-500">เลขที่: {order.order_number}</p>
+        <h1 className="text-lg font-bold text-slate-900">{t('title')}</h1>
+        <p className="mt-1 text-sm text-slate-500">{t('orderNumber', { orderNumber: order.order_number })}</p>
         <div className="mt-3 flex justify-between text-sm">
-          <span className="text-slate-500">ยอดคงเหลือที่ต้องชำระ</span>
+          <span className="text-slate-500">{t('balanceRemaining')}</span>
           <span className="font-semibold text-primary">{formatMoney(balanceRemaining, order.currency)}</span>
         </div>
       </div>
@@ -291,7 +293,7 @@ export default function PaymentPage() {
       <form onSubmit={handleSubmit} className="space-y-4">
         {/* Currency */}
         <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-          <label className="form-label">เลือกสกุลเงิน</label>
+          <label className="form-label">{t('currencyLabel')}</label>
           <div className="grid grid-cols-3 gap-2">
             {(['THB', 'LAK', 'USD'] as Currency[]).map((c) => (
               <button
@@ -310,7 +312,7 @@ export default function PaymentPage() {
 
         {/* Method */}
         <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-          <label className="form-label">ช่องทางการชำระเงิน</label>
+          <label className="form-label">{t('methodLabel')}</label>
           <div className="grid grid-cols-2 gap-2">
             <button
               type="button"
@@ -319,7 +321,7 @@ export default function PaymentPage() {
                 method === 'bank_transfer' ? 'border-primary bg-primary-light text-primary' : 'border-slate-200 text-slate-600'
               }`}
             >
-              🏦 โอนผ่านธนาคาร
+              {t('methodBankTransfer')}
             </button>
             <button
               type="button"
@@ -328,7 +330,7 @@ export default function PaymentPage() {
                 method === 'qr' ? 'border-primary bg-primary-light text-primary' : 'border-slate-200 text-slate-600'
               }`}
             >
-              📱 สแกน QR
+              {t('methodQr')}
             </button>
           </div>
 
@@ -338,31 +340,31 @@ export default function PaymentPage() {
               info.bankTransfer ? (
                 <div className="space-y-1">
                   <p>
-                    <span className="text-slate-400">ธนาคาร:</span> {info.bankTransfer.bankName}
+                    <span className="text-slate-400">{t('bankName')}</span> {info.bankTransfer.bankName}
                   </p>
                   <p>
-                    <span className="text-slate-400">ชื่อบัญชี:</span> {info.bankTransfer.accountName}
+                    <span className="text-slate-400">{t('accountName')}</span> {info.bankTransfer.accountName}
                   </p>
                   <p>
-                    <span className="text-slate-400">เลขบัญชี:</span> {info.bankTransfer.accountNumber}
+                    <span className="text-slate-400">{t('accountNumber')}</span> {info.bankTransfer.accountNumber}
                   </p>
                 </div>
               ) : (
                 <p className="text-center text-slate-400">
-                  สกุลเงินนี้ยังไม่มีบัญชีธนาคารสำหรับโอน — กรุณาสแกน QR แทน
+                  {t('noBankAccount')}
                 </p>
               )
             ) : info.qrImage ? (
-              <img src={info.qrImage} alt={`QR Payment ${currency}`} className="mx-auto max-h-80 object-contain" />
+              <img src={info.qrImage} alt={t('qrAlt', { currency })} className="mx-auto max-h-80 object-contain" />
             ) : (
-              <p className="text-center text-slate-400">ยังไม่มี QR สำหรับสกุลเงินนี้ — กรุณาโอนผ่านธนาคารแทน</p>
+              <p className="text-center text-slate-400">{t('noQr')}</p>
             )}
           </div>
         </div>
 
         {/* Amount */}
         <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-          <label className="form-label">จำนวนเงินที่โอน ({currency})</label>
+          <label className="form-label">{t('amountLabel', { currency })}</label>
           <div className={`grid gap-2 ${showDepositOption ? 'grid-cols-3' : 'grid-cols-2'}`}>
             {showDepositOption ? (
               <button
@@ -377,7 +379,7 @@ export default function PaymentPage() {
                     : 'border-slate-200 text-slate-600'
                 }`}
               >
-                <div>ชำระมัดจำ</div>
+                <div>{t('presetDeposit')}</div>
                 <div className="mt-0.5 text-[11px] text-slate-400">
                   {formatMoney(depositRemaining, order.currency)}
                 </div>
@@ -395,7 +397,7 @@ export default function PaymentPage() {
                   : 'border-slate-200 text-slate-600'
               }`}
             >
-              <div>ชำระเต็มจำนวน</div>
+              <div>{t('presetFull')}</div>
               <div className="mt-0.5 text-[11px] text-slate-400">
                 {formatMoney(balanceRemaining, order.currency)}
               </div>
@@ -409,7 +411,7 @@ export default function PaymentPage() {
                   : 'border-slate-200 text-slate-600'
               }`}
             >
-              ระบุเอง
+              {t('presetCustom')}
             </button>
           </div>
 
@@ -426,7 +428,7 @@ export default function PaymentPage() {
             />
           ) : (
             <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
-              ยอดที่จะชำระ:{' '}
+              {t('amountToPay')}{' '}
               <span className="font-semibold text-primary">{formatMoney(Number(amount) || 0, order.currency)}</span>
             </div>
           )}
@@ -434,7 +436,7 @@ export default function PaymentPage() {
 
         {/* Slip upload */}
         <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-          <label className="form-label">แนบสลิปการโอนเงิน</label>
+          <label className="form-label">{t('slipLabel')}</label>
           <input
             type="file"
             accept="image/*,application/pdf"
@@ -455,12 +457,12 @@ export default function PaymentPage() {
           disabled={submitting}
           className="btn-primary w-full justify-center text-base disabled:opacity-60"
         >
-          {submitting ? 'กำลังส่ง...' : '✅ ส่งสลิปการโอนเงิน'}
+          {submitting ? t('submitting') : t('submitButton')}
         </button>
       </form>
 
       <p className="text-center text-xs text-slate-400">
-        มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1
+        {t('contactFooter')}
       </p>
     </div>
   );

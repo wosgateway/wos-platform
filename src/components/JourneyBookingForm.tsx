@@ -114,6 +114,7 @@ export function JourneyBookingForm({
     order_number: string;
     total_deposit_required: number;
     currency: string;
+    payment_access_token?: string;
   } | null>(null);
 
   const totalSteps = 3;
@@ -275,6 +276,13 @@ export function JourneyBookingForm({
         order_number: result.order_number,
         total_deposit_required: result.total_deposit_required,
         currency: result.currency,
+        // Required by /my-trip/[orderNumber] and its /payment page —
+        // order_number alone isn't a secret (predictable sequence),
+        // so this token is what actually lets the customer (and only
+        // the customer) view/pay their own order. See migration 021.
+        // (Ported from BookingForm.tsx — this field was missing here,
+        // which is why the payment link never showed up on this flow.)
+        payment_access_token: result.payment_access_token,
       });
       setDone(true);
       clearJourney();
@@ -312,6 +320,20 @@ export function JourneyBookingForm({
               {orderResult.currency}
             </p>
           </div>
+        ) : null}
+        {orderResult?.payment_access_token ? (
+          <Link
+            href={`/my-trip/${orderResult.order_number}?token=${encodeURIComponent(
+              orderResult.payment_access_token
+            )}`}
+            className="mt-4 inline-block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-white"
+          >
+            {/* TODO: replace with a proper t('viewOrderStatus') key once
+                added to your locale JSON files — hardcoded here so this
+                doesn't throw at runtime for a missing key, same as
+                BookingForm.tsx's done screen. */}
+            ดูสถานะการจอง / ชำระเงิน
+          </Link>
         ) : null}
       </div>
     );

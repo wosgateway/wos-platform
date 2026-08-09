@@ -26,6 +26,8 @@ interface PartnerFormState {
   status: 'active' | 'inactive';
   description: string;
   cover_image_url: string;
+  logo_url: string;
+  show_on_homepage: boolean;
 }
 
 const emptyForm: PartnerFormState = {
@@ -37,6 +39,8 @@ const emptyForm: PartnerFormState = {
   status: 'active',
   description: '',
   cover_image_url: '',
+  logo_url: '',
+  show_on_homepage: false,
 };
 
 export function PartnersManager() {
@@ -44,6 +48,8 @@ export function PartnersManager() {
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PartnerFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
@@ -79,6 +85,8 @@ export function PartnersManager() {
         status: partner.status,
         description: (partner.description as string) ?? '',
         cover_image_url: partner.cover_image_url ?? '',
+        logo_url: (partner as { logo_url?: string }).logo_url ?? '',
+        show_on_homepage: !!(partner as { show_on_homepage?: boolean }).show_on_homepage,
       });
     } else {
       setForm(emptyForm);
@@ -102,6 +110,26 @@ export function PartnersManager() {
     }
   }
 
+  // Same bucket as the cover photo (`partner-images`), just a
+  // `logos/` prefix to keep the two kinds of image apart in storage.
+  // See migration 023 for why logo_url is a separate column from
+  // cover_image_url.
+  async function handleLogoUpload(file: File) {
+    setUploading(true);
+    setFormError(null);
+    try {
+      const path = `logos/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage.from('partner-images').upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from('partner-images').getPublicUrl(path);
+      setForm((f) => ({ ...f, logo_url: data.publicUrl }));
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'อัปโหลดโลโก้ไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -118,6 +146,8 @@ export function PartnersManager() {
       status: form.status,
       description: form.description.trim() || null,
       cover_image_url: form.cover_image_url.trim() || null,
+      logo_url: form.logo_url.trim() || null,
+      show_on_homepage: form.show_on_homepage,
     };
     const { error } = form.id
       ? await supabase.from('partners').update(payload).eq('id', form.id)
@@ -141,10 +171,25 @@ export function PartnersManager() {
     loadPartners();
   }
 
+  // Name search is case-insensitive and matches anywhere in the name
+  // (not just prefix) — same UX as PartnersSearchGrid.tsx on the
+  // customer-facing directory. Category filter is exact-match against
+  // CATEGORY_OPTIONS values.
+  const filteredPartners = partners.filter((p) => {
+    const matchesSearch = searchQuery.trim()
+      ? p.name?.toLowerCase().includes(searchQuery.trim().toLowerCase())
+      : true;
+    const matchesCategory = categoryFilter === 'all' ? true : p.category === categoryFilter;
+    return matchesSearch && matchesCategory;
+  });
+
   return (
     <div className="space-y-4 p-4">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-900">พาร์ทเนอร์ ({partners.length})</h2>
+        <h2 className="text-lg font-bold text-slate-900">
+          พาร์ทเนอร์ ({filteredPartners.length}
+          {filteredPartners.length !== partners.length ? ` / ${partners.length}` : ''})
+        </h2>
         <div className="flex gap-2">
           <button onClick={loadPartners} className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm">
             รีเฟรช
@@ -153,6 +198,40 @@ export function PartnersManager() {
             + เพิ่มพาร์ทเนอร์
           </button>
         </div>
+      </div>
+
+      {/* ===== ค้นหา + กรองหมวดหมู่ ===== */}
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="ค้นหาชื่อพาร์ทเนอร์..."
+          className="form-input max-w-xs flex-1"
+        />
+        <select
+          value={categoryFilter}
+          onChange={(e) => setCategoryFilter(e.target.value)}
+          className="form-input w-auto"
+        >
+          <option value="all">ทุกหมวดหมู่</option>
+          {CATEGORY_OPTIONS.map((c) => (
+            <option key={c.value} value={c.value}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        {searchQuery || categoryFilter !== 'all' ? (
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setCategoryFilter('all');
+            }}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500"
+          >
+            ล้างตัวกรอง
+          </button>
+        ) : null}
       </div>
 
       {listError ? (
@@ -165,6 +244,8 @@ export function PartnersManager() {
         <p className="text-sm text-slate-400">กำลังโหลด...</p>
       ) : partners.length === 0 ? (
         <p className="text-sm text-slate-400">ยังไม่มีพาร์ทเนอร์</p>
+      ) : filteredPartners.length === 0 ? (
+        <p className="text-sm text-slate-400">ไม่พบพาร์ทเนอร์ที่ตรงกับการค้นหา/ตัวกรอง</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <table className="w-full text-left text-sm">
@@ -174,11 +255,12 @@ export function PartnersManager() {
                 <th className="px-4 py-2">หมวดหมู่</th>
                 <th className="px-4 py-2">สถานะ</th>
                 <th className="px-4 py-2">คะแนน</th>
+                <th className="px-4 py-2">หน้าแรก</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
             <tbody>
-              {partners.map((p) => (
+              {filteredPartners.map((p) => (
                 <tr key={p.id} className="border-t border-slate-100">
                   <td className="px-4 py-2 font-medium text-slate-800">{p.name}</td>
                   <td className="px-4 py-2 text-slate-500">{p.category}</td>
@@ -192,6 +274,13 @@ export function PartnersManager() {
                     </span>
                   </td>
                   <td className="px-4 py-2 text-slate-500">{p.rating ?? '-'}</td>
+                  <td className="px-4 py-2">
+                    {(p as { show_on_homepage?: boolean }).show_on_homepage ? (
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs text-emerald-700">✅ โชว์</span>
+                    ) : (
+                      <span className="text-xs text-slate-300">—</span>
+                    )}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <button onClick={() => openModal(p)} className="mr-3 text-primary hover:underline">
                       แก้ไข
@@ -306,6 +395,44 @@ export function PartnersManager() {
                   className="mt-2 h-20 w-20 rounded-lg object-cover"
                   unoptimized
                 />
+              ) : null}
+            </div>
+
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
+              <label className="form-label">โลโก้ (สำหรับแถบเลื่อนหน้าแรก)</label>
+              <p className="mb-2 text-xs text-slate-400">
+                ใช้ไฟล์ PNG/SVG พื้นหลังโปร่งใส แนะนำขนาด 400×160px (หรือสัดส่วนใกล้เคียง) จะเลื่อนได้สวยที่สุด — ดูรายละเอียดขนาดเพิ่มเติมได้ที่ PartnerLogos.tsx
+              </p>
+              <input
+                type="file"
+                accept="image/png,image/svg+xml,image/webp"
+                className="form-input"
+                onChange={(e) => e.target.files?.[0] && handleLogoUpload(e.target.files[0])}
+              />
+              {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
+              {form.logo_url ? (
+                <div className="mt-2 flex h-16 items-center rounded-lg border border-slate-200 bg-white px-3">
+                  <Image
+                    src={form.logo_url}
+                    alt=""
+                    width={160}
+                    height={64}
+                    className="max-h-12 w-auto object-contain"
+                    unoptimized
+                  />
+                </div>
+              ) : null}
+              <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
+                <input
+                  type="checkbox"
+                  className="h-4 w-4"
+                  checked={form.show_on_homepage}
+                  onChange={(e) => setForm({ ...form, show_on_homepage: e.target.checked })}
+                />
+                แสดงในแถบ &quot;ได้รับความไว้วางใจจากพันธมิตรชั้นนำ&quot; หน้าแรก
+              </label>
+              {form.show_on_homepage && !form.logo_url ? (
+                <p className="mt-1 text-xs text-amber-600">⚠️ ต้องอัปโหลดโลโก้ก่อน ไม่งั้นจะไม่แสดงในหน้าแรก</p>
               ) : null}
             </div>
 

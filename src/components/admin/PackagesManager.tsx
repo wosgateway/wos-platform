@@ -50,6 +50,8 @@ export function PackagesManager() {
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [partnerFilter, setPartnerFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PackageFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
@@ -186,14 +188,24 @@ export function PackagesManager() {
     loadAll();
   }
 
-  const filtered = statusFilter === 'all' ? packages : packages.filter((p) => p.status === statusFilter);
+  // Status filter (existing) is applied first, then name search and
+  // partner filter narrow it further — all three combine with AND.
+  const filtered = packages
+    .filter((p) => (statusFilter === 'all' ? true : p.status === statusFilter))
+    .filter((p) =>
+      searchQuery.trim() ? (p.title as string)?.toLowerCase().includes(searchQuery.trim().toLowerCase()) : true
+    )
+    .filter((p) => (partnerFilter === 'all' ? true : p.partner_id === partnerFilter));
   const pendingCount = packages.filter((p) => p.status === 'pending').length;
 
   return (
     <div className="space-y-4 p-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-3">
-          <h2 className="text-lg font-bold text-slate-900">แพ็กเกจ ({packages.length})</h2>
+          <h2 className="text-lg font-bold text-slate-900">
+            แพ็กเกจ ({filtered.length}
+            {filtered.length !== packages.length ? ` / ${packages.length}` : ''})
+          </h2>
           {pendingCount > 0 ? (
             <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-semibold text-amber-700">
               ⏳ รอตรวจสอบ {pendingCount} รายการ
@@ -229,6 +241,40 @@ export function PackagesManager() {
         ))}
       </div>
 
+      {/* ===== ค้นหา + กรองพาร์ทเนอร์ ===== */}
+      <div className="flex flex-wrap gap-2">
+        <input
+          type="text"
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          placeholder="ค้นหาชื่อโปรแกรม..."
+          className="form-input max-w-xs flex-1"
+        />
+        <select
+          value={partnerFilter}
+          onChange={(e) => setPartnerFilter(e.target.value)}
+          className="form-input w-auto"
+        >
+          <option value="all">ทุกพาร์ทเนอร์</option>
+          {partners.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.name}
+            </option>
+          ))}
+        </select>
+        {searchQuery || partnerFilter !== 'all' ? (
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setPartnerFilter('all');
+            }}
+            className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500"
+          >
+            ล้างตัวกรอง
+          </button>
+        ) : null}
+      </div>
+
       {partners.length === 0 && !loading ? (
         <p className="text-sm text-amber-600">ต้องเพิ่มพาร์ทเนอร์อย่างน้อย 1 รายก่อนจึงจะสร้างแพ็กเกจได้</p>
       ) : null}
@@ -241,8 +287,10 @@ export function PackagesManager() {
 
       {loading ? (
         <p className="text-sm text-slate-400">กำลังโหลด...</p>
+      ) : packages.length === 0 ? (
+        <p className="text-sm text-slate-400">ยังไม่มีแพ็กเกจ</p>
       ) : filtered.length === 0 ? (
-        <p className="text-sm text-slate-400">ไม่มีแพ็กเกจในสถานะนี้</p>
+        <p className="text-sm text-slate-400">ไม่พบแพ็กเกจที่ตรงกับการค้นหา/ตัวกรอง</p>
       ) : (
         <div className="overflow-x-auto rounded-xl border border-slate-100">
           <table className="w-full text-left text-sm">

@@ -221,7 +221,7 @@ function buildPaymentLink(order: Order): string | null {
   if (!order.payment_access_token || !order.order_number) return null;
   const locale = detectLocale(order.customer?.country);
   const origin = typeof window !== 'undefined' ? window.location.origin : '';
-  return `${origin}/${locale}/my-trip/${order.order_number}?token=${order.payment_access_token}`;
+  return `${origin}/${locale}/my-trip/${order.order_number}?token=${encodeURIComponent(order.payment_access_token)}`;
 }
 
 function buildPaymentLinkMessage(order: Order, link: string): string {
