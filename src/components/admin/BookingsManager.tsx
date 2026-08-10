@@ -63,6 +63,9 @@ interface OrderItem {
   transport_mode: string | null;
   transport_return_date: string | null;
   transport_return_time: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
+  room_quantity: number;
   package: { id: string; title: string; original_price: number | null; special_price: number | null } | null;
   partner: { id: string; name: string } | null;
 }
@@ -129,6 +132,79 @@ function isAddOnItem(item: OrderItem): boolean {
   return item.service_type === 'hotel' || item.service_type === 'transport';
 }
 
+// Mirrors the orders.status boundary admin_update_order_item_schedule()
+// (migration 026) enforces server-side: schedule editing is allowed
+// while draft / pending_deposit / deposit_paid, and locked once the
+// order reaches confirmed (or beyond). Kept here purely so the UI can
+// grey out the edit button instead of letting the admin hit a 400 —
+// the RPC is the actual source of truth, this is not a security
+// boundary.
+function isScheduleEditable(order: Order): boolean {
+  return order.status === 'draft' || order.status === 'pending_deposit' || order.status === 'deposit_paid';
+}
+
+// Pickup/dropoff location: same LocationType model as BookingForm.tsx /
+// JourneyBookingForm.tsx (migration 024) — a dropdown of the standard
+// Laos↔Thailand corridor points plus 'hotel' and 'other', which reveal
+// a free-text detail input. Kept as a plain object map here (rather than
+// next-intl's t()) since BookingsManager.tsx is an admin-only screen with
+// hardcoded Thai strings throughout, same convention as the rest of this
+// file.
+type LocationType =
+  | ''
+  | 'nongkhai_bridge'
+  | 'nakhon_phanom_bridge'
+  | 'mukdahan_bridge'
+  | 'chong_mek'
+  | 'udon_airport'
+  | 'hotel'
+  | 'other';
+
+const LOCATION_OPTIONS: { value: Exclude<LocationType, ''>; label: string }[] = [
+  { value: 'nongkhai_bridge', label: '🛂 ด่านหนองคาย (สะพานมิตรภาพไทย-ลาว 1)' },
+  { value: 'nakhon_phanom_bridge', label: '🛂 ด่านนครพนม (สะพานมิตรภาพไทย-ลาว 3)' },
+  { value: 'mukdahan_bridge', label: '🛂 ด่านมุกดาหาร (สะพานมิตรภาพไทย-ลาว 2)' },
+  { value: 'chong_mek', label: '🛂 ด่านช่องเม็ก (อุบลราชธานี)' },
+  { value: 'udon_airport', label: '✈️ สนามบินอุดรธานี' },
+  { value: 'hotel', label: '🏨 โรงแรม (ระบุชื่อ)' },
+  { value: 'other', label: '📍 อื่นๆ (ระบุเอง)' },
+];
+
+const LOCATION_HOTEL_LABEL = LOCATION_OPTIONS.find((o) => o.value === 'hotel')!.label;
+
+// Mirrors BookingForm.tsx's resolveLocationLabel(): turns a
+// {type, detail} selection into the free-text string that actually gets
+// stored in order_items.pickup_location / dropoff_location and shown to
+// drivers/partners — so an edit made here round-trips through the exact
+// same text format the customer-facing booking flow already produces.
+function resolveLocationLabel(type: LocationType, detail: string): string {
+  const trimmed = detail.trim();
+  const opt = LOCATION_OPTIONS.find((o) => o.value === type);
+  if (!opt) return '';
+  if (type === 'hotel') return trimmed ? `${opt.label}: ${trimmed}` : opt.label;
+  if (type === 'other') return trimmed || opt.label;
+  return opt.label;
+}
+
+// Reverse of resolveLocationLabel() — reconstructs {type, detail} from an
+// existing stored string so the dropdown pre-selects the right option
+// when the editor opens. Any value that doesn't match a known fixed
+// point or the hotel-label prefix (including pre-migration-024 legacy
+// plain text) safely falls back to 'other' with the full original text
+// as the detail, so nothing is ever silently dropped.
+function parseLocationValue(value: string): { type: LocationType; detail: string } {
+  if (!value) return { type: '', detail: '' };
+  const fixed = LOCATION_OPTIONS.find(
+    (o) => o.value !== 'hotel' && o.value !== 'other' && o.label === value
+  );
+  if (fixed) return { type: fixed.value, detail: '' };
+  if (value === LOCATION_HOTEL_LABEL) return { type: 'hotel', detail: '' };
+  if (value.startsWith(`${LOCATION_HOTEL_LABEL}: `)) {
+    return { type: 'hotel', detail: value.slice(LOCATION_HOTEL_LABEL.length + 2) };
+  }
+  return { type: 'other', detail: value };
+}
+
 function localISODate(d: Date) {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, '0');
@@ -184,11 +260,18 @@ function buildOrderSummaryText(order: Order): string {
     lines.push(
       `โรงแรม: ${itemLabel(hotelItem)} (เข้าพัก ${hotelItem.scheduled_date || '-'} ถึง ${
         hotelItem.hotel_checkout_date || '-'
-      })`
+      }${hotelItem.room_quantity > 1 ? ` · ${hotelItem.room_quantity} ห้อง` : ''})`
     );
   }
   if (transportItem) {
-    lines.push(`รถรับส่ง: ${itemLabel(transportItem)} (${transportDetailLabel(transportItem)})`);
+    let transportLine = `รถรับส่ง: ${itemLabel(transportItem)} (${transportDetailLabel(transportItem)})`;
+    if (transportItem.pickup_location || transportItem.dropoff_location) {
+      const parts: string[] = [];
+      if (transportItem.pickup_location) parts.push(`รับ: ${transportItem.pickup_location}`);
+      if (transportItem.dropoff_location) parts.push(`ส่ง: ${transportItem.dropoff_location}`);
+      transportLine += ` · ${parts.join(' · ')}`;
+    }
+    lines.push(transportLine);
   }
   lines.push('');
   lines.push(`ราคารวม: ${formatTHB(order.total_amount ?? 0)}`);
@@ -285,11 +368,19 @@ function printOrderSummary(order: Order) {
     transport: 'รถรับส่ง',
   };
 
-  const rows: [string, string, string][] = order.items.map((item) => [
-    SERVICE_TYPE_ROW_LABEL[item.service_type],
-    itemLabel(item) + (item.service_type === 'transport' ? ` · ${transportDetailLabel(item)}` : ''),
-    formatTHB(itemPrice(item)),
-  ]);
+  const rows: [string, string, string][] = order.items.map((item) => {
+    let detail = itemLabel(item);
+    if (item.service_type === 'transport') {
+      detail += ` · ${transportDetailLabel(item)}`;
+      if (item.pickup_location || item.dropoff_location) {
+        const parts: string[] = [];
+        if (item.pickup_location) parts.push(`รับ: ${item.pickup_location}`);
+        if (item.dropoff_location) parts.push(`ส่ง: ${item.dropoff_location}`);
+        detail += ` · ${parts.join(' · ')}`;
+      }
+    }
+    return [SERVICE_TYPE_ROW_LABEL[item.service_type], detail, formatTHB(itemPrice(item))];
+  });
 
   const statusLabel = STATUS_LABEL[order.status] || order.status;
 
@@ -373,6 +464,35 @@ export function BookingsManager() {
   const [savingId, setSavingId] = useState<string | null>(null);
   // Shows a temporary ✅ on the copy-link button after a successful copy.
   const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  // Schedule-edit modal (migration 026 / /api/admin/order-items/[id]/schedule).
+  // editingSchedule holds both the item and its parent order (need
+  // order.status to decide whether editing is even allowed, and
+  // order.id isn't on OrderItem).
+  const [editingSchedule, setEditingSchedule] = useState<{ order: Order; item: OrderItem } | null>(null);
+  const [scheduleForm, setScheduleForm] = useState<{
+    scheduled_date: string;
+    scheduled_time: string;
+    hotel_checkout_date: string;
+    transport_return_date: string;
+    transport_return_time: string;
+    pickup_location_type: LocationType;
+    pickup_location_detail: string;
+    dropoff_location_type: LocationType;
+    dropoff_location_detail: string;
+  }>({
+    scheduled_date: '',
+    scheduled_time: '',
+    hotel_checkout_date: '',
+    transport_return_date: '',
+    transport_return_time: '',
+    pickup_location_type: '',
+    pickup_location_detail: '',
+    dropoff_location_type: '',
+    dropoff_location_detail: '',
+  });
+  const [savingSchedule, setSavingSchedule] = useState(false);
+  const [scheduleError, setScheduleError] = useState<string | null>(null);
 
   // Hotel/transport packages still live in the public `packages` table
   // (see PROJECT_STRUCTURE.md decision: `packages` is the single source
@@ -496,6 +616,64 @@ export function BookingsManager() {
       alert('เปลี่ยนแพ็กเกจไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'unknown error'));
     } finally {
       setSavingId(null);
+    }
+  }
+
+  function openScheduleEditor(order: Order, item: OrderItem) {
+    setScheduleError(null);
+    const pickup = parseLocationValue(item.pickup_location ?? '');
+    const dropoff = parseLocationValue(item.dropoff_location ?? '');
+    setScheduleForm({
+      scheduled_date: item.scheduled_date ?? '',
+      scheduled_time: item.scheduled_time ?? '',
+      hotel_checkout_date: item.hotel_checkout_date ?? '',
+      transport_return_date: item.transport_return_date ?? '',
+      transport_return_time: item.transport_return_time ?? '',
+      pickup_location_type: pickup.type,
+      pickup_location_detail: pickup.detail,
+      dropoff_location_type: dropoff.type,
+      dropoff_location_detail: dropoff.detail,
+    });
+    setEditingSchedule({ order, item });
+  }
+
+  function closeScheduleEditor() {
+    if (savingSchedule) return; // don't let a stray Esc/backdrop click drop an in-flight save
+    setEditingSchedule(null);
+    setScheduleError(null);
+  }
+
+  // Always sends the full 7-field state — admin_update_order_item_schedule()
+  // (migration 026) overwrites all of them every call, no partial patch.
+  async function submitScheduleEdit() {
+    if (!editingSchedule) return;
+    const { item } = editingSchedule;
+    setSavingSchedule(true);
+    setScheduleError(null);
+    try {
+      const res = await fetch(`/api/admin/order-items/${item.id}/schedule`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          scheduled_date: scheduleForm.scheduled_date || null,
+          scheduled_time: scheduleForm.scheduled_time || null,
+          hotel_checkout_date: scheduleForm.hotel_checkout_date || null,
+          transport_return_date: scheduleForm.transport_return_date || null,
+          transport_return_time: scheduleForm.transport_return_time || null,
+          pickup_location:
+            resolveLocationLabel(scheduleForm.pickup_location_type, scheduleForm.pickup_location_detail) || null,
+          dropoff_location:
+            resolveLocationLabel(scheduleForm.dropoff_location_type, scheduleForm.dropoff_location_detail) || null,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'update failed');
+      setEditingSchedule(null);
+      await loadOrders();
+    } catch (e) {
+      setScheduleError(e instanceof Error ? e.message : 'unknown error');
+    } finally {
+      setSavingSchedule(false);
     }
   }
 
@@ -702,10 +880,29 @@ export function BookingsManager() {
                                 >
                                   {itemLabel(transportItem)}
                                 </span>
+                                <button
+                                  onClick={() => openScheduleEditor(order, transportItem)}
+                                  disabled={!isScheduleEditable(order)}
+                                  title={
+                                    isScheduleEditable(order)
+                                      ? 'แก้ไขวันเวลารับ-ส่ง/จุดนัดพบ'
+                                      : 'แก้ไขไม่ได้แล้ว — ออเดอร์ยืนยันแล้ว'
+                                  }
+                                  className="ml-auto rounded border border-slate-200 px-1 py-0.5 text-[11px] hover:border-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-30"
+                                >
+                                  📅
+                                </button>
                               </div>
                               <div className="ml-4 text-xs text-slate-500">
                                 {transportDetailLabel(transportItem)}
                               </div>
+                              {(transportItem.pickup_location || transportItem.dropoff_location) ? (
+                                <div className="ml-4 text-xs text-slate-400">
+                                  {transportItem.pickup_location ? `รับ: ${transportItem.pickup_location}` : ''}
+                                  {transportItem.pickup_location && transportItem.dropoff_location ? ' · ' : ''}
+                                  {transportItem.dropoff_location ? `ส่ง: ${transportItem.dropoff_location}` : ''}
+                                </div>
+                              ) : null}
                               {itemPrice(transportItem) ? (
                                 <div className="ml-4 text-xs text-slate-400">
                                   {formatTHB(itemPrice(transportItem))}
@@ -737,9 +934,22 @@ export function BookingsManager() {
                                 >
                                   {itemLabel(hotelItem)}
                                 </span>
+                                <button
+                                  onClick={() => openScheduleEditor(order, hotelItem)}
+                                  disabled={!isScheduleEditable(order)}
+                                  title={
+                                    isScheduleEditable(order)
+                                      ? 'แก้ไขวันเช็คอิน/เช็คเอาท์'
+                                      : 'แก้ไขไม่ได้แล้ว — ออเดอร์ยืนยันแล้ว'
+                                  }
+                                  className="ml-auto rounded border border-slate-200 px-1 py-0.5 text-[11px] hover:border-primary hover:bg-primary-light disabled:cursor-not-allowed disabled:opacity-30"
+                                >
+                                  📅
+                                </button>
                               </div>
                               <div className="ml-4 text-xs text-slate-500">
                                 {hotelItem.scheduled_date || '-'} ถึง {hotelItem.hotel_checkout_date || '-'}
+                                {hotelItem.room_quantity > 1 ? ` · ${hotelItem.room_quantity} ห้อง` : ''}
                               </div>
                               {itemPrice(hotelItem) ? (
                                 <div className="ml-4 text-xs text-slate-400">{formatTHB(itemPrice(hotelItem))}</div>
@@ -838,6 +1048,183 @@ export function BookingsManager() {
           </table>
         </div>
       )}
+
+      {editingSchedule ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4"
+          onClick={closeScheduleEditor}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-xl"
+          >
+            <h3 className="text-sm font-bold text-slate-900">
+              {editingSchedule.item.service_type === 'hotel' ? '🏨 แก้ไขวันเช็คอิน/เช็คเอาท์' : '🚗 แก้ไขวันเวลารับ-ส่ง'}
+            </h3>
+            <p className="mt-0.5 text-xs text-slate-400">
+              {editingSchedule.order.order_number || editingSchedule.order.id.slice(0, 8)} ·{' '}
+              {itemLabel(editingSchedule.item)}
+            </p>
+
+            <div className="mt-4 space-y-3">
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs text-slate-500">
+                  {editingSchedule.item.service_type === 'hotel' ? 'วันเช็คอิน' : 'วันรับ'}
+                  <input
+                    type="date"
+                    value={scheduleForm.scheduled_date}
+                    onChange={(e) => setScheduleForm((f) => ({ ...f, scheduled_date: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                  />
+                </label>
+                <label className="text-xs text-slate-500">
+                  เวลา
+                  <input
+                    type="time"
+                    value={scheduleForm.scheduled_time}
+                    onChange={(e) => setScheduleForm((f) => ({ ...f, scheduled_time: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                  />
+                </label>
+              </div>
+
+              {editingSchedule.item.service_type === 'hotel' ? (
+                <label className="block text-xs text-slate-500">
+                  วันเช็คเอาท์
+                  <input
+                    type="date"
+                    value={scheduleForm.hotel_checkout_date}
+                    onChange={(e) => setScheduleForm((f) => ({ ...f, hotel_checkout_date: e.target.value }))}
+                    className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                  />
+                </label>
+              ) : null}
+
+              {editingSchedule.item.service_type === 'transport' ? (
+                <>
+                  {editingSchedule.item.transport_mode === 'round_trip' ? (
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="text-xs text-slate-500">
+                        วันส่งกลับ
+                        <input
+                          type="date"
+                          value={scheduleForm.transport_return_date}
+                          onChange={(e) =>
+                            setScheduleForm((f) => ({ ...f, transport_return_date: e.target.value }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                      <label className="text-xs text-slate-500">
+                        เวลาส่งกลับ
+                        <input
+                          type="time"
+                          value={scheduleForm.transport_return_time}
+                          onChange={(e) =>
+                            setScheduleForm((f) => ({ ...f, transport_return_time: e.target.value }))
+                          }
+                          className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                        />
+                      </label>
+                    </div>
+                  ) : null}
+                  <div className="block text-xs text-slate-500">
+                    จุดรับ (pickup)
+                    <select
+                      value={scheduleForm.pickup_location_type}
+                      onChange={(e) =>
+                        setScheduleForm((f) => ({
+                          ...f,
+                          pickup_location_type: e.target.value as LocationType,
+                        }))
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                    >
+                      <option value="">เลือก...</option>
+                      {LOCATION_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    {scheduleForm.pickup_location_type === 'hotel' ||
+                    scheduleForm.pickup_location_type === 'other' ? (
+                      <input
+                        type="text"
+                        value={scheduleForm.pickup_location_detail}
+                        onChange={(e) =>
+                          setScheduleForm((f) => ({ ...f, pickup_location_detail: e.target.value }))
+                        }
+                        placeholder={
+                          scheduleForm.pickup_location_type === 'hotel' ? 'ระบุชื่อโรงแรม' : 'ระบุสถานที่'
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                      />
+                    ) : null}
+                  </div>
+                  <div className="block text-xs text-slate-500">
+                    จุดส่ง (dropoff)
+                    <select
+                      value={scheduleForm.dropoff_location_type}
+                      onChange={(e) =>
+                        setScheduleForm((f) => ({
+                          ...f,
+                          dropoff_location_type: e.target.value as LocationType,
+                        }))
+                      }
+                      className="mt-1 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                    >
+                      <option value="">เลือก...</option>
+                      {LOCATION_OPTIONS.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                    {scheduleForm.dropoff_location_type === 'hotel' ||
+                    scheduleForm.dropoff_location_type === 'other' ? (
+                      <input
+                        type="text"
+                        value={scheduleForm.dropoff_location_detail}
+                        onChange={(e) =>
+                          setScheduleForm((f) => ({ ...f, dropoff_location_detail: e.target.value }))
+                        }
+                        placeholder={
+                          scheduleForm.dropoff_location_type === 'hotel' ? 'ระบุชื่อโรงแรม' : 'ระบุสถานที่'
+                        }
+                        className="mt-2 w-full rounded-lg border border-slate-200 px-2 py-1.5 text-sm"
+                      />
+                    ) : null}
+                  </div>
+                </>
+              ) : null}
+            </div>
+
+            {scheduleError ? (
+              <div className="mt-3 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                {scheduleError}
+              </div>
+            ) : null}
+
+            <div className="mt-4 flex justify-end gap-2">
+              <button
+                onClick={closeScheduleEditor}
+                disabled={savingSchedule}
+                className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-600 disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                onClick={submitScheduleEdit}
+                disabled={savingSchedule}
+                className="rounded-lg bg-primary px-4 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {savingSchedule ? 'กำลังบันทึก...' : 'บันทึก'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

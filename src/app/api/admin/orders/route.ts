@@ -22,6 +22,9 @@ interface OrderItemRow {
   transport_mode: string | null;
   transport_return_date: string | null;
   transport_return_time: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
+  room_quantity: number;
 }
 
 interface PackageRow {
@@ -41,6 +44,19 @@ type OrderItemWithRelations = OrderItemRow & {
   partner: PartnerRow | null;
 };
 
+interface PaymentRow {
+  id: string;
+  order_id: string;
+  amount: number | null;
+  currency: string | null;
+  method: string | null;
+  status: string;
+  slip_url: string | null;
+  submitted_at: string | null;
+  verified_at: string | null;
+  rejection_reason: string | null;
+}
+
 export async function GET() {
   const auth = await requireAdmin();
   if (!auth.authorized) {
@@ -53,7 +69,7 @@ export async function GET() {
   const { data: orders, error: ordersErr } = await supabase
     .from('orders')
     .select(
-      'id, order_number, patient_id, status, notes, attachment_url, total_amount, total_deposit_required, currency, created_at, payment_access_token'
+      'id, order_number, patient_id, status, notes, attachment_url, total_amount, total_deposit_required, total_deposit_paid, total_balance_remaining, currency, created_at, payment_access_token'
     )
     .order('created_at', { ascending: false });
 
@@ -69,10 +85,15 @@ export async function GET() {
   const patientIds = [...new Set(orders.map((o) => o.patient_id))];
 
   // 2. Order items for those orders
+  // NOTE: this list previously never selected pickup_location /
+  // dropoff_location (migration 024/025 added the columns but this
+  // route wasn't updated — admin UI silently showed undefined for
+  // both) — and now also needs room_quantity (migration 028). All
+  // three fixed here together.
   const { data: items, error: itemsErr } = await supabase
     .from('order_items')
     .select(
-      'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time'
+      'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity'
     )
     .in('order_id', orderIds);
 
@@ -90,6 +111,30 @@ export async function GET() {
   if (customersErr) {
     console.error('fetch customers failed:', customersErr);
     return NextResponse.json({ error: 'failed to load customers' }, { status: 500 });
+  }
+
+  // 3b. Whole-order payments (order_item_id IS NULL) — these are the
+  // ones an admin verifies/rejects via /api/admin/payments/[id]/verify
+  // and /reject (see those routes' headers for why partner-scoped
+  // payments are excluded here). Used by the admin order detail page
+  // to render a Payments section with Verify/Reject actions.
+  const { data: payments, error: paymentsErr } = await supabase
+    .from('payments')
+    .select('id, order_id, amount, currency, method, status, slip_url, submitted_at, verified_at, rejection_reason')
+    .in('order_id', orderIds)
+    .is('order_item_id', null)
+    .order('submitted_at', { ascending: false });
+
+  if (paymentsErr) {
+    console.error('fetch payments failed:', paymentsErr);
+    return NextResponse.json({ error: 'failed to load payments' }, { status: 500 });
+  }
+
+  const paymentsByOrder = new Map<string, PaymentRow[]>();
+  for (const payment of (payments ?? []) as PaymentRow[]) {
+    const list = paymentsByOrder.get(payment.order_id) ?? [];
+    list.push(payment);
+    paymentsByOrder.set(payment.order_id, list);
   }
 
   // 4. Packages + partners referenced by items (only the ones actually assigned)
@@ -143,6 +188,7 @@ export async function GET() {
     ...order,
     customer: customerById.get(order.patient_id) ?? null,
     items: itemsByOrder.get(order.id) ?? [],
+    payments: paymentsByOrder.get(order.id) ?? [],
   }));
 
   return NextResponse.json({ orders: enriched });

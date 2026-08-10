@@ -33,6 +33,13 @@
 // create rows in `customers`/`orders`/`order_items` — worth putting
 // behind something (e.g. Vercel/Upstash rate limit by IP, or a
 // lightweight turnstile/captcha on the BookingForm) before launch.
+//
+// transport_pickup_location / transport_dropoff_location: forwarded
+// to create_order_with_items() same as transport_mode etc. Requires
+// migrations 024 (adds order_items.pickup_location/dropoff_location)
+// and 025 (updates the function to read/store them) — run both
+// before deploying this route, or the values are accepted here but
+// silently dropped by the RPC.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
@@ -58,12 +65,28 @@ interface OrderItemInput {
   quantity?: number;
   scheduled_date?: string;
   scheduled_time?: string;
-  // Hotel-only:
+  // Hotel-only: number of rooms (migration 028). Multiplies into
+  // price alongside quantity (nights) — see BookingForm.tsx's
+  // priceBreakdown and create_order_with_items() for both sides of
+  // that math. Only meaningful when this item is a hotel item; for
+  // a package_id item that isn't hotel, or service_type='transport',
+  // sending anything other than 1 (or omitting it) is rejected
+  // inside create_order_with_items() since the DB is the only place
+  // that reliably knows a resolved package's category.
+  room_quantity?: number;
   hotel_checkout_date?: string;
   // Transport-only:
   transport_mode?: 'one_way' | 'round_trip' | 'daily';
   transport_return_date?: string;
   transport_return_time?: string;
+  // Free text, already resolved client-side from the pickup/dropoff
+  // dropdown (a fixed corridor point, or "hotel: <name>" / a custom
+  // spot the customer typed) — see BookingForm.tsx / JourneyBookingForm.tsx
+  // resolveLocationLabel(). Forwarded as-is; nothing here is used to
+  // derive price or partner, so it doesn't need the same
+  // never-trust-the-client treatment as package_id/price.
+  transport_pickup_location?: string;
+  transport_dropoff_location?: string;
 }
 
 interface CreateOrderBody {
@@ -101,6 +124,28 @@ function validate(body: Partial<CreateOrderBody>): string | null {
     }
     if (item.quantity !== undefined && (typeof item.quantity !== 'number' || item.quantity <= 0)) {
       return `item[${i}]: quantity must be a positive number`;
+    }
+    if (
+      item.room_quantity !== undefined &&
+      (typeof item.room_quantity !== 'number' ||
+        !Number.isInteger(item.room_quantity) ||
+        item.room_quantity <= 0)
+    ) {
+      return `item[${i}]: room_quantity must be a positive integer`;
+    }
+    // Only enforceable here for the "let team decide" shape, where
+    // service_type is given directly. A package_id item's real
+    // category (and therefore whether it's actually 'hotel') is only
+    // known inside create_order_with_items() — that's the backstop
+    // for tampered requests; this is just an earlier, friendlier
+    // rejection for the common case.
+    if (
+      item.room_quantity !== undefined &&
+      item.room_quantity !== 1 &&
+      hasServiceType &&
+      item.service_type !== 'hotel'
+    ) {
+      return `item[${i}]: room_quantity is only supported for hotel items`;
     }
     if (
       item.transport_mode !== undefined &&
@@ -178,12 +223,15 @@ export async function POST(req: NextRequest) {
   const rpcItems = items.map((item) => {
     const base: Record<string, unknown> = {
       quantity: item.quantity ?? 1,
+      room_quantity: item.room_quantity ?? 1,
       scheduled_date: item.scheduled_date ?? null,
       scheduled_time: item.scheduled_time ?? null,
       hotel_checkout_date: item.hotel_checkout_date ?? null,
       transport_mode: item.transport_mode ?? null,
       transport_return_date: item.transport_return_date ?? null,
       transport_return_time: item.transport_return_time ?? null,
+      transport_pickup_location: item.transport_pickup_location ?? null,
+      transport_dropoff_location: item.transport_dropoff_location ?? null,
     };
     // Only one of these keys should be present — the DB function
     // branches on whether "package_id" exists in the JSON at all,
@@ -209,7 +257,7 @@ export async function POST(req: NextRequest) {
     // raise from inside the function with a descriptive message —
     // surface those as 400 since they're almost always a bad
     // request, not a server fault. Anything else is a server error.
-    const isClientError = /unknown |unpublished|requires |no active deposit_rule|must have at least one item|quantity must be positive|no service_type mapping|let team decide/.test(
+    const isClientError = /unknown |unpublished|requires |no active deposit_rule|must have at least one item|quantity must be positive|no service_type mapping|let team decide|room_quantity/.test(
       error.message ?? ''
     );
     return NextResponse.json(

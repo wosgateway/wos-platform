@@ -52,6 +52,19 @@ interface Customer {
   country: string | null;
 }
 
+interface Payment {
+  id: string;
+  order_id: string;
+  amount: number | null;
+  currency: string | null;
+  method: string | null;
+  status: string;
+  slip_url: string | null;
+  submitted_at: string | null;
+  verified_at: string | null;
+  rejection_reason: string | null;
+}
+
 interface Order {
   id: string;
   order_number: string | null;
@@ -67,6 +80,7 @@ interface Order {
   created_at: string;
   customer: Customer | null;
   items: OrderItem[];
+  payments: Payment[];
 }
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
@@ -99,6 +113,24 @@ const SERVICE_TYPE_LABEL: Record<ServiceType, string> = {
   transport: '🚗 รถรับส่ง',
 };
 
+const PAYMENT_STATUS_LABEL: Record<string, string> = {
+  pending: '⏳ รอตรวจสอบ',
+  waiting_verification: '⏳ รอตรวจสอบ',
+  verified: '✅ ตรวจสอบแล้ว',
+  rejected: '❌ ปฏิเสธแล้ว',
+};
+
+const PAYMENT_STATUS_BADGE_CLASS: Record<string, string> = {
+  pending: 'bg-amber-100 text-amber-800',
+  waiting_verification: 'bg-amber-100 text-amber-800',
+  verified: 'bg-emerald-100 text-emerald-800',
+  rejected: 'bg-red-100 text-red-800',
+};
+
+function isClaimablePayment(status: string): boolean {
+  return status === 'pending' || status === 'waiting_verification';
+}
+
 function itemLabel(item: OrderItem): string {
   const partnerName = item.partner?.name;
   const title = item.package?.title;
@@ -118,26 +150,64 @@ export default function AdminOrderDetailPage() {
   const [order, setOrder] = useState<Order | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [processingPaymentId, setProcessingPaymentId] = useState<string | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/admin/orders');
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'failed to load orders');
+      const found = (result.orders as Order[]).find((o) => o.id === orderId);
+      if (!found) throw new Error('ไม่พบคำสั่งจองนี้');
+      setOrder(found);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'unknown error');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
-    async function load() {
-      setLoading(true);
-      setError(null);
-      try {
-        const res = await fetch('/api/admin/orders');
-        const result = await res.json();
-        if (!res.ok) throw new Error(result?.error ?? 'failed to load orders');
-        const found = (result.orders as Order[]).find((o) => o.id === orderId);
-        if (!found) throw new Error('ไม่พบคำสั่งจองนี้');
-        setOrder(found);
-      } catch (e) {
-        setError(e instanceof Error ? e.message : 'unknown error');
-      } finally {
-        setLoading(false);
-      }
-    }
     if (orderId) load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderId]);
+
+  async function verifyPayment(paymentId: string) {
+    if (!confirm('ยืนยันว่าตรวจสอบสลิปนี้แล้ว และเงินเข้าจริง?')) return;
+    setProcessingPaymentId(paymentId);
+    try {
+      const res = await fetch(`/api/admin/payments/${paymentId}/verify`, { method: 'POST' });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'ยืนยันไม่สำเร็จ');
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'ยืนยันไม่สำเร็จ');
+    } finally {
+      setProcessingPaymentId(null);
+    }
+  }
+
+  async function rejectPayment(paymentId: string) {
+    const reason = prompt('เหตุผลที่ปฏิเสธสลิปนี้ (จำเป็นต้องระบุ):');
+    if (!reason || !reason.trim()) return;
+    setProcessingPaymentId(paymentId);
+    try {
+      const res = await fetch(`/api/admin/payments/${paymentId}/reject`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reason: reason.trim() }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'ปฏิเสธไม่สำเร็จ');
+      await load();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : 'ปฏิเสธไม่สำเร็จ');
+    } finally {
+      setProcessingPaymentId(null);
+    }
+  }
 
   if (loading) {
     return (
@@ -263,6 +333,75 @@ export default function AdminOrderDetailPage() {
             เหตุผลยกเลิก: {order.cancelled_reason}
           </p>
         ) : null}
+      </div>
+
+      <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
+        <h2 className="border-b border-slate-100 p-5 pb-3 text-sm font-bold text-slate-700">การชำระเงิน</h2>
+        {order.payments.length === 0 ? (
+          <p className="p-5 text-sm text-slate-400">ยังไม่มีการส่งสลิปชำระเงิน</p>
+        ) : (
+          <div className="divide-y divide-slate-50">
+            {order.payments.map((payment) => {
+              const submittedAt = payment.submitted_at
+                ? new Date(payment.submitted_at).toLocaleString('th-TH')
+                : '-';
+              const busy = processingPaymentId === payment.id;
+              return (
+                <div key={payment.id} className="flex flex-wrap items-start justify-between gap-3 p-5">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold text-slate-900">
+                        {formatTHB(payment.amount ?? 0)}
+                      </span>
+                      <span
+                        className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ${
+                          PAYMENT_STATUS_BADGE_CLASS[payment.status] || 'bg-slate-100 text-slate-500'
+                        }`}
+                      >
+                        {PAYMENT_STATUS_LABEL[payment.status] || payment.status}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-slate-400">
+                      ส่งเมื่อ {submittedAt}
+                      {payment.method ? ` · ${payment.method}` : ''}
+                    </p>
+                    {payment.slip_url ? (
+                      <a
+                        href={payment.slip_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-block text-xs text-primary hover:underline"
+                      >
+                        📎 ดูสลิป
+                      </a>
+                    ) : null}
+                    {payment.rejection_reason ? (
+                      <p className="mt-1 text-xs text-red-600">เหตุผลปฏิเสธ: {payment.rejection_reason}</p>
+                    ) : null}
+                  </div>
+                  {isClaimablePayment(payment.status) ? (
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => verifyPayment(payment.id)}
+                        disabled={busy}
+                        className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 disabled:opacity-50"
+                      >
+                        ✅ ยืนยันการชำระเงิน
+                      </button>
+                      <button
+                        onClick={() => rejectPayment(payment.id)}
+                        disabled={busy}
+                        className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        ❌ ปฏิเสธ
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

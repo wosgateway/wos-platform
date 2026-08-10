@@ -32,6 +32,7 @@ interface PendingItem {
   transport_mode: string | null;
   transport_return_date: string | null;
   transport_return_time: string | null;
+  room_quantity: number;
   created_at: string;
   order_number: string | null;
   customer_name: string | null;
@@ -141,6 +142,7 @@ export default function PendingAssignmentsPage() {
                     <p>
                       Check-in: {item.scheduled_date ?? '—'} · Check-out:{' '}
                       {item.hotel_checkout_date ?? '—'}
+                      {item.room_quantity > 1 ? ` · Rooms: ${item.room_quantity}` : ''}
                     </p>
                   ) : (
                     <p>
@@ -168,7 +170,7 @@ export default function PendingAssignmentsPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-500">
-                      quantity ({item.service_type === 'hotel' ? 'nights' : 'days'})
+                      quantity ({item.service_type === 'hotel' ? 'nights only — rooms folded in automatically' : 'days'})
                     </label>
                     <input
                       type="number"

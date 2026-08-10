@@ -29,6 +29,22 @@ import Image from 'next/image';
 
 type TransportMode = 'one_way' | 'round_trip' | 'daily';
 
+// Pickup/dropoff location: dropdown of the common Laos↔Thailand
+// corridor points WOS actually sees, plus 'hotel' and 'other' which
+// reveal a free-text input for the specific name/spot. Keeps common
+// cases standardized (reporting, driver dispatch) while still
+// covering the long tail of real pickup/dropoff spots. Kept identical
+// to BookingForm.tsx's version so both flows behave the same way.
+type LocationType =
+  | ''
+  | 'nongkhai_bridge'
+  | 'nakhon_phanom_bridge'
+  | 'mukdahan_bridge'
+  | 'chong_mek'
+  | 'udon_airport'
+  | 'hotel'
+  | 'other';
+
 interface FormState {
   tripDate: string;
   tripTime: string;
@@ -38,12 +54,17 @@ interface FormState {
   transportMode: TransportMode;
   transportPickupDate: string;
   transportPickupTime: string;
+  transportPickupLocationType: LocationType;
+  transportPickupLocationDetail: string;
+  transportDropoffLocationType: LocationType;
+  transportDropoffLocationDetail: string;
   transportReturnDate: string;
   transportReturnTime: string;
   transportDays: number;
   hotelPartnerId: string;
   hotelCheckinDate: string;
   hotelCheckoutDate: string;
+  roomQuantity: number;
   customerName: string;
   customerPhone: string;
   customerLine: string;
@@ -60,18 +81,52 @@ const initialState: FormState = {
   transportMode: 'one_way',
   transportPickupDate: '',
   transportPickupTime: '',
+  transportPickupLocationType: '',
+  transportPickupLocationDetail: '',
+  transportDropoffLocationType: '',
+  transportDropoffLocationDetail: '',
   transportReturnDate: '',
   transportReturnTime: '',
   transportDays: 1,
   hotelPartnerId: '',
   hotelCheckinDate: '',
   hotelCheckoutDate: '',
+  roomQuantity: 1,
   customerName: '',
   customerPhone: '',
   customerLine: '',
   country: '',
   attachment: null,
 };
+
+// Resolves a pickup/dropoff selection into the free-text string sent
+// to the backend and shown to staff/drivers. Identical to
+// BookingForm.tsx's helper.
+function resolveLocationLabel(
+  type: LocationType,
+  detail: string,
+  t: (key: string) => string
+): string {
+  const trimmed = detail.trim();
+  switch (type) {
+    case 'nongkhai_bridge':
+      return t('fields.locationNongkhaiBridge');
+    case 'nakhon_phanom_bridge':
+      return t('fields.locationNakhonPhanomBridge');
+    case 'mukdahan_bridge':
+      return t('fields.locationMukdahanBridge');
+    case 'chong_mek':
+      return t('fields.locationChongMek');
+    case 'udon_airport':
+      return t('fields.locationUdonAirport');
+    case 'hotel':
+      return trimmed ? `${t('fields.locationHotel')}: ${trimmed}` : t('fields.locationHotel');
+    case 'other':
+      return trimmed || t('fields.locationOther');
+    default:
+      return '';
+  }
+}
 
 function formatDisplayDate(iso: string): string {
   if (!iso) return '';
@@ -133,7 +188,9 @@ export function JourneyBookingForm({
   );
 
   const priceBreakdown = useMemo(() => {
-    const hotel = form.needHotel ? packagePrice(selectedHotel) * hotelNights : 0;
+    const hotel = form.needHotel
+      ? packagePrice(selectedHotel) * hotelNights * (form.roomQuantity || 1)
+      : 0;
     const transport =
       form.needTransport && form.transportMode === 'daily'
         ? packagePrice(selectedTransport) * (form.transportDays || 1)
@@ -145,6 +202,7 @@ export function JourneyBookingForm({
     mainTotal,
     form.needHotel,
     hotelNights,
+    form.roomQuantity,
     form.needTransport,
     form.transportMode,
     form.transportDays,
@@ -167,6 +225,20 @@ export function JourneyBookingForm({
         const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
         if (!form.hotelCheckinDate || !form.hotelCheckoutDate || nights <= 0) {
           setError(t('errorHotelDates'));
+          return false;
+        }
+      }
+      if (form.needTransport) {
+        const pickupNeedsDetail =
+          form.transportPickupLocationType === 'hotel' || form.transportPickupLocationType === 'other';
+        if (!form.transportPickupLocationType || (pickupNeedsDetail && !form.transportPickupLocationDetail.trim())) {
+          setError(t('errorPickupLocation'));
+          return false;
+        }
+        const dropoffNeedsDetail =
+          form.transportDropoffLocationType === 'hotel' || form.transportDropoffLocationType === 'other';
+        if (!form.transportDropoffLocationType || (dropoffNeedsDetail && !form.transportDropoffLocationDetail.trim())) {
+          setError(t('errorDropoffLocation'));
           return false;
         }
       }
@@ -230,6 +302,7 @@ export function JourneyBookingForm({
             ? { package_id: form.hotelPartnerId }
             : { service_type: 'hotel' as const }),
           quantity: nights || 1,
+          room_quantity: form.roomQuantity || 1,
           scheduled_date: form.hotelCheckinDate || null,
           hotel_checkout_date: form.hotelCheckoutDate || null,
         });
@@ -248,6 +321,16 @@ export function JourneyBookingForm({
             form.transportMode === 'round_trip' ? form.transportReturnDate || null : null,
           transport_return_time:
             form.transportMode === 'round_trip' ? form.transportReturnTime || null : null,
+          transport_pickup_location: resolveLocationLabel(
+            form.transportPickupLocationType,
+            form.transportPickupLocationDetail,
+            t
+          ),
+          transport_dropoff_location: resolveLocationLabel(
+            form.transportDropoffLocationType,
+            form.transportDropoffLocationDetail,
+            t
+          ),
         });
       }
 
@@ -453,28 +536,104 @@ export function JourneyBookingForm({
                 <option value="round_trip">{t('fields.roundTrip')}</option>
                 <option value="daily">{t('fields.daily')}</option>
               </select>
-              <div className="space-y-2">
-                <DatePicker
-                  value={form.transportPickupDate}
-                  onChange={(v) => update('transportPickupDate', v)}
-                  min={new Date().toISOString().slice(0, 10)}
-                />
-                <TimePicker
-                  value={form.transportPickupTime}
-                  onChange={(v) => update('transportPickupTime', v)}
-                />
-              </div>
-              {form.transportMode === 'round_trip' ? (
+
+              <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
+                <p className="text-sm font-semibold text-primary-dark">{t('fields.pickupSectionTitle')}</p>
+                <div>
+                  <label className="form-label">{t('fields.pickupLocation')} *</label>
+                  <select
+                    className="form-input"
+                    value={form.transportPickupLocationType}
+                    onChange={(e) => update('transportPickupLocationType', e.target.value as LocationType)}
+                  >
+                    <option value="">{t('fields.select')}</option>
+                    <option value="nongkhai_bridge">{t('fields.locationNongkhaiBridge')}</option>
+                    <option value="nakhon_phanom_bridge">{t('fields.locationNakhonPhanomBridge')}</option>
+                    <option value="mukdahan_bridge">{t('fields.locationMukdahanBridge')}</option>
+                    <option value="chong_mek">{t('fields.locationChongMek')}</option>
+                    <option value="udon_airport">{t('fields.locationUdonAirport')}</option>
+                    <option value="hotel">{t('fields.locationHotel')}</option>
+                    <option value="other">{t('fields.locationOther')}</option>
+                  </select>
+                  {form.transportPickupLocationType === 'hotel' || form.transportPickupLocationType === 'other' ? (
+                    <input
+                      type="text"
+                      className="form-input mt-2"
+                      placeholder={
+                        form.transportPickupLocationType === 'hotel'
+                          ? t('fields.locationHotelPlaceholder')
+                          : t('fields.locationOtherPlaceholder')
+                      }
+                      value={form.transportPickupLocationDetail}
+                      onChange={(e) => update('transportPickupLocationDetail', e.target.value)}
+                    />
+                  ) : null}
+                </div>
                 <div className="space-y-2">
                   <DatePicker
-                    value={form.transportReturnDate}
-                    onChange={(v) => update('transportReturnDate', v)}
-                    min={form.transportPickupDate || new Date().toISOString().slice(0, 10)}
+                    value={form.transportPickupDate}
+                    onChange={(v) => update('transportPickupDate', v)}
+                    min={new Date().toISOString().slice(0, 10)}
                   />
                   <TimePicker
-                    value={form.transportReturnTime}
-                    onChange={(v) => update('transportReturnTime', v)}
+                    value={form.transportPickupTime}
+                    onChange={(v) => update('transportPickupTime', v)}
                   />
+                </div>
+              </div>
+
+              <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
+                <p className="text-sm font-semibold text-primary-dark">{t('fields.dropoffSectionTitle')}</p>
+                <div>
+                  <label className="form-label">{t('fields.dropoffLocation')} *</label>
+                  <select
+                    className="form-input"
+                    value={form.transportDropoffLocationType}
+                    onChange={(e) => update('transportDropoffLocationType', e.target.value as LocationType)}
+                  >
+                    <option value="">{t('fields.select')}</option>
+                    <option value="nongkhai_bridge">{t('fields.locationNongkhaiBridge')}</option>
+                    <option value="nakhon_phanom_bridge">{t('fields.locationNakhonPhanomBridge')}</option>
+                    <option value="mukdahan_bridge">{t('fields.locationMukdahanBridge')}</option>
+                    <option value="chong_mek">{t('fields.locationChongMek')}</option>
+                    <option value="udon_airport">{t('fields.locationUdonAirport')}</option>
+                    <option value="hotel">{t('fields.locationHotel')}</option>
+                    <option value="other">{t('fields.locationOther')}</option>
+                  </select>
+                  {form.transportDropoffLocationType === 'hotel' || form.transportDropoffLocationType === 'other' ? (
+                    <input
+                      type="text"
+                      className="form-input mt-2"
+                      placeholder={
+                        form.transportDropoffLocationType === 'hotel'
+                          ? t('fields.locationHotelPlaceholder')
+                          : t('fields.locationOtherPlaceholder')
+                      }
+                      value={form.transportDropoffLocationDetail}
+                      onChange={(e) => update('transportDropoffLocationDetail', e.target.value)}
+                    />
+                  ) : null}
+                </div>
+                {/* Intentionally no date/time here — arrival time at
+                    the drop-off point isn't something the customer
+                    can set themselves (depends on route/traffic from
+                    the pickup time above). */}
+              </div>
+
+              {form.transportMode === 'round_trip' ? (
+                <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
+                  <p className="text-sm font-semibold text-primary-dark">{t('fields.returnSectionTitle')}</p>
+                  <div className="space-y-2">
+                    <DatePicker
+                      value={form.transportReturnDate}
+                      onChange={(v) => update('transportReturnDate', v)}
+                      min={form.transportPickupDate || new Date().toISOString().slice(0, 10)}
+                    />
+                    <TimePicker
+                      value={form.transportReturnTime}
+                      onChange={(v) => update('transportReturnTime', v)}
+                    />
+                  </div>
                 </div>
               ) : null}
               {form.transportMode === 'daily' ? (
@@ -538,9 +697,27 @@ export function JourneyBookingForm({
                 </div>
               </div>
 
+              <div>
+                <label className="form-label">{t('fields.roomQuantity')}</label>
+                <select
+                  className="form-input"
+                  value={form.roomQuantity}
+                  onChange={(e) => update('roomQuantity', Number(e.target.value))}
+                >
+                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                    <option key={n} value={n}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
               {hotelNights > 0 ? (
                 <p className="text-sm font-medium text-primary">
                   {t('summary.nightsCount', { count: hotelNights })}
+                  {form.roomQuantity > 1
+                    ? ` · ${t('summary.roomsCount', { count: form.roomQuantity })}`
+                    : ''}
                 </p>
               ) : null}
             </div>
@@ -615,7 +792,13 @@ export function JourneyBookingForm({
               <div className="flex justify-between text-slate-600">
                 <span>
                   🏨 {t('summary.hotel')}
-                  {hotelNights > 0 ? ` (${t('summary.nightsCount', { count: hotelNights })})` : ''}
+                  {hotelNights > 0
+                    ? ` (${t('summary.nightsCount', { count: hotelNights })}${
+                        form.roomQuantity > 1
+                          ? ` · ${t('summary.roomsCount', { count: form.roomQuantity })}`
+                          : ''
+                      })`
+                    : ''}
                 </span>
                 <span className="font-medium text-slate-800">{formatTHB(priceBreakdown.hotel)}</span>
               </div>
@@ -642,6 +825,18 @@ export function JourneyBookingForm({
             <p>
               {t('summary.reviewContact')}: {form.customerName} · {form.customerPhone}
             </p>
+            {form.needTransport ? (
+              <>
+                <p>
+                  {t('fields.pickupLocation')}:{' '}
+                  {resolveLocationLabel(form.transportPickupLocationType, form.transportPickupLocationDetail, t)}
+                </p>
+                <p>
+                  {t('fields.dropoffLocation')}:{' '}
+                  {resolveLocationLabel(form.transportDropoffLocationType, form.transportDropoffLocationDetail, t)}
+                </p>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}

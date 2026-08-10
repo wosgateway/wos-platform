@@ -5,6 +5,21 @@
 // in Next.js; the actual price/deposit derivation happens inside
 // admin_assign_order_item() (migration 016) using the service-role
 // client, the same division of responsibility as /api/orders.
+//
+// room_quantity (migration 028): admin_assign_order_item() has no
+// room_quantity parameter of its own — its signature is
+// (UUID, UUID, NUMERIC) and body.quantity is nights-for-hotel /
+// days-for-transport, entered by the admin on the pending-assignments
+// screen. room_quantity, however, was already fixed at booking time
+// (Branch A of create_order_with_items(), migration 028) and lives on
+// this order_items row — it must NOT be re-entered by the admin here,
+// since that would let a client-supplied value override what the
+// customer actually paid for. So: fetch it server-side from the row
+// itself, and fold it into the p_quantity sent to the RPC —
+// p_quantity = nights (from the admin) × room_quantity (from the
+// row) — rather than changing the RPC's signature. For transport
+// items room_quantity is always 1 (enforced in create_order_with_items()),
+// so this is a no-op multiply for that service_type.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
@@ -33,10 +48,30 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   }
 
   const supabase = createServiceClient();
+
+  // Fetch room_quantity off the row itself — never trust a client-
+  // supplied value for anything that multiplies into price. See file
+  // header for why this can't just be a new RPC parameter supplied
+  // by the request body instead.
+  const { data: row, error: rowErr } = await supabase
+    .from('order_items')
+    .select('room_quantity')
+    .eq('id', id)
+    .single();
+
+  if (rowErr || !row) {
+    console.error('order_items lookup failed before assign:', rowErr);
+    return NextResponse.json({ error: 'order item not found' }, { status: 404 });
+  }
+
+  const nightsOrDays = body.quantity ?? 1;
+  const roomQuantity = row.room_quantity ?? 1;
+  const combinedQuantity = nightsOrDays * roomQuantity;
+
   const { data, error } = await supabase.rpc('admin_assign_order_item', {
     p_order_item_id: id,
     p_package_id: body.package_id,
-    p_quantity: body.quantity ?? 1,
+    p_quantity: combinedQuantity,
   });
 
   if (error) {
@@ -49,6 +84,5 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       { status: isClientError ? 400 : 500 }
     );
   }
-
   return NextResponse.json(data);
 }

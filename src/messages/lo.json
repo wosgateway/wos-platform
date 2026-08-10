@@ -237,6 +237,20 @@
       "oneWay": "🚗 ໄປຮັບຢ່າງດຽວ (ທ່ຽວດຽວ)",
       "roundTrip": "🔁 ໄປ-ກັບ (ລະບຸວັນໄປ ແລະ ວັນກັບ)",
       "daily": "📅 ເໝົາຕໍ່ວັນ (ລະບຸຈຳນວນວັນ)",
+      "pickupLocation": "ຈຸດຮັບ",
+      "dropoffLocation": "ຈຸດສົ່ງ",
+      "locationNongkhaiBridge": "🛂 ດ່ານໜອງຄາຍ (ຂົວມິດຕະພາບໄທ-ລາວ 1)",
+      "locationNakhonPhanomBridge": "🛂 ດ່ານນະຄອນພະນົມ (ຂົວມິດຕະພາບໄທ-ລາວ 3)",
+      "locationMukdahanBridge": "🛂 ດ່ານມຸກດາຫານ (ຂົວມິດຕະພາບໄທ-ລາວ 2)",
+      "locationChongMek": "🛂 ດ່ານຊ່ອງເມັກ (ອຸບົນລາດຊະທານີ)",
+      "locationUdonAirport": "✈️ ສະໜາມບິນອຸດອນທານີ",
+      "locationHotel": "🏨 ໂຮງແຮມ (ລະບຸຊື່)",
+      "locationOther": "📍 ອື່ນໆ (ລະບຸເອງ)",
+      "locationHotelPlaceholder": "ລະບຸຊື່ໂຮງແຮມ",
+      "locationOtherPlaceholder": "ລະບຸສະຖານທີ່",
+      "pickupSectionTitle": "ລາຍລະອຽດຈຸດຮັບ",
+      "dropoffSectionTitle": "ລາຍລະອຽດຈຸດສົ່ງ",
+      "returnSectionTitle": "ຖ້ຽວກັບ",
       "name": "ຊື່-ນາມສະກຸນ",
       "phone": "ເບີໂທລະສັບ",
       "line": "Line ID",
@@ -250,6 +264,7 @@
       "hotelCheckout": "ວັນອອກພັກ",
       "hotelCheckinPlaceholder": "ເລືອກວັນເຂົ້າພັກ",
       "hotelCheckoutPlaceholder": "ເລືອກວັນອອກພັກ",
+      "roomQuantity": "ຈຳນວນຫ້ອງ",
       "hv": "ຜູ້ໃຫຍ່",
       "mv": "ເດັກນ້ອຍ"
     },
@@ -261,9 +276,12 @@
       "disclaimer": "*ລາຄາໂຮງແຮມ/ລົດເປັນລາຄາປະມານການ ທີມງານຈະຢືນຢັນລາຄາສຸດທ້າຍອີກຄັ້ງ",
       "reviewDate": "ວັນທີ່ນັດໝາຍ",
       "reviewContact": "ຜູ້ຕິດຕໍ່",
-      "nightsCount": "{count} ຄືນ"
+      "nightsCount": "{count} ຄືນ",
+      "roomsCount": "{count} ຫ້ອງ"
     },
-    "errorHotelDates": "ກະລຸນາເລືອກວັນເຂົ້າພັກ ແລະ ວັນອອກພັກໃຫ້ຖືກຕ້ອງ"
+    "errorHotelDates": "ກະລຸນາເລືອກວັນເຂົ້າພັກ ແລະ ວັນອອກພັກໃຫ້ຖືກຕ້ອງ",
+    "errorPickupLocation": "ກະລຸນາລະບຸຈຸດຮັບ",
+    "errorDropoffLocation": "ກະລຸນາລະບຸຈຸດສົ່ງ"
   },
   "becomePartner": {
     "meta": {
@@ -794,5 +812,33 @@
     "errorLoad": "ໂຫລດຂໍ້ມູນບໍ່ສຳເລັດ",
     "errorNotFound": "ບໍ່ພົບຂໍ້ມູນ",
     "contactFooter": "ມີຄຳຖາມ? ຕິດຕໍ່ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
+  },
+  "quote": {
+    "title": "ໃບສະເໜີລາຄາ",
+    "printButton": "ພິມ",
+    "orderNumberLabel": "ເລກທີ",
+    "customerPrefix": "ທ່ານ",
+    "itemsHeading": "ລາຍການ",
+    "programFallback": "ໂປຣແກຣມ",
+    "pickupLabel": "ຮັບ:",
+    "dropoffLabel": "ສົ່ງ:",
+    "totalLabel": "ຍອດລວມທັງໝົດ",
+    "depositRequiredLabel": "ເງິນມັດຈຳທີ່ຕ້ອງຊຳລະ",
+    "confirmedBanner": "ຢືນຢັນລາຍການແລ້ວ — ໄປຂັ້ນຕອນຊຳລະເງິນມັດຈຳໄດ້ເລີຍ",
+    "goToMyTrip": "ເບິ່ງສະຖານະການຈອງ / ຊຳລະເງິນມັດຈຳ",
+    "confirmButton": "ຢືນຢັນລາຍການນີ້",
+    "confirming": "ກຳລັງຢືນຢັນ...",
+    "contactLine": "ມີຄຳຖາມ? ຕິດຕໍ່ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
+    "serviceType": {
+      "clinic": "🏥 ຄລີນິກ/ໂຮງໝໍ",
+      "wellness": "🧘 ເວວເນສ",
+      "insurance": "📄 ປະກັນໄພ",
+      "hotel": "🏨 ໂຮງແຮມ",
+      "transport": "🚗 ລົດຮັບສົ່ງ"
+    },
+    "errors": {
+      "loadFailed": "ໂຫຼດຂໍ້ມູນບໍ່ສຳເລັດ",
+      "confirmFailed": "ຢືນຢັນບໍ່ສຳເລັດ"
+    }
   }
 }

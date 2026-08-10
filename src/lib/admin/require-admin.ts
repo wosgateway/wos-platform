@@ -51,5 +51,33 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
     return { authorized: false, status: 403, message: 'admin role required' };
   }
 
-  return { authorized: true, user: { id: user.id, email: user.email } };
+  const { data: dbUser, error: dbUserError } = await supabase
+  .from('users')
+  .select('id, role, email, is_platform_admin')
+  .eq('supabase_user_id', user.id)
+  .single();
+
+if (dbUserError || !dbUser) {
+  return {
+    authorized: false,
+    status: 403,
+    message: 'user profile not found'
+  };
+}
+
+if (dbUser.role !== 'admin' && !dbUser.is_platform_admin) {
+  return {
+    authorized: false,
+    status: 403,
+    message: 'admin role required'
+  };
+}
+
+return {
+  authorized: true,
+  user: {
+    id: dbUser.id,
+    email: dbUser.email
+  }
+};
 }

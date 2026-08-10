@@ -237,6 +237,20 @@
       "oneWay": "🚗 One way only",
       "roundTrip": "🔁 Round trip",
       "daily": "📅 Daily hire (multiple days)",
+      "pickupLocation": "Pickup location",
+      "dropoffLocation": "Drop-off location",
+      "locationNongkhaiBridge": "🛂 Nong Khai border checkpoint (Thai-Lao Friendship Bridge 1)",
+      "locationNakhonPhanomBridge": "🛂 Nakhon Phanom border checkpoint (Thai-Lao Friendship Bridge 3)",
+      "locationMukdahanBridge": "🛂 Mukdahan border checkpoint (Thai-Lao Friendship Bridge 2)",
+      "locationChongMek": "🛂 Chong Mek border checkpoint (Ubon Ratchathani)",
+      "locationUdonAirport": "✈️ Udon Thani Airport",
+      "locationHotel": "🏨 Hotel (specify name)",
+      "locationOther": "📍 Other (specify)",
+      "locationHotelPlaceholder": "Enter hotel name",
+      "locationOtherPlaceholder": "Enter location",
+      "pickupSectionTitle": "Pickup details",
+      "dropoffSectionTitle": "Drop-off details",
+      "returnSectionTitle": "Return trip",
       "name": "Full name",
       "phone": "Phone number",
       "line": "Line ID",
@@ -250,6 +264,7 @@
       "hotelCheckout": "Check-out date",
       "hotelCheckinPlaceholder": "Select check-in date",
       "hotelCheckoutPlaceholder": "Select check-out date",
+      "roomQuantity": "Number of rooms",
       "hv": "Adults",
       "mv": "Children"
     },
@@ -261,9 +276,12 @@
       "disclaimer": "*Hotel/transport prices are estimates — our team will confirm the final price",
       "reviewDate": "Appointment date",
       "reviewContact": "Contact",
-      "nightsCount": "{count} night(s)"
+      "nightsCount": "{count} night(s)",
+      "roomsCount": "{count} room(s)"
     },
-    "errorHotelDates": "Please select a valid check-in and check-out date"
+    "errorHotelDates": "Please select a valid check-in and check-out date",
+    "errorPickupLocation": "Please specify the pickup location",
+    "errorDropoffLocation": "Please specify the drop-off location"
   },
   "becomePartner": {
     "meta": {
@@ -794,5 +812,31 @@
     "errorLoad": "Failed to load data",
     "errorNotFound": "Data not found",
     "contactFooter": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
+  },
+  "quote": {
+    "title": "Quotation",
+    "printButton": "Print",
+    "orderNumberLabel": "Order No.",
+    "customerPrefix": "",
+    "itemsHeading": "Items",
+    "programFallback": "Program",
+    "totalLabel": "Total amount",
+    "depositRequiredLabel": "Deposit required",
+    "confirmedBanner": "Order confirmed — you can proceed to pay the deposit",
+    "goToMyTrip": "View booking status / pay deposit",
+    "confirmButton": "Confirm this order",
+    "confirming": "Confirming...",
+    "contactLine": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
+    "serviceType": {
+      "clinic": "🏥 Clinic/Hospital",
+      "wellness": "🧘 Wellness",
+      "insurance": "📄 Insurance",
+      "hotel": "🏨 Hotel",
+      "transport": "🚗 Transport"
+    },
+    "errors": {
+      "loadFailed": "Failed to load data",
+      "confirmFailed": "Failed to confirm"
+    }
   }
 }

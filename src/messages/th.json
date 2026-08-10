@@ -216,6 +216,20 @@
       "oneWay": "🚗 ไปรับอย่างเดียว (เที่ยวเดียว)",
       "roundTrip": "🔁 ไป-กลับ (ระบุวันไปและวันกลับ)",
       "daily": "📅 เหมาต่อวัน (ระบุจำนวนวัน)",
+      "pickupLocation": "จุดรับ",
+      "dropoffLocation": "จุดส่ง",
+      "locationNongkhaiBridge": "🛂 ด่านหนองคาย (สะพานมิตรภาพไทย-ลาว 1)",
+      "locationNakhonPhanomBridge": "🛂 ด่านนครพนม (สะพานมิตรภาพไทย-ลาว 3)",
+      "locationMukdahanBridge": "🛂 ด่านมุกดาหาร (สะพานมิตรภาพไทย-ลาว 2)",
+      "locationChongMek": "🛂 ด่านช่องเม็ก (อุบลราชธานี)",
+      "locationUdonAirport": "✈️ สนามบินอุดรธานี",
+      "locationHotel": "🏨 โรงแรม (ระบุชื่อ)",
+      "locationOther": "📍 อื่นๆ (ระบุเอง)",
+      "locationHotelPlaceholder": "ระบุชื่อโรงแรม",
+      "locationOtherPlaceholder": "ระบุสถานที่",
+      "pickupSectionTitle": "รายละเอียดจุดรับ",
+      "dropoffSectionTitle": "รายละเอียดจุดส่ง",
+      "returnSectionTitle": "เที่ยวกลับ",
       "name": "ชื่อ-นามสกุล",
       "phone": "เบอร์โทรศัพท์",
       "line": "Line ID",
@@ -229,6 +243,7 @@
       "hotelCheckout": "วันเช็คเอาท์",
       "hotelCheckinPlaceholder": "เลือกวันเช็คอิน",
       "hotelCheckoutPlaceholder": "เลือกวันเช็คเอาท์",
+      "roomQuantity": "จำนวนห้อง",
       "hv": "ผู้ใหญ่",
       "mv": "เด็ก"
     },
@@ -240,9 +255,12 @@
       "disclaimer": "*ราคาโรงแรม/รถเป็นราคาประมาณการ ทีมงานจะยืนยันราคาสุดท้ายอีกครั้ง",
       "reviewDate": "วันที่นัดหมาย",
       "reviewContact": "ผู้ติดต่อ",
-      "nightsCount": "{count} คืน"
+      "nightsCount": "{count} คืน",
+      "roomsCount": "{count} ห้อง"
     },
-    "errorHotelDates": "กรุณาเลือกวันเช็คอินและเช็คเอาท์ให้ถูกต้อง"
+    "errorHotelDates": "กรุณาเลือกวันเช็คอินและเช็คเอาท์ให้ถูกต้อง",
+    "errorPickupLocation": "กรุณาระบุจุดรับ",
+    "errorDropoffLocation": "กรุณาระบุจุดส่ง"
   },
   "becomePartner": {
     "meta": {
@@ -773,5 +791,33 @@
     "errorLoad": "โหลดข้อมูลไม่สำเร็จ",
     "errorNotFound": "ไม่พบข้อมูล",
     "contactFooter": "มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
+  },
+  "quote": {
+    "title": "ใบเสนอราคา",
+    "printButton": "พิมพ์",
+    "orderNumberLabel": "เลขที่",
+    "customerPrefix": "คุณ",
+    "itemsHeading": "รายการ",
+    "programFallback": "โปรแกรม",
+    "pickupLabel": "รับ:",
+    "dropoffLabel": "ส่ง:",
+    "totalLabel": "ยอดรวมทั้งหมด",
+    "depositRequiredLabel": "มัดจำที่ต้องชำระ",
+    "confirmedBanner": "ยืนยันรายการแล้ว — ไปต่อที่ขั้นตอนชำระมัดจำได้เลย",
+    "goToMyTrip": "ดูสถานะการจอง / ชำระมัดจำ",
+    "confirmButton": "ยืนยันรายการนี้",
+    "confirming": "กำลังยืนยัน...",
+    "contactLine": "มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
+    "serviceType": {
+      "clinic": "🏥 คลินิก/โรงพยาบาล",
+      "wellness": "🧘 เวลเนส",
+      "insurance": "📄 ประกัน",
+      "hotel": "🏨 โรงแรม",
+      "transport": "🚗 รถรับส่ง"
+    },
+    "errors": {
+      "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
+      "confirmFailed": "ยืนยันไม่สำเร็จ"
+    }
   }
 }
