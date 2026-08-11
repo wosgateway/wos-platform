@@ -17,6 +17,7 @@ const PUBLIC_LOCALE_ROUTE_SEGMENTS = [
   'booking',
   'category',
   'knowledge',
+  'my-trip',
   'partner',
   'program',
   'quote',
