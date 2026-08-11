@@ -16,7 +16,7 @@
 //     will show a white/colored box around the mark.
 //   - Recommended canvas: 400×160px (5:2 landscape), logo mark
 //     centered with a bit of breathing room — this matches the
-//     display height below (each logo renders at a fixed 48px tall,
+//     display height below (each logo renders at a fixed 64px tall,
 //     width auto) and looks sharp on retina screens without being a
 //     huge file. A perfectly square or very tall logo still works;
 //     the box just won't be as full.
@@ -75,25 +75,25 @@ export function PartnerLogos() {
         </p>
 
         {loading ? (
-          <div className="mt-5 flex justify-center gap-6">
+          <div className="mt-6 flex justify-center gap-8">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-12 w-28 animate-pulse rounded-lg bg-slate-100" />
+              <div key={i} className="h-16 w-36 animate-pulse rounded-lg bg-slate-100" />
             ))}
           </div>
         ) : (
-          <div className="wos-logo-scroller relative mt-5 overflow-hidden">
+          <div className="wos-logo-scroller relative mt-6 overflow-hidden">
             {/* Fade edges so logos don't appear to cut off abruptly */}
             <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-slate-50/60 to-transparent" />
             <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-slate-50/60 to-transparent" />
 
-            <div className="wos-logo-track flex w-max items-center gap-10">
+            <div className="wos-logo-track flex w-max items-center gap-12">
               {track.map((p, i) => (
                 <img
                   key={`${p.id}-${i}`}
                   src={p.logo_url}
                   alt={p.name}
                   title={p.name}
-                  className="h-12 w-auto flex-shrink-0 object-contain opacity-70 transition-opacity hover:opacity-100"
+                  className="h-16 w-auto flex-shrink-0 object-contain opacity-70 transition-opacity hover:opacity-100"
                 />
               ))}
             </div>
