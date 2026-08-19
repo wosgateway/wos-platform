@@ -1,24 +1,24 @@
 -- ============================================================
 -- 007_consolidate_group_b_rls_and_fk_fixes.sql
 --
--- รวบรวม SQL ที่รันสดในเซสชัน "deploy-readiness pass" (ดู PROJECT_STRUCTURE.md ข้อ 5-6)
--- เก็บไว้เป็นไฟล์เพื่อ reproduce ได้ถ้าต้อง setup database ใหม่
+-- à¸£à¸§à¸šà¸£à¸§à¸¡ SQL à¸—à¸µà¹ˆà¸£à¸±à¸™à¸ªà¸”à¹ƒà¸™à¹€à¸‹à¸ªà¸Šà¸±à¸™ "deploy-readiness pass" (à¸”à¸¹ PROJECT_STRUCTURE.md à¸‚à¹‰à¸­ 5-6)
+-- à¹€à¸à¹‡à¸šà¹„à¸§à¹‰à¹€à¸›à¹‡à¸™à¹„à¸Ÿà¸¥à¹Œà¹€à¸žà¸·à¹ˆà¸­ reproduce à¹„à¸”à¹‰à¸–à¹‰à¸²à¸•à¹‰à¸­à¸‡ setup database à¹ƒà¸«à¸¡à¹ˆ
 -- (staging environment / disaster recovery)
 --
--- ⚠️ ก่อนรันบน production จริง แนะนำให้รัน preflight query ด้านล่างก่อน
--- เพื่อเช็คชื่อ policy จริงในระบบ เพราะ DROP POLICY IF EXISTS ในไฟล์นี้อ้างชื่อ
--- ตามที่ระบุไว้ใน RLS_Policy_.sql กับ SQL_DDL_สำหรับ_Partner_Portal (8 Tables).sql —
--- ถ้าใน production มีชื่อ policy อื่นที่ไม่ตรง (เช่น policy ซ้ำซ้อนของ partner_packages
--- ที่เกิดจากตอน rename ตาราง sql/004) ให้เพิ่ม DROP POLICY IF EXISTS บรรทัดใหม่เอง
--- ตามชื่อที่เจอจริงก่อนรัน CREATE POLICY ด้านล่าง
+-- š ï¸ à¸à¹ˆà¸­à¸™à¸£à¸±à¸™à¸šà¸™ production à¸ˆà¸£à¸´à¸‡ à¹à¸™à¸°à¸™à¸³à¹ƒà¸«à¹‰à¸£à¸±à¸™ preflight query à¸”à¹‰à¸²à¸™à¸¥à¹ˆà¸²à¸‡à¸à¹ˆà¸­à¸™
+-- à¹€à¸žà¸·à¹ˆà¸­à¹€à¸Šà¹‡à¸„à¸Šà¸·à¹ˆà¸­ policy à¸ˆà¸£à¸´à¸‡à¹ƒà¸™à¸£à¸°à¸šà¸š à¹€à¸žà¸£à¸²à¸° DROP POLICY IF EXISTS à¹ƒà¸™à¹„à¸Ÿà¸¥à¹Œà¸™à¸µà¹‰à¸­à¹‰à¸²à¸‡à¸Šà¸·à¹ˆà¸­
+-- à¸•à¸²à¸¡à¸—à¸µà¹ˆà¸£à¸°à¸šà¸¸à¹„à¸§à¹‰à¹ƒà¸™ RLS_Policy_.sql à¸à¸±à¸š SQL_DDL_à¸ªà¸³à¸«à¸£à¸±à¸š_Partner_Portal (8 Tables).sql €”
+-- à¸–à¹‰à¸²à¹ƒà¸™ production à¸¡à¸µà¸Šà¸·à¹ˆà¸­ policy à¸­à¸·à¹ˆà¸™à¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¸•à¸£à¸‡ (à¹€à¸Šà¹ˆà¸™ policy à¸‹à¹‰à¸³à¸‹à¹‰à¸­à¸™à¸‚à¸­à¸‡ partner_packages
+-- à¸—à¸µà¹ˆà¹€à¸à¸´à¸”à¸ˆà¸²à¸à¸•à¸­à¸™ rename à¸•à¸²à¸£à¸²à¸‡ sql/004) à¹ƒà¸«à¹‰à¹€à¸žà¸´à¹ˆà¸¡ DROP POLICY IF EXISTS à¸šà¸£à¸£à¸—à¸±à¸”à¹ƒà¸«à¸¡à¹ˆà¹€à¸­à¸‡
+-- à¸•à¸²à¸¡à¸Šà¸·à¹ˆà¸­à¸—à¸µà¹ˆà¹€à¸ˆà¸­à¸ˆà¸£à¸´à¸‡à¸à¹ˆà¸­à¸™à¸£à¸±à¸™ CREATE POLICY à¸”à¹‰à¸²à¸™à¸¥à¹ˆà¸²à¸‡
 --
---   -- Preflight: หา policy ทั้งหมดที่ใช้กลไกเดิม (user_metadata) ที่ใช้งานไม่ได้จริง
+--   -- Preflight: à¸«à¸² policy à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸à¸¥à¹„à¸à¹€à¸”à¸´à¸¡ (user_metadata) à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰à¸‡à¸²à¸™à¹„à¸¡à¹ˆà¹„à¸”à¹‰à¸ˆà¸£à¸´à¸‡
 --   select schemaname, tablename, policyname, cmd
 --   from pg_policies
 --   where qual::text like '%user_metadata%' or with_check::text like '%user_metadata%'
 --   order by tablename, policyname;
 --
---   -- Preflight: หา policy ซ้ำซ้อนของ partner_packages (คาดว่ามี 4 ตัวจากตอน rename)
+--   -- Preflight: à¸«à¸² policy à¸‹à¹‰à¸³à¸‹à¹‰à¸­à¸™à¸‚à¸­à¸‡ partner_packages (à¸„à¸²à¸”à¸§à¹ˆà¸²à¸¡à¸µ 4 à¸•à¸±à¸§à¸ˆà¸²à¸à¸•à¸­à¸™ rename)
 --   select policyname, cmd, qual, with_check
 --   from pg_policies
 --   where tablename = 'partner_packages';
@@ -26,9 +26,9 @@
 
 -- ============================================================
 -- 1. HELPER FUNCTIONS (SECURITY DEFINER)
---    ใช้แทนการเขียน subquery ซ้ำทุก policy ของกลุ่ม B
---    SECURITY DEFINER เพื่อ bypass RLS ตอน query ภายในฟังก์ชันเอง
---    (กัน infinite recursion ตอนเช็ค policy ของตาราง users ที่ query ตัวเอง)
+--    à¹ƒà¸Šà¹‰à¹à¸—à¸™à¸à¸²à¸£à¹€à¸‚à¸µà¸¢à¸™ subquery à¸‹à¹‰à¸³à¸—à¸¸à¸ policy à¸‚à¸­à¸‡à¸à¸¥à¸¸à¹ˆà¸¡ B
+--    SECURITY DEFINER à¹€à¸žà¸·à¹ˆà¸­ bypass RLS à¸•à¸­à¸™ query à¸ à¸²à¸¢à¹ƒà¸™à¸Ÿà¸±à¸‡à¸à¹Œà¸Šà¸±à¸™à¹€à¸­à¸‡
+--    (à¸à¸±à¸™ infinite recursion à¸•à¸­à¸™à¹€à¸Šà¹‡à¸„ policy à¸‚à¸­à¸‡à¸•à¸²à¸£à¸²à¸‡ users à¸—à¸µà¹ˆ query à¸•à¸±à¸§à¹€à¸­à¸‡)
 -- ============================================================
 
 CREATE OR REPLACE FUNCTION public.current_user_organization_id()
@@ -62,10 +62,10 @@ GRANT EXECUTE ON FUNCTION public.current_user_organization_id() TO authenticated
 GRANT EXECUTE ON FUNCTION public.current_user_partner_id() TO authenticated;
 
 -- ============================================================
--- 2. แก้ policy ของ packages (กลุ่ม A — ตัวจริงที่ใช้ partner_id)
---    บั๊ก: correlated subquery เดิมอ้างอิง packages.partner_id ของแถวตัวเอง
---    ไม่ใช่คอลัมน์ของ users → กลายเป็น tautology ที่ผ่านเสมอไม่ว่า user เป็นใคร
---    (ช่องโหว่ความปลอดภัยข้ามบัญชี — ดู PROJECT_STRUCTURE.md ข้อ 5.1)
+-- 2. à¹à¸à¹‰ policy à¸‚à¸­à¸‡ packages (à¸à¸¥à¸¸à¹ˆà¸¡ A €” à¸•à¸±à¸§à¸ˆà¸£à¸´à¸‡à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰ partner_id)
+--    à¸šà¸±à¹Šà¸: correlated subquery à¹€à¸”à¸´à¸¡à¸­à¹‰à¸²à¸‡à¸­à¸´à¸‡ packages.partner_id à¸‚à¸­à¸‡à¹à¸–à¸§à¸•à¸±à¸§à¹€à¸­à¸‡
+--    à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¸„à¸­à¸¥à¸±à¸¡à¸™à¹Œà¸‚à¸­à¸‡ users †’ à¸à¸¥à¸²à¸¢à¹€à¸›à¹‡à¸™ tautology à¸—à¸µà¹ˆà¸œà¹ˆà¸²à¸™à¹€à¸ªà¸¡à¸­à¹„à¸¡à¹ˆà¸§à¹ˆà¸² user à¹€à¸›à¹‡à¸™à¹ƒà¸„à¸£
+--    (à¸Šà¹ˆà¸­à¸‡à¹‚à¸«à¸§à¹ˆà¸„à¸§à¸²à¸¡à¸›à¸¥à¸­à¸”à¸ à¸±à¸¢à¸‚à¹‰à¸²à¸¡à¸šà¸±à¸à¸Šà¸µ €” à¸”à¸¹ PROJECT_STRUCTURE.md à¸‚à¹‰à¸­ 5.1)
 -- ============================================================
 
 DROP POLICY IF EXISTS "Partners can manage their own packages" ON public.packages;
@@ -90,10 +90,10 @@ CREATE POLICY "Partners can manage their own packages" ON public.packages
     );
 
 -- ============================================================
--- 3. เคลียร์ policy ซ้ำซ้อนของ partner_packages
---    (เกิดจากตอน rename ตาราง sql/004 — มี policy ทำหน้าที่เดิมซ้ำกัน ~4 ตัว)
---    ชื่อด้านล่างคือชื่อที่คาดว่ามาจาก RLS_Policy_.sql / SQL_DDL เดิม
---    ถ้า preflight query เจอชื่ออื่น ให้เพิ่ม DROP POLICY IF EXISTS เองก่อนรัน CREATE
+-- 3. à¹€à¸„à¸¥à¸µà¸¢à¸£à¹Œ policy à¸‹à¹‰à¸³à¸‹à¹‰à¸­à¸™à¸‚à¸­à¸‡ partner_packages
+--    (à¹€à¸à¸´à¸”à¸ˆà¸²à¸à¸•à¸­à¸™ rename à¸•à¸²à¸£à¸²à¸‡ sql/004 €” à¸¡à¸µ policy à¸—à¸³à¸«à¸™à¹‰à¸²à¸—à¸µà¹ˆà¹€à¸”à¸´à¸¡à¸‹à¹‰à¸³à¸à¸±à¸™ ~4 à¸•à¸±à¸§)
+--    à¸Šà¸·à¹ˆà¸­à¸”à¹‰à¸²à¸™à¸¥à¹ˆà¸²à¸‡à¸„à¸·à¸­à¸Šà¸·à¹ˆà¸­à¸—à¸µà¹ˆà¸„à¸²à¸”à¸§à¹ˆà¸²à¸¡à¸²à¸ˆà¸²à¸ RLS_Policy_.sql / SQL_DDL à¹€à¸”à¸´à¸¡
+--    à¸–à¹‰à¸² preflight query à¹€à¸ˆà¸­à¸Šà¸·à¹ˆà¸­à¸­à¸·à¹ˆà¸™ à¹ƒà¸«à¹‰à¹€à¸žà¸´à¹ˆà¸¡ DROP POLICY IF EXISTS à¹€à¸­à¸‡à¸à¹ˆà¸­à¸™à¸£à¸±à¸™ CREATE
 -- ============================================================
 
 DROP POLICY IF EXISTS "Users can view their organization's packages" ON public.partner_packages;
@@ -107,8 +107,8 @@ CREATE POLICY "Users can manage their organization's packages" ON public.partner
 
 -- ============================================================
 -- 4. organizations / branches / users
---    เดิมใช้ auth.jwt() -> 'user_metadata' ->> 'organization_id' ซึ่งไม่เคยถูก set
---    ให้ user จริงเลย → บล็อกทุกคนแบบเงียบๆ มาตลอด
+--    à¹€à¸”à¸´à¸¡à¹ƒà¸Šà¹‰ auth.jwt() -> 'user_metadata' ->> 'organization_id' à¸‹à¸¶à¹ˆà¸‡à¹„à¸¡à¹ˆà¹€à¸„à¸¢à¸–à¸¹à¸ set
+--    à¹ƒà¸«à¹‰ user à¸ˆà¸£à¸´à¸‡à¹€à¸¥à¸¢ †’ à¸šà¸¥à¹‡à¸­à¸à¸—à¸¸à¸à¸„à¸™à¹à¸šà¸šà¹€à¸‡à¸µà¸¢à¸šà¹† à¸¡à¸²à¸•à¸¥à¸­à¸”
 -- ============================================================
 
 DROP POLICY IF EXISTS "Users can view their own organization" ON public.organizations;
@@ -132,7 +132,7 @@ CREATE POLICY "Users can view their organization's patients" ON public.patients
     FOR SELECT USING (organization_id = public.current_user_organization_id());
 
 -- ============================================================
--- 6. partner_bookings (เดิมชื่อ policy อ้างตาราง "bookings" ตอนยังไม่ rename)
+-- 6. partner_bookings (à¹€à¸”à¸´à¸¡à¸Šà¸·à¹ˆà¸­ policy à¸­à¹‰à¸²à¸‡à¸•à¸²à¸£à¸²à¸‡ "bookings" à¸•à¸­à¸™à¸¢à¸±à¸‡à¹„à¸¡à¹ˆ rename)
 -- ============================================================
 
 DROP POLICY IF EXISTS "Users can view their organization's bookings" ON public.partner_bookings;
@@ -159,7 +159,7 @@ CREATE POLICY "Users can manage their organization's documents" ON public.docume
 
 -- ============================================================
 -- 8. subscriptions
---    เดิม insert/update ใช้ JWT user_metadata ที่ไม่เคยถูกเซ็ต → บล็อกทุกคน
+--    à¹€à¸”à¸´à¸¡ insert/update à¹ƒà¸Šà¹‰ JWT user_metadata à¸—à¸µà¹ˆà¹„à¸¡à¹ˆà¹€à¸„à¸¢à¸–à¸¹à¸à¹€à¸‹à¹‡à¸• †’ à¸šà¸¥à¹‡à¸­à¸à¸—à¸¸à¸à¸„à¸™
 -- ============================================================
 
 DROP POLICY IF EXISTS "Users can view their organization's subscriptions" ON public.subscriptions;
@@ -171,7 +171,7 @@ CREATE POLICY "Users can manage their organization's subscriptions" ON public.su
 
 -- ============================================================
 -- 9. notifications
---    SELECT/UPDATE ผ่าน helper function, INSERT ยังผ่าน service role เท่านั้น (ตั้งใจ)
+--    SELECT/UPDATE à¸œà¹ˆà¸²à¸™ helper function, INSERT à¸¢à¸±à¸‡à¸œà¹ˆà¸²à¸™ service role à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ (à¸•à¸±à¹‰à¸‡à¹ƒà¸ˆ)
 -- ============================================================
 
 DROP POLICY IF EXISTS "Users can view their organization's notifications" ON public.notifications;
@@ -184,10 +184,10 @@ CREATE POLICY "Users can update their organization's notifications" ON public.no
     FOR UPDATE USING (organization_id = public.current_user_organization_id());
 
 -- ============================================================
--- 10. แก้ FK ของ partner_bookings ให้ชี้ไป packages(id) แทน partner_packages(id)
---     (ชื่อ constraint เดิมไม่เปลี่ยน แค่เปลี่ยน target table — ดู PROJECT_STRUCTURE.md ข้อ 5.5)
---     เช็คก่อนรันจริง: ตอนแก้ครั้งแรก total_bookings = 0 จึงปลอดภัยที่จะแก้ตรงๆ
---     ถ้ามีข้อมูลจริงแล้ว ให้ตรวจสอบว่า package_id ทุกแถวมีอยู่จริงใน packages ก่อน ALTER
+-- 10. à¹à¸à¹‰ FK à¸‚à¸­à¸‡ partner_bookings à¹ƒà¸«à¹‰à¸Šà¸µà¹‰à¹„à¸› packages(id) à¹à¸—à¸™ partner_packages(id)
+--     (à¸Šà¸·à¹ˆà¸­ constraint à¹€à¸”à¸´à¸¡à¹„à¸¡à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ à¹à¸„à¹ˆà¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™ target table €” à¸”à¸¹ PROJECT_STRUCTURE.md à¸‚à¹‰à¸­ 5.5)
+--     à¹€à¸Šà¹‡à¸„à¸à¹ˆà¸­à¸™à¸£à¸±à¸™à¸ˆà¸£à¸´à¸‡: à¸•à¸­à¸™à¹à¸à¹‰à¸„à¸£à¸±à¹‰à¸‡à¹à¸£à¸ total_bookings = 0 à¸ˆà¸¶à¸‡à¸›à¸¥à¸­à¸”à¸ à¸±à¸¢à¸—à¸µà¹ˆà¸ˆà¸°à¹à¸à¹‰à¸•à¸£à¸‡à¹†
+--     à¸–à¹‰à¸²à¸¡à¸µà¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸ˆà¸£à¸´à¸‡à¹à¸¥à¹‰à¸§ à¹ƒà¸«à¹‰à¸•à¸£à¸§à¸ˆà¸ªà¸­à¸šà¸§à¹ˆà¸² package_id à¸—à¸¸à¸à¹à¸–à¸§à¸¡à¸µà¸­à¸¢à¸¹à¹ˆà¸ˆà¸£à¸´à¸‡à¹ƒà¸™ packages à¸à¹ˆà¸­à¸™ ALTER
 -- ============================================================
 
 ALTER TABLE public.partner_bookings
@@ -209,11 +209,11 @@ ALTER TABLE public.partner_bookings
     FOREIGN KEY (transport_package_id) REFERENCES public.packages(id) ON DELETE SET NULL;
 
 -- ============================================================
--- 11. Postflight sanity check — รันหลังใช้ migration นี้เพื่อยืนยันว่าไม่มี policy
---     ที่ยังพึ่ง user_metadata หลงเหลืออยู่
+-- 11. Postflight sanity check €” à¸£à¸±à¸™à¸«à¸¥à¸±à¸‡à¹ƒà¸Šà¹‰ migration à¸™à¸µà¹‰à¹€à¸žà¸·à¹ˆà¸­à¸¢à¸·à¸™à¸¢à¸±à¸™à¸§à¹ˆà¸²à¹„à¸¡à¹ˆà¸¡à¸µ policy
+--     à¸—à¸µà¹ˆà¸¢à¸±à¸‡à¸žà¸¶à¹ˆà¸‡ user_metadata à¸«à¸¥à¸‡à¹€à¸«à¸¥à¸·à¸­à¸­à¸¢à¸¹à¹ˆ
 -- ============================================================
 
 --   select tablename, policyname
 --   from pg_policies
 --   where qual::text like '%user_metadata%' or with_check::text like '%user_metadata%';
---   -- ควรได้ 0 แถว
+--   -- à¸„à¸§à¸£à¹„à¸”à¹‰ 0 à¹à¸–à¸§

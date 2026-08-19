@@ -108,7 +108,7 @@ export function NotificationBell({ organizationId }: { organizationId: string })
               {unreadCount > 0 && (
                 <button
                   onClick={markAllAsRead}
-                  className="text-xs text-primary hover:underline"
+                  className="text-xs text-primary-dark hover:underline"
                 >
                   อ่านทั้งหมด
                 </button>

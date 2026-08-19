@@ -1,4 +1,5 @@
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -6,37 +7,60 @@ import { NextRequest, NextResponse } from 'next/server';
 const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
 
 export async function POST(request: NextRequest) {
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  // Same pattern as every other admin route — see
+  // src/lib/admin/require-admin.ts for the rationale.
+  const cookieCarrier = new NextResponse();
+
   // 1. ตรวจสอบสิทธิ์ Admin
-  const auth = await requireAdmin();
+  const auth = await requireAdmin(cookieCarrier);
   if (!auth.authorized) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      cookieCarrier
+    );
   }
 
   // 2. รับข้อมูลจาก request
-  const body = await request.json();
-  const { orderId, phoneNumber, channel } = body;
+  const body = await request.json().catch(() => null);
+  const orderId = body?.orderId;
+  const phoneNumber = body?.phoneNumber;
+  const channel = body?.channel;
 
   if (!orderId || !phoneNumber) {
-    return NextResponse.json(
-      { error: 'Missing orderId or phoneNumber' },
-      { status: 400 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'Missing orderId or phoneNumber' },
+        { status: 400 }
+      ),
+      cookieCarrier
     );
   }
 
   // 3. ดึงข้อมูล order
+  // SECURITY: also select payment_access_token (migration 021) so the
+  // link we send carries the ?token= that /api/quote/[orderNumber]
+  // and its /confirm sibling now require — order_number alone is a
+  // predictable sequence, not a secret.
   const supabase = createClient();
   const { data: order, error } = await supabase
     .from('orders')
-    .select('order_number, total_amount, total_deposit_required')
+    .select('order_number, total_amount, total_deposit_required, payment_access_token')
     .eq('id', orderId)
     .single();
 
   if (error || !order) {
-    return NextResponse.json({ error: 'Order not found' }, { status: 404 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Order not found' }, { status: 404 }),
+      cookieCarrier
+    );
   }
 
   // 4. สร้างลิงก์ใบเสนอราคา
-  const quoteUrl = `${APP_URL}/th/quote/${order.order_number}`;
+  const quoteUrl = `${APP_URL}/th/quote/${order.order_number}?token=${encodeURIComponent(
+    order.payment_access_token
+  )}`;
 
   // 5. สร้างข้อความ
   const message = `
@@ -77,10 +101,13 @@ export async function POST(request: NextRequest) {
   // 7. บันทึกประวัติการส่ง (optional)
   // TODO: สร้างตาราง quotation_logs
 
-  return NextResponse.json({
-    success,
-    quoteUrl,
-    messageText: message,
-    status: success ? 'ส่งสำเร็จ' : errorMessage,
-  });
+  return withRefreshedCookies(
+    NextResponse.json({
+      success,
+      quoteUrl,
+      messageText: message,
+      status: success ? 'ส่งสำเร็จ' : errorMessage,
+    }),
+    cookieCarrier
+  );
 }

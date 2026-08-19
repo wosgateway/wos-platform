@@ -1,4 +1,4 @@
-// src/components/partner/PartnerSidebar.tsx
+﻿// src/components/partner/PartnerSidebar.tsx
 'use client';
 
 import Link from 'next/link';
@@ -22,8 +22,8 @@ export function PartnerSidebar({ user }: { user: PartnerUser }) {
     <aside className="hidden md:flex md:w-64 md:flex-col bg-white border-r border-slate-100 min-h-screen sticky top-0">
       {/* Logo */}
       <div className="p-4 border-b border-slate-100">
-        <Link href="/dashboard" className="text-xl font-bold text-primary">
-          WOS<span className="text-accent">.os</span>
+        <Link href="/dashboard" className="text-xl font-bold text-primary-dark">
+          WOS<span className="text-accent-ink">.os</span>
           <span className="block text-xs font-normal text-slate-400">Partner Portal</span>
         </Link>
       </div>
@@ -48,8 +48,8 @@ export function PartnerSidebar({ user }: { user: PartnerUser }) {
               href={item.href}
               className={`
                 flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
-                ${isActive 
-                  ? 'bg-primary-light text-primary' 
+                ${isActive
+                  ? 'bg-primary-light text-primary-dark'
                   : 'text-slate-600 hover:bg-slate-50'
                 }
               `}

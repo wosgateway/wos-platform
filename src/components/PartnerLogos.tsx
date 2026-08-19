@@ -27,6 +27,7 @@
 //     inconsistent padding makes the row look uneven since every
 //     logo is vertically centered at the same height.
 
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
@@ -88,13 +89,16 @@ export function PartnerLogos() {
 
             <div className="wos-logo-track flex w-max items-center gap-12">
               {track.map((p, i) => (
-                <img
-                  key={`${p.id}-${i}`}
-                  src={p.logo_url}
-                  alt={p.name}
-                  title={p.name}
-                  className="h-16 w-auto flex-shrink-0 object-contain opacity-70 transition-opacity hover:opacity-100"
-                />
+                <div key={`${p.id}-${i}`} className="relative h-16 w-36 flex-shrink-0">
+                  <Image
+                    src={p.logo_url}
+                    alt={p.name}
+                    title={p.name}
+                    fill
+                    sizes="144px"
+                    className="object-contain opacity-70 transition-opacity hover:opacity-100"
+                  />
+                </div>
               ))}
             </div>
           </div>

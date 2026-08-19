@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { PackageCard } from '@/components/PackageCard';
+import { ProgramCardV2 } from '@/components/ProgramCardV2';
 import type { Package } from '@/lib/data';
 
 export function PackagesGrid({ packages }: { packages: Package[] }) {
@@ -45,7 +45,7 @@ export function PackagesGrid({ packages }: { packages: Package[] }) {
       ) : (
         <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
           {filtered.map((pkg) => (
-            <PackageCard key={pkg.id} pkg={pkg} />
+            <ProgramCardV2 key={pkg.id} pkg={pkg} />
           ))}
         </div>
       )}

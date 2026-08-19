@@ -8,7 +8,7 @@
 --      and the resulting order/order_item balance update were two
 --      separate round-trips from the app. If the second one failed,
 --      the payment was left "verified" with no balance to show for
---      it — no way to retry (the payment no longer matches the
+--      it €” no way to retry (the payment no longer matches the
 --      claimable statuses) and no way to detect the mismatch from
 --      the API response alone.
 --
@@ -16,7 +16,7 @@
 --      at the same instant could both read the pre-update balance
 --      and both write balance + amount, losing one of the two
 --      increments (last write wins). Migration 021's partial unique
---      index only prevents a second *pending* whole-order payment —
+--      index only prevents a second *pending* whole-order payment €”
 --      it doesn't serialize two already-distinct verifies.
 --
 -- Both are fixed by moving the claim + balance update into a single
@@ -155,7 +155,7 @@ begin
   where id = v_order_item_id;
   -- sync_order_item_balance / sync_order_totals triggers (referenced
   -- in the original route comment) still fire off this UPDATE as
-  -- normal — this function doesn't bypass them, it just makes the
+  -- normal €” this function doesn't bypass them, it just makes the
   -- claim + write atomic with everything else above.
 
   return json_build_object(

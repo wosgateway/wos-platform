@@ -22,20 +22,33 @@
 
 import { NextResponse } from 'next/server';
 import { getPartnerSession, hasPermission } from '@/lib/partner/auth';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via getPartnerSession's createClient(). Never
+  // returned directly. Same pattern as the admin routes — see
+  // src/lib/admin/require-admin.ts for the original rationale.
+  const cookieCarrier = new NextResponse();
+
   // 1. Auth — must be a logged-in partner user with permission to
   //    manage payments. Admins always pass; staff need the explicit
   //    permission (add 'manage_payments' to a user's permissions array
   //    in Supabase if a non-admin should be allowed to verify slips).
-  const { user } = await getPartnerSession();
+  const { user } = await getPartnerSession(cookieCarrier);
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      cookieCarrier
+    );
   }
   if (!hasPermission(user, 'manage_payments')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+      cookieCarrier
+    );
   }
 
   const paymentId = params.id;
@@ -48,7 +61,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   //    above. Also used here to build a friendlier "amount exceeds
   //    balance" message before calling the RPC (the RPC is still the
   //    authoritative check — this is display only).
-  const supabase = createClient();
+  const supabase = createClient(cookieCarrier);
   const { data: payment, error: fetchError } = await supabase
     .from('payments')
     .select(
@@ -69,7 +82,10 @@ export async function POST(request: Request, { params }: { params: { id: string 
   if (fetchError || !payment) {
     // Either it doesn't exist, or RLS hid it because it belongs to a
     // different org — same response either way so we don't leak which.
-    return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Payment not found' }, { status: 404 }),
+      cookieCarrier
+    );
   }
 
   const orderItem = Array.isArray(payment.order_items) ? payment.order_items[0] : payment.order_items;
@@ -79,9 +95,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
     // single partner and currently aren't visible to partner staff at
     // all (the RLS SELECT policy only matches order_item-linked rows).
     // Handle those from the admin/service-role side instead.
-    return NextResponse.json(
-      { error: 'This payment is not tied to a single order item and cannot be verified here.' },
-      { status: 400 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'This payment is not tied to a single order item and cannot be verified here.' },
+        { status: 400 }
+      ),
+      cookieCarrier
     );
   }
 
@@ -98,27 +117,39 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   if (error) {
     if (error.message.includes('payment_not_claimable')) {
-      return NextResponse.json(
-        { error: 'Payment is already verified/rejected (or was just handled) and cannot be re-verified.' },
-        { status: 409 }
+      return withRefreshedCookies(
+        NextResponse.json(
+          { error: 'Payment is already verified/rejected (or was just handled) and cannot be re-verified.' },
+          { status: 409 }
+        ),
+        cookieCarrier
       );
     }
     if (error.message.includes('order_item_not_found')) {
-      return NextResponse.json({ error: 'Order item not found for this payment' }, { status: 404 });
+      return withRefreshedCookies(
+        NextResponse.json({ error: 'Order item not found for this payment' }, { status: 404 }),
+        cookieCarrier
+      );
     }
     if (error.message.includes('amount_exceeds_balance')) {
       const remainingBeforeThis = Number(orderItem.price) - Number(orderItem.deposit_paid);
-      return NextResponse.json(
-        {
-          error: 'amount_exceeds_balance',
-          message: `Payment amount (${payment.amount}) exceeds the remaining balance (${remainingBeforeThis}). Resubmit with { "confirmOverpayment": true } to proceed anyway.`,
-          remainingBeforeThis,
-        },
-        { status: 409 }
+      return withRefreshedCookies(
+        NextResponse.json(
+          {
+            error: 'amount_exceeds_balance',
+            message: `Payment amount (${payment.amount}) exceeds the remaining balance (${remainingBeforeThis}). Resubmit with { "confirmOverpayment": true } to proceed anyway.`,
+            remainingBeforeThis,
+          },
+          { status: 409 }
+        ),
+        cookieCarrier
       );
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: error.message }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
-  return NextResponse.json({ success: true, ...data });
+  return withRefreshedCookies(NextResponse.json({ success: true, ...data }), cookieCarrier);
 }

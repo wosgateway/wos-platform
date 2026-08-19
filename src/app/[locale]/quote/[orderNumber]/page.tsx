@@ -6,7 +6,15 @@
 // send-quotation/route.tsx. Shows the program + total/deposit, and lets
 // the customer confirm the order (draft -> pending_deposit).
 //
-// UPDATED (this pass):
+// SECURITY FIX (this pass): the link now carries ?token=
+// (orders.payment_access_token, see migration 021) alongside
+// order_number, matching every other customer-facing order endpoint
+// (/payments, /my-trip). This page reads that token from the URL and
+// forwards it on every request — GET quote, POST confirm, and the
+// "go to my-trip" link — since order_number alone is a guessable
+// sequence, not a secret.
+//
+// UPDATED (earlier pass):
 //   1. Locale switcher (th/lo/en) — the page was already under
 //      [locale]/ so /th, /lo, /en all routed here, but every string on
 //      the page was hardcoded Thai. Switching the URL locale did
@@ -31,7 +39,7 @@
 // this compiles/renders correctly. See the full key list in the
 // comment block at the bottom of this file.
 import { useEffect, useState } from 'react';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations, useLocale } from 'next-intl';
 import { Link, usePathname, useRouter } from '@/i18n/navigation';
 
@@ -42,12 +50,30 @@ interface QuoteItem {
   id: string;
   service_type: ServiceType;
   price: number | null;
+  quantity: number | null;
+  room_quantity: number | null;
   scheduled_date: string | null;
   scheduled_time: string | null;
+  hotel_checkout_date: string | null;
+  transport_mode: string | null;
+  transport_return_date: string | null;
+  transport_return_time: string | null;
   pickup_location: string | null;
   dropoff_location: string | null;
   package: { title: string } | null;
   partner: { name: string } | null;
+}
+
+// Same convention as BookingForm.tsx's calcNights: number of nights
+// between two YYYY-MM-DD date strings, 0 if either is missing or the
+// range is invalid (never render a bogus night count).
+function calcNights(checkin: string | null, checkout: string | null): number {
+  if (!checkin || !checkout) return 0;
+  const start = new Date(checkin);
+  const end = new Date(checkout);
+  const diffMs = end.getTime() - start.getTime();
+  if (Number.isNaN(diffMs) || diffMs <= 0) return 0;
+  return Math.round(diffMs / (1000 * 60 * 60 * 24));
 }
 
 interface Quote {
@@ -81,6 +107,11 @@ function formatMoney(amount: number | null, currency: string | null) {
 export default function QuotePage() {
   const params = useParams();
   const orderNumber = params?.orderNumber as string;
+  const searchParams = useSearchParams();
+  // Required alongside order_number by /api/quote/[orderNumber] and
+  // its /confirm sibling — order_number is a predictable sequence,
+  // not a secret. See src/lib/orders/authorize-order.ts.
+  const token = searchParams?.get('token') ?? '';
   const locale = useLocale() as Locale;
   const pathname = usePathname();
   const router = useRouter();
@@ -109,7 +140,7 @@ export default function QuotePage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/quote/${orderNumber}`);
+        const res = await fetch(`/api/quote/${orderNumber}?token=${encodeURIComponent(token)}`);
         const result = await res.json();
         if (!res.ok) throw new Error(result?.error ?? t('errors.loadFailed'));
         setQuote(result.order);
@@ -121,13 +152,15 @@ export default function QuotePage() {
     }
     if (orderNumber) load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderNumber]);
+  }, [orderNumber, token]);
 
   async function handleConfirm() {
     setConfirming(true);
     setError(null);
     try {
-      const res = await fetch(`/api/quote/${orderNumber}/confirm`, { method: 'POST' });
+      const res = await fetch(`/api/quote/${orderNumber}/confirm?token=${encodeURIComponent(token)}`, {
+        method: 'POST',
+      });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error ?? t('errors.confirmFailed'));
       setConfirmed(true);
@@ -145,7 +178,10 @@ export default function QuotePage() {
     // (which next-intl's usePathname already strips the locale
     // prefix from) with a different `locale` option — this is what
     // actually changes /th/quote/... to /lo/quote/... without losing
-    // the [orderNumber] segment.
+    // the [orderNumber] segment. Note: this does NOT preserve
+    // ?token= automatically (next-intl's router.replace doesn't carry
+    // query params) — if that's needed, switch to next/navigation's
+    // router with the pathname + searchParams string instead.
     router.replace(pathname, { locale: next });
   }
 
@@ -225,7 +261,27 @@ export default function QuotePage() {
                 <div className="font-medium text-slate-800">{itemLabel(item)}</div>
                 {item.scheduled_date ? (
                   <div className="text-xs text-slate-500">
-                    {item.scheduled_date} {item.scheduled_time || ''}
+                    {item.scheduled_date}
+                    {item.service_type === 'hotel' && item.hotel_checkout_date
+                      ? ` ${t('checkoutLabel')} ${item.hotel_checkout_date}`
+                      : ` ${item.scheduled_time || ''}`}
+                    {item.service_type === 'hotel' && item.hotel_checkout_date
+                      ? ` · ${t('nightsLabel', { count: calcNights(item.scheduled_date, item.hotel_checkout_date) })}`
+                      : null}
+                  </div>
+                ) : null}
+                {item.service_type === 'hotel' && (item.room_quantity ?? 1) > 1 ? (
+                  <div className="text-xs text-slate-500">{t('roomsLabel', { count: item.room_quantity })}</div>
+                ) : null}
+                {item.service_type === 'transport' ? (
+                  <div className="text-xs text-slate-500">
+                    {item.transport_mode === 'daily'
+                      ? t('dailyLabel', { count: item.quantity || 1 })
+                      : item.transport_mode === 'round_trip'
+                      ? `${t('roundTripLabel')} · ${t('returnLabel')} ${item.transport_return_date || '-'} ${
+                          item.transport_return_time || ''
+                        }`.trim()
+                      : t('oneWayLabel')}
                   </div>
                 ) : null}
                 {item.pickup_location || item.dropoff_location ? (
@@ -253,7 +309,7 @@ export default function QuotePage() {
         </div>
         <div className="mt-1.5 flex justify-between text-sm">
           <span className="text-slate-500">{t('depositRequiredLabel')}</span>
-          <span className="font-semibold text-primary print:text-slate-900">
+          <span className="font-semibold text-primary-dark print:text-slate-900">
             {formatMoney(quote.total_deposit_required, quote.currency)}
           </span>
         </div>
@@ -274,7 +330,7 @@ export default function QuotePage() {
             ✅ {t('confirmedBanner')}
           </div>
           <Link
-            href={`/my-trip/${orderNumber}`}
+            href={`/my-trip/${orderNumber}?token=${encodeURIComponent(token)}`}
             className="block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-white"
           >
             {t('goToMyTrip')} →
@@ -296,42 +352,3 @@ export default function QuotePage() {
     </div>
   );
 }
-
-// ============================================================
-// NEW translation keys required — add to src/messages/th.json,
-// lo.json, and en.json under a top-level "quote" namespace. Example
-// (Thai values shown; translate lo/en accordingly):
-//
-// "quote": {
-//   "title": "ใบเสนอราคา",
-//   "printButton": "พิมพ์",
-//   "orderNumberLabel": "เลขที่",
-//   "customerPrefix": "คุณ",
-//   "itemsHeading": "รายการ",
-//   "programFallback": "โปรแกรม",
-//   "pickupLabel": "รับ:",
-//   "dropoffLabel": "ส่ง:",
-//   "totalLabel": "ยอดรวมทั้งหมด",
-//   "depositRequiredLabel": "มัดจำที่ต้องชำระ",
-//   "confirmedBanner": "ยืนยันรายการแล้ว — ไปต่อที่ขั้นตอนชำระมัดจำได้เลย",
-//   "goToMyTrip": "ดูสถานะการจอง / ชำระมัดจำ",
-//   "confirmButton": "ยืนยันรายการนี้",
-//   "confirming": "กำลังยืนยัน...",
-//   "contactLine": "มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
-//   "serviceType": {
-//     "clinic": "🏥 คลินิก/โรงพยาบาล",
-//     "wellness": "🧘 เวลเนส",
-//     "insurance": "📄 ประกัน",
-//     "hotel": "🏨 โรงแรม",
-//     "transport": "🚗 รถรับส่ง"
-//   },
-//   "errors": {
-//     "loadFailed": "โหลดข้อมูลไม่สำเร็จ",
-//     "confirmFailed": "ยืนยันไม่สำเร็จ"
-//   }
-// }
-//
-// If src/messages/lo.json and en.json don't already have a "quote"
-// namespace, next-intl will throw a MISSING_MESSAGE error at render
-// time for these keys — check that before deploying.
-// ============================================================

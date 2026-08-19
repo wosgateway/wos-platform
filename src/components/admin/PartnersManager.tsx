@@ -267,7 +267,7 @@ export function PartnersManager() {
                   <td className="px-4 py-2">
                     <span
                       className={`rounded-full px-2 py-0.5 text-xs ${
-                        p.status === 'active' ? 'bg-primary-light text-primary' : 'bg-slate-100 text-slate-400'
+                        p.status === 'active' ? 'bg-primary-light text-primary-dark' : 'bg-slate-100 text-slate-400'
                       }`}
                     >
                       {p.status}
@@ -282,7 +282,7 @@ export function PartnersManager() {
                     )}
                   </td>
                   <td className="px-4 py-2 text-right">
-                    <button onClick={() => openModal(p)} className="mr-3 text-primary hover:underline">
+                    <button onClick={() => openModal(p)} className="mr-3 text-primary-dark hover:underline">
                       แก้ไข
                     </button>
                     <button onClick={() => handleDelete(p.id)} className="text-red-500 hover:underline">

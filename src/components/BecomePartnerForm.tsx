@@ -2,7 +2,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useTranslations } from 'next-intl';
+import { useTranslations, useLocale } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 
 const BUSINESS_TYPES = ['clinic_hospital', 'hotel_resort', 'transport_agent', 'investor'] as const;
@@ -33,6 +33,7 @@ const emptyForm: FormState = {
 
 export function BecomePartnerForm() {
   const t = useTranslations('becomePartner.form');
+  const locale = useLocale();
   const supabase = createClient();
 
   const [form, setForm] = useState<FormState>(emptyForm);
@@ -61,21 +62,20 @@ export function BecomePartnerForm() {
 
     setSubmitting(true);
 
-    // เหมือนกับ payload เดิมใน partner.html inline script:
-    // insert เข้า table 'cases' โดย prefix service_type ด้วย "[B2B]"
-    // เพื่อให้แยกจาก case จองบริการปกติของผู้ป่วยได้ใน admin
+    // เดิม insert เข้า table 'cases' โดย prefix service_type ด้วย "[B2B]"
+    // (ดู sql/030_partner_applications.sql) ตอนนี้เปลี่ยนไปใช้ตาราง
+    // 'partner_applications' ที่สร้างขึ้นมาสำหรับใบสมัครพันธมิตรโดยเฉพาะ
     const payload = {
-      patient_name: `${form.contactName.trim()} (${form.companyName.trim()})`,
-      phone_number: form.phone.trim(),
-      service_type: `[B2B] ${form.partnerType}`,
-      hospital: form.companyName.trim(),
-      travel_date: null,
+      language: locale,
+      company_name: form.companyName.trim(),
+      business_type: form.partnerType,
+      primary_name: form.contactName.trim(),
+      primary_phone: form.phone.trim(),
       message: form.message.trim() || null,
-      status: 'new_lead_b2b',
-      created_at: new Date().toISOString(),
+      status: 'PENDING',
     };
 
-    const { error } = await supabase.from('cases').insert([payload]);
+    const { error } = await supabase.from('partner_applications').insert([payload]);
     setSubmitting(false);
 
     if (error) {

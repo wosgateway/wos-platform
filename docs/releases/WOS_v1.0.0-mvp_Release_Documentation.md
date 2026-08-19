@@ -1,4 +1,4 @@
-# WOS Platform — Release Documentation
+# WOS Platform €” Release Documentation
 
 **Version:** v1.0.0-mvp  
 **Release Date:** 2026-08-07  
@@ -28,7 +28,7 @@ This release establishes the core cross-border healthcare booking and partner op
 - Payment Deposit Engine
 - Partner Assignment Workflow
 - Stable production build
-- Git release workflow (feature → develop → main)
+- Git release workflow (feature †’ develop †’ main)
 
 ---
 
@@ -220,15 +220,15 @@ Production build status:
 
 ```
 feature/payment-engine
-        ↓
+        †“
 merge
-        ↓
+        †“
 develop
-        ↓
+        †“
 cleanup
-        ↓
+        †“
 main
-        ↓
+        †“
 tag v1.0.0-mvp
 ```
 
@@ -271,19 +271,19 @@ Not included in v1.0.0-mvp:
 
 ```
 Customer
-    ↓
+    †“
 Package / Program
-    ↓
+    †“
 Booking
-    ↓
+    †“
 Order
-    ↓
+    †“
 Quotation
-    ↓
+    †“
 Deposit Payment
-    ↓
+    †“
 Partner Assignment
-    ↓
+    †“
 Service Delivery
 ```
 
@@ -293,12 +293,12 @@ This represents the first complete operational loop of the WOS Platform.
 
 # Next Milestone
 
-## Phase 1.1 — Market Validation
+## Phase 1.1 €” Market Validation
 
 Objectives:
 
-- Onboard first 3–5 real partners
-- Publish 10–20 real healthcare programs
+- Onboard first 3€“5 real partners
+- Publish 10€“20 real healthcare programs
 - Process first live bookings
 - Validate quotation conversion
 - Validate payment deposit workflow
@@ -315,4 +315,4 @@ Success metric:
 **Release Name:** WOS Platform v1.0.0 MVP  
 **Approved Branch:** `main`  
 **Release Tag:** `v1.0.0-mvp`  
-**Status:** ✅ Released
+**Status:** œ… Released

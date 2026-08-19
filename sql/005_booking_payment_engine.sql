@@ -1,26 +1,26 @@
 -- ============================================================
 -- 005_booking_payment_engine.sql
 -- ============================================================
--- ⚠️ RECONSTRUCTED SNAPSHOT — ไม่ใช่ไฟล์ migration ต้นฉบับจริง
--- ประกอบขึ้นย้อนหลังจาก schema จริงบน Supabase เมื่อ 2026-08-02
--- (เดิมเรียกกันว่า migration "008_booking_payment_engine.sql" ในบันทึก
--- การทดสอบ แต่ไม่เคยถูก commit เข้า repo — ไฟล์นี้ให้เลขต่อจาก 004
--- ตามลำดับไฟล์จริงในโปรเจกต์ ไม่ใช่เลขเดิมที่เคยอ้างถึงกันด้วยวาจา)
+-- š ï¸ RECONSTRUCTED SNAPSHOT €” à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¹„à¸Ÿà¸¥à¹Œ migration à¸•à¹‰à¸™à¸‰à¸šà¸±à¸šà¸ˆà¸£à¸´à¸‡
+-- à¸›à¸£à¸°à¸à¸­à¸šà¸‚à¸¶à¹‰à¸™à¸¢à¹‰à¸­à¸™à¸«à¸¥à¸±à¸‡à¸ˆà¸²à¸ schema à¸ˆà¸£à¸´à¸‡à¸šà¸™ Supabase à¹€à¸¡à¸·à¹ˆà¸­ 2026-08-02
+-- (à¹€à¸”à¸´à¸¡à¹€à¸£à¸µà¸¢à¸à¸à¸±à¸™à¸§à¹ˆà¸² migration "008_booking_payment_engine.sql" à¹ƒà¸™à¸šà¸±à¸™à¸—à¸¶à¸
+-- à¸à¸²à¸£à¸—à¸”à¸ªà¸­à¸š à¹à¸•à¹ˆà¹„à¸¡à¹ˆà¹€à¸„à¸¢à¸–à¸¹à¸ commit à¹€à¸‚à¹‰à¸² repo €” à¹„à¸Ÿà¸¥à¹Œà¸™à¸µà¹‰à¹ƒà¸«à¹‰à¹€à¸¥à¸‚à¸•à¹ˆà¸­à¸ˆà¸²à¸ 004
+-- à¸•à¸²à¸¡à¸¥à¸³à¸”à¸±à¸šà¹„à¸Ÿà¸¥à¹Œà¸ˆà¸£à¸´à¸‡à¹ƒà¸™à¹‚à¸›à¸£à¹€à¸ˆà¸à¸•à¹Œ à¹„à¸¡à¹ˆà¹ƒà¸Šà¹ˆà¹€à¸¥à¸‚à¹€à¸”à¸´à¸¡à¸—à¸µà¹ˆà¹€à¸„à¸¢à¸­à¹‰à¸²à¸‡à¸–à¸¶à¸‡à¸à¸±à¸™à¸”à¹‰à¸§à¸¢à¸§à¸²à¸ˆà¸²)
 --
--- ครอบคลุม: deposit_rules, orders, order_items, payments,
+-- à¸„à¸£à¸­à¸šà¸„à¸¥à¸¸à¸¡: deposit_rules, orders, order_items, payments,
 -- payment_attachments, invoices, settlements
 --
--- ออกแบบไว้ว่า payments/orders "ไม่เปิด RLS ให้เขียนตรงๆ โดยเจตนา"
--- (ดู comment ในไฟล์ src/app/api/partner/payments/[id]/verify/route.ts)
--- การเขียนข้อมูลทั้งหมดต้องผ่าน API route ที่ใช้ service-role client
--- เท่านั้น — ปุ่ม verify/reject คือทางเดียวที่ partner staff แก้ไข
--- payments ได้ ส่วน SELECT เปิดให้ผ่าน RLS ตรงๆ ได้ตามตารางที่ระบุ
+-- à¸­à¸­à¸à¹à¸šà¸šà¹„à¸§à¹‰à¸§à¹ˆà¸² payments/orders "à¹„à¸¡à¹ˆà¹€à¸›à¸´à¸” RLS à¹ƒà¸«à¹‰à¹€à¸‚à¸µà¸¢à¸™à¸•à¸£à¸‡à¹† à¹‚à¸”à¸¢à¹€à¸ˆà¸•à¸™à¸²"
+-- (à¸”à¸¹ comment à¹ƒà¸™à¹„à¸Ÿà¸¥à¹Œ src/app/api/partner/payments/[id]/verify/route.ts)
+-- à¸à¸²à¸£à¹€à¸‚à¸µà¸¢à¸™à¸‚à¹‰à¸­à¸¡à¸¹à¸¥à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”à¸•à¹‰à¸­à¸‡à¸œà¹ˆà¸²à¸™ API route à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰ service-role client
+-- à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™ €” à¸›à¸¸à¹ˆà¸¡ verify/reject à¸„à¸·à¸­à¸—à¸²à¸‡à¹€à¸”à¸µà¸¢à¸§à¸—à¸µà¹ˆ partner staff à¹à¸à¹‰à¹„à¸‚
+-- payments à¹„à¸”à¹‰ à¸ªà¹ˆà¸§à¸™ SELECT à¹€à¸›à¸´à¸”à¹ƒà¸«à¹‰à¸œà¹ˆà¸²à¸™ RLS à¸•à¸£à¸‡à¹† à¹„à¸”à¹‰à¸•à¸²à¸¡à¸•à¸²à¸£à¸²à¸‡à¸—à¸µà¹ˆà¸£à¸°à¸šà¸¸
 --
--- ปลอดภัยที่จะรันซ้ำ (idempotent) — ใช้ IF NOT EXISTS / OR REPLACE ทั้งหมด
+-- à¸›à¸¥à¸­à¸”à¸ à¸±à¸¢à¸—à¸µà¹ˆà¸ˆà¸°à¸£à¸±à¸™à¸‹à¹‰à¸³ (idempotent) €” à¹ƒà¸Šà¹‰ IF NOT EXISTS / OR REPLACE à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”
 -- ============================================================
 
 -- ------------------------------------------------------------
--- Sequence สำหรับเลข order (ใช้ใน generate_order_number())
+-- Sequence à¸ªà¸³à¸«à¸£à¸±à¸šà¹€à¸¥à¸‚ order (à¹ƒà¸Šà¹‰à¹ƒà¸™ generate_order_number())
 -- ------------------------------------------------------------
 CREATE SEQUENCE IF NOT EXISTS public.order_number_seq;
 
@@ -73,8 +73,8 @@ $function$;
 
 -- ------------------------------------------------------------
 -- orders
--- หมายเหตุ: ไม่มี RLS policy ใดๆ บนตารางนี้โดยเจตนา (ตรงกับ payments) —
--- เข้าถึง/แก้ไขได้ผ่าน service-role client จาก API routes เท่านั้น
+-- à¸«à¸¡à¸²à¸¢à¹€à¸«à¸•à¸¸: à¹„à¸¡à¹ˆà¸¡à¸µ RLS policy à¹ƒà¸”à¹† à¸šà¸™à¸•à¸²à¸£à¸²à¸‡à¸™à¸µà¹‰à¹‚à¸”à¸¢à¹€à¸ˆà¸•à¸™à¸² (à¸•à¸£à¸‡à¸à¸±à¸š payments) €”
+-- à¹€à¸‚à¹‰à¸²à¸–à¸¶à¸‡/à¹à¸à¹‰à¹„à¸‚à¹„à¸”à¹‰à¸œà¹ˆà¸²à¸™ service-role client à¸ˆà¸²à¸ API routes à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.orders (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -104,7 +104,7 @@ CREATE TRIGGER set_updated_at_orders BEFORE UPDATE ON public.orders
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 ALTER TABLE public.orders ENABLE ROW LEVEL SECURITY;
--- (ไม่มี policy — service-role only ตามที่ออกแบบไว้)
+-- (à¹„à¸¡à¹ˆà¸¡à¸µ policy €” service-role only à¸•à¸²à¸¡à¸—à¸µà¹ˆà¸­à¸­à¸à¹à¸šà¸šà¹„à¸§à¹‰)
 
 -- ------------------------------------------------------------
 -- order_items
@@ -133,8 +133,8 @@ CREATE INDEX IF NOT EXISTS idx_order_items_org_id ON public.order_items(organiza
 CREATE INDEX IF NOT EXISTS idx_order_items_status ON public.order_items(status);
 CREATE INDEX IF NOT EXISTS idx_order_items_order_id ON public.order_items(order_id);
 
--- sync_order_item_balance(): คำนวณ balance_remaining = price - deposit_paid
--- ให้ตัวเองทุกครั้งที่ insert/update แถว (BEFORE, เพื่อ set ค่าใน NEW ก่อนบันทึก)
+-- sync_order_item_balance(): à¸„à¸³à¸™à¸§à¸“ balance_remaining = price - deposit_paid
+-- à¹ƒà¸«à¹‰à¸•à¸±à¸§à¹€à¸­à¸‡à¸—à¸¸à¸à¸„à¸£à¸±à¹‰à¸‡à¸—à¸µà¹ˆ insert/update à¹à¸–à¸§ (BEFORE, à¹€à¸žà¸·à¹ˆà¸­ set à¸„à¹ˆà¸²à¹ƒà¸™ NEW à¸à¹ˆà¸­à¸™à¸šà¸±à¸™à¸—à¸¶à¸)
 CREATE OR REPLACE FUNCTION public.sync_order_item_balance()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -145,10 +145,10 @@ BEGIN
 END;
 $function$;
 
--- sync_order_totals(): รวมยอดจาก order_items ทั้งหมดของ order เดียวกัน
--- แล้วอัปเดตกลับไปที่ orders (AFTER, เพราะต้องอ่านค่าที่ commit แล้วของ
--- order_items ทุกแถวใน order นั้นเพื่อ SUM ให้ถูกต้อง รวมถึงตอน DELETE
--- ที่ใช้ OLD.order_id)
+-- sync_order_totals(): à¸£à¸§à¸¡à¸¢à¸­à¸”à¸ˆà¸²à¸ order_items à¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”à¸‚à¸­à¸‡ order à¹€à¸”à¸µà¸¢à¸§à¸à¸±à¸™
+-- à¹à¸¥à¹‰à¸§à¸­à¸±à¸›à¹€à¸”à¸•à¸à¸¥à¸±à¸šà¹„à¸›à¸—à¸µà¹ˆ orders (AFTER, à¹€à¸žà¸£à¸²à¸°à¸•à¹‰à¸­à¸‡à¸­à¹ˆà¸²à¸™à¸„à¹ˆà¸²à¸—à¸µà¹ˆ commit à¹à¸¥à¹‰à¸§à¸‚à¸­à¸‡
+-- order_items à¸—à¸¸à¸à¹à¸–à¸§à¹ƒà¸™ order à¸™à¸±à¹‰à¸™à¹€à¸žà¸·à¹ˆà¸­ SUM à¹ƒà¸«à¹‰à¸–à¸¹à¸à¸•à¹‰à¸­à¸‡ à¸£à¸§à¸¡à¸–à¸¶à¸‡à¸•à¸­à¸™ DELETE
+-- à¸—à¸µà¹ˆà¹ƒà¸Šà¹‰ OLD.order_id)
 CREATE OR REPLACE FUNCTION public.sync_order_totals()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -203,8 +203,8 @@ CREATE POLICY "Partners can update their organization's order items" ON public.o
 
 -- ------------------------------------------------------------
 -- payments
--- SELECT เปิดผ่าน RLS ตรงๆ ได้ แต่ INSERT/UPDATE ไม่มี policy เลย —
--- โดยเจตนา (ดู comment หัวไฟล์) ต้องผ่าน /verify, /reject route เท่านั้น
+-- SELECT à¹€à¸›à¸´à¸”à¸œà¹ˆà¸²à¸™ RLS à¸•à¸£à¸‡à¹† à¹„à¸”à¹‰ à¹à¸•à¹ˆ INSERT/UPDATE à¹„à¸¡à¹ˆà¸¡à¸µ policy à¹€à¸¥à¸¢ €”
+-- à¹‚à¸”à¸¢à¹€à¸ˆà¸•à¸™à¸² (à¸”à¸¹ comment à¸«à¸±à¸§à¹„à¸Ÿà¸¥à¹Œ) à¸•à¹‰à¸­à¸‡à¸œà¹ˆà¸²à¸™ /verify, /reject route à¹€à¸—à¹ˆà¸²à¸™à¸±à¹‰à¸™
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.payments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -246,7 +246,7 @@ CREATE POLICY "Partners can view payments for their order items" ON public.payme
     );
 
 -- ------------------------------------------------------------
--- payment_attachments (สลิปโอนเงิน ฯลฯ) — service-role only, ไม่มี policy
+-- payment_attachments (à¸ªà¸¥à¸´à¸›à¹‚à¸­à¸™à¹€à¸‡à¸´à¸™ à¸¯à¸¥à¸¯) €” service-role only, à¹„à¸¡à¹ˆà¸¡à¸µ policy
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.payment_attachments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -260,10 +260,10 @@ CREATE TABLE IF NOT EXISTS public.payment_attachments (
 CREATE INDEX IF NOT EXISTS idx_payment_attachments_payment_id ON public.payment_attachments(payment_id);
 
 ALTER TABLE public.payment_attachments ENABLE ROW LEVEL SECURITY;
--- (ไม่มี policy — service-role only)
+-- (à¹„à¸¡à¹ˆà¸¡à¸µ policy €” service-role only)
 
 -- ------------------------------------------------------------
--- invoices — service-role only, ไม่มี policy
+-- invoices €” service-role only, à¹„à¸¡à¹ˆà¸¡à¸µ policy
 -- ------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS public.invoices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -286,7 +286,7 @@ CREATE TRIGGER set_updated_at_invoices BEFORE UPDATE ON public.invoices
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 ALTER TABLE public.invoices ENABLE ROW LEVEL SECURITY;
--- (ไม่มี policy — service-role only)
+-- (à¹„à¸¡à¹ˆà¸¡à¸µ policy €” service-role only)
 
 -- ------------------------------------------------------------
 -- settlements

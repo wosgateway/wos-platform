@@ -13,12 +13,20 @@
 
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export async function GET() {
-  const auth = await requireAdmin();
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  const cookieCarrier = new NextResponse();
+
+  const auth = await requireAdmin(cookieCarrier);
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.message }, { status: auth.status });
+    return withRefreshedCookies(
+      NextResponse.json({ error: auth.message }, { status: auth.status }),
+      cookieCarrier
+    );
   }
 
   const supabase = createServiceClient();
@@ -26,17 +34,20 @@ export async function GET() {
   const { data: items, error: itemsErr } = await supabase
     .from('order_items')
     .select(
-      'id, order_id, service_type, scheduled_date, scheduled_time, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, room_quantity, created_at'
+      'id, order_id, service_type, scheduled_date, scheduled_time, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, created_at'
     )
     .eq('needs_assignment', true)
     .order('created_at', { ascending: true });
 
   if (itemsErr) {
     console.error('fetch pending order_items failed:', itemsErr);
-    return NextResponse.json({ error: 'failed to load pending items' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load pending items' }, { status: 500 }),
+      cookieCarrier
+    );
   }
   if (!items || items.length === 0) {
-    return NextResponse.json({ items: [] });
+    return withRefreshedCookies(NextResponse.json({ items: [] }), cookieCarrier);
   }
 
   const orderIds = [...new Set(items.map((i) => i.order_id))];
@@ -47,7 +58,10 @@ export async function GET() {
 
   if (ordersErr) {
     console.error('fetch orders for pending items failed:', ordersErr);
-    return NextResponse.json({ error: 'failed to load order context' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load order context' }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   const patientIds = [...new Set((orders ?? []).map((o) => o.patient_id))];
@@ -58,7 +72,10 @@ export async function GET() {
 
   if (customersErr) {
     console.error('fetch customers for pending items failed:', customersErr);
-    return NextResponse.json({ error: 'failed to load customer context' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load customer context' }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   const orderById = new Map((orders ?? []).map((o) => [o.id, o]));
@@ -75,5 +92,5 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ items: enriched });
+  return withRefreshedCookies(NextResponse.json({ items: enriched }), cookieCarrier);
 }

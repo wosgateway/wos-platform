@@ -4,17 +4,17 @@
 -- Adds what the customer-facing "Payment / Upload Slip" page needs:
 --   1. A public storage bucket for slip images/PDFs
 --      (same pattern as existing `booking-attachments` bucket used
---      by BookingForm.tsx — public bucket, anon can INSERT new
+--      by BookingForm.tsx €” public bucket, anon can INSERT new
 --      objects, nobody can UPDATE/DELETE, everyone can SELECT the
 --      public URL).
 --   2. New columns on `payments` so a slip upload can be recorded
 --      without touching the verify/reject routes' existing columns
 --      (id, order_id, order_item_id, amount, currency, status,
---      verified_by, verified_at, rejection_reason — all assumed to
+--      verified_by, verified_at, rejection_reason €” all assumed to
 --      already exist from migration 008).
 --
 -- Run this once against the project (Supabase SQL editor or CLI).
--- Safe to re-run — every statement is guarded with IF NOT EXISTS /
+-- Safe to re-run €” every statement is guarded with IF NOT EXISTS /
 -- ON CONFLICT DO NOTHING.
 -- ============================================================
 
@@ -26,7 +26,7 @@ values ('payment-slips', 'payment-slips', true)
 on conflict (id) do nothing;
 
 -- Anyone (including anon, unauthenticated customers on the public
--- payment page) can upload a slip — same trust model as
+-- payment page) can upload a slip €” same trust model as
 -- `booking-attachments`. Filenames are timestamp-prefixed client-side
 -- so collisions/overwrites aren't a practical concern.
 drop policy if exists "Anyone can upload payment slips" on storage.objects;
@@ -41,7 +41,7 @@ create policy "Anyone can view payment slips"
   on storage.objects for select
   using (bucket_id = 'payment-slips');
 
--- Deliberately no UPDATE/DELETE policy — slips are immutable once
+-- Deliberately no UPDATE/DELETE policy €” slips are immutable once
 -- uploaded; a resubmission just uploads a new file/new payments row.
 
 -- ------------------------------------------------------------

@@ -2,111 +2,152 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
-import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 import { BookingDetailModal } from './BookingDetailModal';
 import { ExportBookings } from './ExportBookings';
 
-type BookingStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+// order_items.status enum จริง (migration 008) — ไม่มี 'in_progress'
+// เหมือน partner_bookings เดิม เพิ่ม 'checked_in' และ 'refunded' แทน
+type BookingStatus = 'pending' | 'confirmed' | 'checked_in' | 'completed' | 'cancelled' | 'refunded';
 
 interface Booking {
-  id: string;
+  id: string; // order_items.id
+  order_id: string;
+  order_number: string;
   customer_name: string;
   customer_phone: string;
   customer_line: string | null;
-  booking_date: string;
-  booking_time: string | null;
+  service_type: string;
   status: BookingStatus;
-  total_price: number | null;
+  price: number;
+  quantity: number | null;
+  room_quantity: number | null;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
+  hotel_checkout_date: string | null;
+  transport_mode: string | null;
+  transport_return_date: string | null;
+  transport_return_time: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
   created_at: string;
   packages: { title: string } | null;
-  patients: { full_name: string; phone: string } | null;
+}
+
+// Extra line under the program/date cell for hotel room count and
+// transport mode/day-count/pickup-dropoff. Same detail this data has
+// carried since migration 024/028, but /api/partner/orders never
+// selected any of it before, so partners never saw it.
+function bookingDetailLine(b: Booking): string | null {
+  if (b.service_type === 'hotel') {
+    const parts: string[] = [];
+    if (b.scheduled_date || b.hotel_checkout_date) {
+      parts.push(`เข้าพัก ${b.scheduled_date || '-'} ถึง ${b.hotel_checkout_date || '-'}`);
+    }
+    if ((b.room_quantity ?? 1) > 1) parts.push(`${b.room_quantity} ห้อง`);
+    return parts.length ? parts.join(' · ') : null;
+  }
+  if (b.service_type === 'transport') {
+    const mode = b.transport_mode || 'one_way';
+    const parts: string[] = [];
+    if (mode === 'daily') {
+      parts.push(`เหมารายวัน · ${b.quantity || 1} วัน`);
+    } else if (mode === 'round_trip') {
+      parts.push(`ไป-กลับ · ส่งกลับ ${b.transport_return_date || '-'} ${b.transport_return_time || ''}`.trim());
+    } else {
+      parts.push('เที่ยวเดียว');
+    }
+    if (b.pickup_location) parts.push(`รับ: ${b.pickup_location}`);
+    if (b.dropoff_location) parts.push(`ส่ง: ${b.dropoff_location}`);
+    return parts.join(' · ');
+  }
+  return null;
 }
 
 const STATUS_BADGE: Record<BookingStatus, string> = {
   pending: 'bg-amber-100 text-amber-800',
   confirmed: 'bg-emerald-100 text-emerald-800',
-  in_progress: 'bg-blue-100 text-blue-800',
+  checked_in: 'bg-blue-100 text-blue-800',
   completed: 'bg-green-100 text-green-800',
   cancelled: 'bg-red-100 text-red-800',
+  refunded: 'bg-slate-100 text-slate-600',
 };
-
 
 const STATUS_OPTIONS: { value: BookingStatus | 'all'; label: string }[] = [
   { value: 'all', label: 'ทั้งหมด' },
   { value: 'pending', label: '⏳ รอดำเนินการ' },
   { value: 'confirmed', label: '✅ ยืนยันแล้ว' },
-  { value: 'in_progress', label: '🔄 กำลังดำเนินการ' },
+  { value: 'checked_in', label: '📍 เช็คอินแล้ว' },
   { value: 'completed', label: '🎉 เสร็จสิ้น' },
   { value: 'cancelled', label: '❌ ยกเลิก' },
+  { value: 'refunded', label: '↩️ คืนเงินแล้ว' },
 ];
 
-export function BookingsList({ organizationId }: { organizationId: string }) {
-  const supabase = createClient();
+export function BookingsList({ partnerId }: { partnerId: string | null }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<BookingStatus | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [updatingId, setUpdatingId] = useState<string | null>(null);
-  const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
+  const [selectedOrderId, setSelectedOrderId] = useState<string | null>(null);
 
   async function loadBookings() {
     setLoading(true);
     setError(null);
 
-    const query = supabase
-      .from('partner_bookings')
-      .select(`
-        id,
-        customer_name,
-        customer_phone,
-        customer_line,
-        booking_date,
-        booking_time,
-        status,
-        total_price,
-        created_at,
-        packages!bookings_package_id_fkey ( title ),
-        patients ( full_name, phone )
-      `)
-      .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false });
-
-    const { data, error: fetchError } = await query;
-
-    setLoading(false);
-
-    if (fetchError) {
-      setError('โหลดข้อมูลไม่สำเร็จ: ' + fetchError.message);
+    if (!partnerId) {
+      // เหมือน DashboardMetrics.tsx: user ยังไม่ผูก branch_id -> โชว์
+      // รายการว่างแทนการ error ทั้งหน้า
+      setLoading(false);
+      setBookings([]);
       return;
     }
 
-    setBookings(data as unknown as Booking[]);
+    try {
+      const res = await fetch('/api/partner/orders');
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json?.error || 'โหลดข้อมูลไม่สำเร็จ');
+      }
+
+      setBookings((json.orders as Booking[]) ?? []);
+    } catch (err) {
+      setError('โหลดข้อมูลไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setLoading(false);
+    }
   }
 
   useEffect(() => {
     loadBookings();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [partnerId]);
 
   async function updateStatus(id: string, newStatus: BookingStatus) {
     setUpdatingId(id);
-    const { error: updateError } = await supabase
-      .from('partner_bookings')
-      .update({ status: newStatus })
-      .eq('id', id);
 
-    setUpdatingId(null);
+    try {
+      const res = await fetch(`/api/partner/order-items/${id}/status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      const json = await res.json();
 
-    if (updateError) {
-      alert('อัปเดตสถานะไม่สำเร็จ: ' + updateError.message);
-      return;
+      if (!res.ok) {
+        throw new Error(json?.error || 'อัปเดตสถานะไม่สำเร็จ');
+      }
+
+      setBookings((prev) =>
+        prev.map((b) => (b.id === id ? { ...b, status: newStatus } : b))
+      );
+    } catch (err) {
+      alert('อัปเดตสถานะไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+    } finally {
+      setUpdatingId(null);
     }
-
-    setBookings((prev) =>
-      prev.map((b) => (b.id === id ? { ...b, status: newStatus } : b))
-    );
   }
 
   const filtered = useMemo(() => {
@@ -188,10 +229,10 @@ export function BookingsList({ organizationId }: { organizationId: string }) {
         </div>
 
         <div className="flex items-center gap-2">
-          <ExportBookings organizationId={organizationId} onExport={loadBookings} />
+          <ExportBookings partnerId={partnerId} onExport={loadBookings} />
           <button
             onClick={loadBookings}
-            className="text-sm text-primary hover:underline whitespace-nowrap"
+            className="text-sm text-primary-dark hover:underline whitespace-nowrap"
           >
             🔄 รีเฟรช
           </button>
@@ -242,13 +283,16 @@ export function BookingsList({ organizationId }: { organizationId: string }) {
                   </td>
                   <td className="px-4 py-3 text-slate-600">
                     {booking.packages?.title || '-'}
+                    {bookingDetailLine(booking) ? (
+                      <div className="text-xs text-slate-400">{bookingDetailLine(booking)}</div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3 text-slate-600">
-                    {booking.booking_date || '-'}
-                    {booking.booking_time && <span className="block text-xs text-slate-400">{booking.booking_time}</span>}
+                    {booking.scheduled_date || '-'}
+                    {booking.scheduled_time && <span className="block text-xs text-slate-400">{booking.scheduled_time}</span>}
                   </td>
                   <td className="px-4 py-3 font-medium text-slate-800">
-                    {booking.total_price ? formatTHB(booking.total_price) : '-'}
+                    {booking.price ? formatTHB(booking.price) : '-'}
                   </td>
                   <td className="px-4 py-3">
                     <select
@@ -266,8 +310,8 @@ export function BookingsList({ organizationId }: { organizationId: string }) {
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button
-                      onClick={() => setSelectedBookingId(booking.id)}
-                      className="text-xs text-primary hover:underline"
+                      onClick={() => setSelectedOrderId(booking.order_id)}
+                      className="text-xs text-primary-dark hover:underline"
                     >
                       รายละเอียด
                     </button>
@@ -280,10 +324,10 @@ export function BookingsList({ organizationId }: { organizationId: string }) {
       )}
 
       {/* Booking Detail Modal */}
-      {selectedBookingId && (
+      {selectedOrderId && (
         <BookingDetailModal
-          bookingId={selectedBookingId}
-          onClose={() => setSelectedBookingId(null)}
+          orderId={selectedOrderId}
+          onClose={() => setSelectedOrderId(null)}
           onUpdate={loadBookings}
         />
       )}

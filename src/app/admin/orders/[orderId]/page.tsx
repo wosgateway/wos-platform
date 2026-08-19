@@ -2,11 +2,12 @@
 
 // src/app/admin/orders/[orderId]/page.tsx
 //
-// Reuses the existing GET /api/admin/orders list endpoint (same one
-// BookingsManager already calls) and finds the matching order client-side.
-// No new API route required. If a dedicated GET /api/admin/orders/[id]
-// endpoint gets added later, swap the fetch below for that and drop the
-// .find() — everything else stays the same.
+// Fetches the dedicated GET /api/admin/orders/[id] endpoint, which
+// returns the single order with freshly signed payment-slip URLs
+// (see attachSignedSlipUrls / migration 033). The list endpoint
+// (/api/admin/orders) intentionally omits slip_url, so it must not
+// be used here — that was previously the cause of slip links being
+// unopenable on this page.
 
 import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
@@ -29,6 +30,8 @@ interface OrderItem {
   id: string;
   service_type: ServiceType;
   price: number | null;
+  quantity: number | null;
+  room_quantity: number | null;
   deposit_required: number | null;
   deposit_paid: number | null;
   balance_remaining: number | null;
@@ -40,8 +43,43 @@ interface OrderItem {
   transport_mode: string | null;
   transport_return_date: string | null;
   transport_return_time: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
   package: { id: string; title: string; original_price: number | null; special_price: number | null } | null;
   partner: { id: string; name: string } | null;
+}
+
+// Extra detail line shown under the service-type badge in the items
+// table — mirrors admin/BookingsManager.tsx's transportDetailLabel
+// but also covers 'daily' (เหมา) mode, which that helper doesn't, and
+// adds hotel room count / transport pickup-dropoff, none of which
+// this page rendered at all before (see comment at top of file —
+// hotel_checkout_date/transport_mode/transport_return_* were already
+// in the type but never used in the table below).
+function itemDetailLine(item: OrderItem): string | null {
+  if (item.service_type === 'hotel') {
+    const parts: string[] = [];
+    if (item.scheduled_date || item.hotel_checkout_date) {
+      parts.push(`เข้าพัก ${item.scheduled_date || '-'} ถึง ${item.hotel_checkout_date || '-'}`);
+    }
+    if ((item.room_quantity ?? 1) > 1) parts.push(`${item.room_quantity} ห้อง`);
+    return parts.length ? parts.join(' · ') : null;
+  }
+  if (item.service_type === 'transport') {
+    const mode = item.transport_mode || 'one_way';
+    const parts: string[] = [];
+    if (mode === 'daily') {
+      parts.push(`เหมารายวัน · ${item.quantity || 1} วัน`);
+    } else if (mode === 'round_trip') {
+      parts.push(`ไป-กลับ · ส่งกลับ ${item.transport_return_date || '-'} ${item.transport_return_time || ''}`.trim());
+    } else {
+      parts.push('เที่ยวเดียว');
+    }
+    if (item.pickup_location) parts.push(`รับ: ${item.pickup_location}`);
+    if (item.dropoff_location) parts.push(`ส่ง: ${item.dropoff_location}`);
+    return parts.join(' · ');
+  }
+  return null;
 }
 
 interface Customer {
@@ -156,12 +194,11 @@ export default function AdminOrderDetailPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/admin/orders');
+      const res = await fetch(`/api/admin/orders/${orderId}`);
       const result = await res.json();
-      if (!res.ok) throw new Error(result?.error ?? 'failed to load orders');
-      const found = (result.orders as Order[]).find((o) => o.id === orderId);
-      if (!found) throw new Error('ไม่พบคำสั่งจองนี้');
-      setOrder(found);
+      if (!res.ok) throw new Error(result?.error ?? 'failed to load order');
+      if (!result.order) throw new Error('ไม่พบคำสั่งจองนี้');
+      setOrder(result.order as Order);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'unknown error');
     } finally {
@@ -222,7 +259,7 @@ export default function AdminOrderDetailPage() {
   if (error || !order) {
     return (
       <div className="mx-auto max-w-3xl p-4">
-        <Link href="/admin/orders" className="text-sm text-primary hover:underline">
+        <Link href="/admin/orders" className="text-sm text-primary-dark hover:underline">
           ← กลับไปหน้ารายการจอง
         </Link>
         <div className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
@@ -236,7 +273,7 @@ export default function AdminOrderDetailPage() {
 
   return (
     <div className="mx-auto max-w-3xl space-y-4 p-4">
-      <Link href="/admin/orders" className="text-sm text-primary hover:underline">
+      <Link href="/admin/orders" className="text-sm text-primary-dark hover:underline">
         ← กลับไปหน้ารายการจอง
       </Link>
 
@@ -265,7 +302,7 @@ export default function AdminOrderDetailPage() {
             href={order.attachment_url}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-3 inline-block text-xs text-primary hover:underline"
+            className="mt-3 inline-block text-xs text-primary-dark hover:underline"
           >
             📎 ไฟล์แนบ
           </a>
@@ -295,7 +332,12 @@ export default function AdminOrderDetailPage() {
                     <div className="text-xs text-amber-600">⚠️ ยังไม่ได้มอบหมายพาร์ทเนอร์</div>
                   ) : null}
                 </td>
-                <td className="px-5 py-3 text-slate-700">{itemLabel(item)}</td>
+                <td className="px-5 py-3 text-slate-700">
+                  {itemLabel(item)}
+                  {itemDetailLine(item) ? (
+                    <div className="text-xs font-normal text-slate-400">{itemDetailLine(item)}</div>
+                  ) : null}
+                </td>
                 <td className="px-5 py-3 text-xs text-slate-500">
                   {item.scheduled_date || '-'} {item.scheduled_time || ''}
                 </td>
@@ -370,7 +412,7 @@ export default function AdminOrderDetailPage() {
                         href={payment.slip_url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="mt-1 inline-block text-xs text-primary hover:underline"
+                        className="mt-1 inline-block text-xs text-primary-dark hover:underline"
                       >
                         📎 ดูสลิป
                       </a>

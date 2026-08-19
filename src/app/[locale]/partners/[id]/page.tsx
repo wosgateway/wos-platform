@@ -50,7 +50,7 @@ export default async function PartnerDetailPage({
 
           <div className="mb-2 flex flex-wrap items-start justify-between gap-4">
             <div>
-              <span className="text-xs font-semibold uppercase tracking-widest text-primary">
+              <span className="text-xs font-semibold uppercase tracking-widest text-primary-dark">
                 {categoryLabel}
               </span>
               <h1 className="mt-1 text-2xl font-bold text-slate-900 sm:text-3xl">
@@ -60,7 +60,7 @@ export default async function PartnerDetailPage({
                 📍 {(partner.province as string) || '-'}
               </p>
             </div>
-            <span className="rounded-full bg-primary-light px-3 py-1 text-base font-semibold text-primary">
+            <span className="rounded-full bg-primary-light px-3 py-1 text-base font-semibold text-primary-dark">
               ⭐ {partner.rating ?? '-'}
             </span>
           </div>
@@ -81,7 +81,7 @@ export default async function PartnerDetailPage({
               href="https://line.me/ti/p/@vlf9996z"
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-block text-sm text-slate-500 transition hover:text-primary"
+              className="inline-block text-sm text-slate-500 transition hover:text-primary-dark"
             >
               {t('helpLink')}
             </a>

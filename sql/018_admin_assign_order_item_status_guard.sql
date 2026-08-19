@@ -1,18 +1,18 @@
 -- ============================================================
--- MIGRATION 018: admin_assign_order_item() — move the reassignment
+-- MIGRATION 018: admin_assign_order_item() €” move the reassignment
 -- block point from "deposit_paid > 0" (migration 017) to
 -- "orders.status has reached confirmed", per product decision:
 --
 --   Customers can still change their mind up through the deposit
 --   stage, so hotel/transport reassignment should stay allowed
 --   while the parent order is draft / pending_deposit /
---   deposit_paid — even if a real deposit payment already exists
+--   deposit_paid €” even if a real deposit payment already exists
 --   on the item. Once staff mark the order 'confirmed' (or beyond:
 --   checked_in / completed / cancelled / refunded), the package is
 --   locked and must go through cancel/refund instead of a silent
 --   swap.
 --
--- This REPLACES the migration-017 "deposit already paid" guard —
+-- This REPLACES the migration-017 "deposit already paid" guard €”
 -- that check is removed here in favor of the status-based one,
 -- since orders.status is now the single source of truth for
 -- whether reassignment is still allowed.
@@ -53,7 +53,7 @@ BEGIN
     IF v_is_reassignment THEN
         -- Reassigning an already-resolved row: only in scope for
         -- hotel/transport add-ons (clinic/wellness/insurance stays
-        -- blocked — that touches the core medical program).
+        -- blocked €” that touches the core medical program).
         IF v_row.service_type NOT IN ('hotel', 'transport') THEN
             RAISE EXCEPTION
                 'order_item % is already assigned and reassignment via this path is only supported for hotel/transport items (got service_type=%)',
@@ -62,7 +62,7 @@ BEGIN
 
         -- Block once the parent order has moved to 'confirmed' or
         -- beyond. Draft / pending_deposit / deposit_paid still allow
-        -- reassignment — customers can change their mind up through
+        -- reassignment €” customers can change their mind up through
         -- the deposit stage.
         SELECT status INTO v_order_status FROM public.orders WHERE id = v_row.order_id;
 
@@ -70,7 +70,7 @@ BEGIN
            AND v_order_status IS DISTINCT FROM 'pending_deposit'
            AND v_order_status IS DISTINCT FROM 'deposit_paid' THEN
             RAISE EXCEPTION
-                'cannot reassign order_item %: parent order status is % — package is locked once confirmed, cancel/refund instead',
+                'cannot reassign order_item %: parent order status is % €” package is locked once confirmed, cancel/refund instead',
                 p_order_item_id, v_order_status;
         END IF;
     END IF;

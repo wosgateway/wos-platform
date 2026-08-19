@@ -8,14 +8,14 @@ export function Breadcrumb({ trail }: { trail: { href?: string; label: ReactNode
   return (
     <div className="mx-auto max-w-6xl px-4 pt-6 sm:px-6">
       <nav className="text-sm text-slate-400">
-        <Link href="/" className="hover:text-primary">
+        <Link href="/" className="hover:text-primary-dark">
           {t('home')}
         </Link>
         {trail.map((item, i) => (
           <span key={i}>
             <span className="mx-1">/</span>
             {item.href ? (
-              <Link href={item.href} className="hover:text-primary">
+              <Link href={item.href} className="hover:text-primary-dark">
                 {item.label}
               </Link>
             ) : (

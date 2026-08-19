@@ -1,4 +1,4 @@
-﻿export function formatTHB(amount: number | null | undefined): string {
+export function formatTHB(amount: number | null | undefined): string {
   if (amount === null || amount === undefined) return '-';
   return new Intl.NumberFormat('th-TH', {
     style: 'currency',

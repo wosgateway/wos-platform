@@ -11,28 +11,44 @@
 
 import { NextResponse } from 'next/server';
 import { getPartnerSession, hasPermission } from '@/lib/partner/auth';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  const { user } = await getPartnerSession();
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via getPartnerSession's createClient(). Never
+  // returned directly. Same pattern as verify/route.ts and the admin
+  // routes — see src/lib/admin/require-admin.ts for the rationale.
+  const cookieCarrier = new NextResponse();
+
+  const { user } = await getPartnerSession(cookieCarrier);
   if (!user) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+      cookieCarrier
+    );
   }
   if (!hasPermission(user, 'manage_payments')) {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+      cookieCarrier
+    );
   }
 
   const body = await request.json().catch(() => ({}));
   const reason: string | undefined = body?.reason?.trim();
   if (!reason) {
-    return NextResponse.json({ error: 'A rejection reason is required.' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'A rejection reason is required.' }, { status: 400 }),
+      cookieCarrier
+    );
   }
 
   const paymentId = params.id;
 
   // Ownership check via the RLS-enforced client, same pattern as verify.
-  const supabase = createClient();
+  const supabase = createClient(cookieCarrier);
   const { data: payment, error: fetchError } = await supabase
     .from('payments')
     .select('id, order_item_id')
@@ -40,13 +56,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
     .single();
 
   if (fetchError || !payment) {
-    return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Payment not found' }, { status: 404 }),
+      cookieCarrier
+    );
   }
 
   if (!payment.order_item_id) {
-    return NextResponse.json(
-      { error: 'This payment is not tied to a single order item and cannot be rejected here.' },
-      { status: 400 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'This payment is not tied to a single order item and cannot be rejected here.' },
+        { status: 400 }
+      ),
+      cookieCarrier
     );
   }
 
@@ -64,18 +86,24 @@ export async function POST(request: Request, { params }: { params: { id: string 
     .select('id');
 
   if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: updateError.message }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   if (!rejected || rejected.length === 0) {
-    return NextResponse.json(
-      { error: 'Payment is already handled (or was just handled) and cannot be rejected.' },
-      { status: 409 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'Payment is already handled (or was just handled) and cannot be rejected.' },
+        { status: 409 }
+      ),
+      cookieCarrier
     );
   }
 
   // No deposit_paid change — rejected payments never counted toward the
   // balance in the first place.
 
-  return NextResponse.json({ success: true, paymentId });
+  return withRefreshedCookies(NextResponse.json({ success: true, paymentId }), cookieCarrier);
 }

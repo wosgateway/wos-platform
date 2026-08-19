@@ -3,6 +3,7 @@ import { createServerClient, type CookieOptions } from '@supabase/ssr';
 import createMiddleware from 'next-intl/middleware';
 import { NextResponse, type NextRequest } from 'next/server';
 import { routing } from './i18n/routing';
+import { createServiceClient } from './lib/supabase/service';
 
 const intlMiddleware = createMiddleware(routing);
 
@@ -19,6 +20,7 @@ const PUBLIC_LOCALE_ROUTE_SEGMENTS = [
   'knowledge',
   'my-trip',
   'partner',
+  'partners',
   'program',
   'quote',
 ];
@@ -109,7 +111,39 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(loginUrl);
     }
 
-    // TODO: ตรวจสอบ role/claim ว่าเป็น partner user หรือไม่ (ยังไม่ทำ)
+    // SECURITY: a valid Supabase Auth session only proves *someone*
+    // logged in — it says nothing about whether they're a partner-
+    // portal user. Before this check, any Supabase Auth account
+    // (including one with no row in public.users at all) could pass
+    // this guard and reach the portal UI. API routes/RLS still gate
+    // the actual data (defense-in-depth held), but the UI itself
+    // should not render for an unlinked account. Checked via the
+    // service client because public.users' RLS policy keys off JWT
+    // user_metadata.organization_id, which nothing in this codebase
+    // currently sets on sign-up/invite — so an anon-key read here
+    // would incorrectly deny every real partner user too.
+    const service = createServiceClient();
+    const { data: partnerUser, error: partnerUserErr } = await service
+      .from('users')
+      .select('id, status')
+      .eq('supabase_user_id', user.id)
+      .maybeSingle();
+
+    if (partnerUserErr) {
+      console.error('[middleware] partner user lookup failed:', partnerUserErr);
+      // Fail closed — an auth-adjacent DB error shouldn't silently
+      // grant portal access.
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('redirect', pathname);
+      return NextResponse.redirect(loginUrl);
+    }
+
+    if (!partnerUser || partnerUser.status !== 'active') {
+      const loginUrl = new URL('/login', request.url);
+      loginUrl.searchParams.set('redirect', pathname);
+      loginUrl.searchParams.set('error', 'not_a_partner_user');
+      return NextResponse.redirect(loginUrl);
+    }
 
     if (process.env.NODE_ENV !== 'production') {
       console.log(`[middleware] partner-portal auth ok: ${pathname} (locale=${locale})`);

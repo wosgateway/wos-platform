@@ -32,6 +32,8 @@ interface PendingItem {
   transport_mode: string | null;
   transport_return_date: string | null;
   transport_return_time: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
   room_quantity: number;
   created_at: string;
   order_number: string | null;
@@ -151,6 +153,11 @@ export default function PendingAssignmentsPage() {
                       {item.transport_mode === 'round_trip'
                         ? ` · Return: ${item.transport_return_date ?? '—'} ${item.transport_return_time ?? ''}`
                         : ''}
+                      {item.transport_mode === 'daily'
+                        ? ` · Days: ${draft.quantity || '?'}`
+                        : ''}
+                      {item.pickup_location ? ` · From: ${item.pickup_location}` : ''}
+                      {item.dropoff_location ? ` · To: ${item.dropoff_location}` : ''}
                     </p>
                   )}
                 </div>

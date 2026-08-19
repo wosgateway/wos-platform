@@ -45,10 +45,10 @@ export function JourneyCartBar() {
             </span>
             {t('cartBarLabel')}
           </span>
-          <span className="flex items-center gap-2 text-sm font-bold text-primary">
+          <span className="flex items-center gap-2 text-sm font-bold text-primary-dark">
             {formatTHB(total)}
             <span className={`inline-block transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
-              ▲
+              –²
             </span>
           </span>
         </button>

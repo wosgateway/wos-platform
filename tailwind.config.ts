@@ -44,29 +44,71 @@ const config: Config = {
           ring: 'var(--sidebar-ring)',
         },
 
-        // ===== Rebrand: Hospital-first -> Life-first =====
-        // เดิม: primary #0d7c66 (เขียวเข้มโทน medical), accent #f59e0b (amber)
-        // ใหม่: soft sage green + warm sand/gold -> ความรู้สึก premium wellness
-        // แทนที่จะเป็น "โรงพยาบาล" ให้รู้สึกเป็น "รีสอร์ตดูแลสุขภาพ"
+        // ===== Rebrand v1: Hospital-first -> Life-first (KEEP — still used across
+        // existing components: btn-primary, TrustBar, cards, etc.) =====
         primary: {
           DEFAULT: '#5b8c6e', // soft sage green
-          light: '#eef4ef',   // pale sage tint (แทน primary-light เดิม)
-          dark: '#3f6b53',    // deep sage สำหรับ hover/active
+          light: '#eef4ef',
+          dark: '#3f6b53',
         },
-        accent: '#c9a15a', // warm gold/sand (แทน amber เดิม)
+        accent: {
+          DEFAULT: '#c9a15a', // warm gold/sand
+          ink: '#8a6a2e', // WCAG-AA text-safe variant (~5.0:1 on white)
+        },
         sand: {
-          DEFAULT: '#f6f1e7', // warm sand background — ใช้แทนพื้นขาวล้วนในบาง section
+          DEFAULT: '#f6f1e7',
           dark: '#eee5d3',
         },
         slateWarm: {
-          // slate ที่ลดความ "เย็น/คลินิก" ลงเล็กน้อย ใช้แทน slate-900/500 เดิมได้ถ้าต้องการ
           900: '#2b2a26',
           500: '#6b6a63',
+        },
+
+        // ===== Rebrand v2: "WOS.os" platform redesign (NEW — Step 1 of the
+        // homepage rebuild, see mockup). Namespaced separately from
+        // primary/accent above so nothing existing breaks. Only apply these
+        // inside the new components built in Step 2+; do not retrofit old
+        // components with these classes yet. =====
+        navy: {
+          DEFAULT: '#0B1E3D', // Deep Navy — header/hero dark sections, footer
+          light: '#132A52',   // hover/secondary panels on dark bg
+          dark: '#071428',    // deepest shade — WOS.os center node, footer base
+        },
+        medicalBlue: {
+          DEFAULT: '#1D63A6', // Medical Blue — icons, links, secondary CTAs
+          light: '#E8F1FA',   // pale tint for badges/backgrounds
+          dark: '#144A80',    // hover/active state
+        },
+        gold: {
+          DEFAULT: '#C9974A', // Warm Gold — primary CTA ("Start Your Journey")
+          light: '#F5EBD8',   // tint for badges/highlights
+          dark: '#A67A32',    // hover/active state
+          ink: '#8C6428',     // WCAG-AA text-safe variant on white/sand (~4.6:1)
         },
       },
       fontFamily: {
         sans: ['var(--font-prompt)', 'Noto Sans Lao', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
+      },
+      fontSize: {
+        // ===== WOS.os Typography scale (fluid via clamp — spec ranges below) =====
+        // h1: 56–72px   h2: 40–48px   h3: 24–30px   body: 16–18px
+        h1: [
+          'clamp(3.5rem, 3vw + 2.5rem, 4.5rem)',
+          { lineHeight: '1.05', fontWeight: '700', letterSpacing: '-0.02em' },
+        ],
+        h2: [
+          'clamp(2.5rem, 1.5vw + 2.1rem, 3rem)',
+          { lineHeight: '1.15', fontWeight: '700', letterSpacing: '-0.01em' },
+        ],
+        h3: [
+          'clamp(1.5rem, 0.7vw + 1.3rem, 1.875rem)',
+          { lineHeight: '1.25', fontWeight: '600' },
+        ],
+        'body-lg': [
+          'clamp(1rem, 0.2vw + 0.95rem, 1.125rem)',
+          { lineHeight: '1.6', fontWeight: '400' },
+        ],
       },
       boxShadow: {
         card: '0 4px 20px rgba(0,0,0,0.04), 0 1px 3px rgba(0,0,0,0.02)',

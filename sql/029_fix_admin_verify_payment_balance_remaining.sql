@@ -1,6 +1,6 @@
 -- ============================================================
 -- MIGRATION 029: fix admin_verify_payment() never updating
--- orders.total_balance_remaining — "จ่ายแล้วแต่ปุ่มชำระเงินยังโชว์"
+-- orders.total_balance_remaining €” "à¸ˆà¹ˆà¸²à¸¢à¹à¸¥à¹‰à¸§à¹à¸•à¹ˆà¸›à¸¸à¹ˆà¸¡à¸Šà¸³à¸£à¸°à¹€à¸‡à¸´à¸™à¸¢à¸±à¸‡à¹‚à¸Šà¸§à¹Œ"
 --
 -- ROOT CAUSE:
 -- Two different code paths update payment/balance state, and only
@@ -17,20 +17,20 @@
 --      => this path has always been correct.
 --
 --   2. admin_verify_payment() (migration 022, order_item_id IS
---      NULL — the whole-order payment / slip-upload flow) writes
+--      NULL €” the whole-order payment / slip-upload flow) writes
 --      DIRECTLY to orders.total_deposit_paid and orders.status,
 --      and never touches order_items at all. Neither trigger above
 --      fires, so orders.total_balance_remaining is NEVER
---      recalculated for this path — it's stuck at whatever it was
+--      recalculated for this path €” it's stuck at whatever it was
 --      when the order was first created (i.e. the full total_amount),
 --      no matter how much has actually been paid and verified since.
 --
 -- IMPACT: any order paid via the customer-facing whole-order slip
--- upload flow (the common case — see README_PAYMENT_FEATURE.md,
+-- upload flow (the common case €” see README_PAYMENT_FEATURE.md,
 -- migration 019/021) shows a stale total_balance_remaining forever.
--- Any UI that gates the "ชำระเงิน" button on
+-- Any UI that gates the "à¸Šà¸³à¸£à¸°à¹€à¸‡à¸´à¸™" button on
 -- balanceRemaining > 0 (my-trip page, payment page, admin order
--- detail — anywhere that reads this same column) keeps showing the
+-- detail €” anywhere that reads this same column) keeps showing the
 -- pay button after the customer has already paid in full, which is
 -- exactly the confusing behavior reported.
 --
@@ -39,12 +39,12 @@
 --      the same way sync_order_totals already does for the other
 --      path (total_amount - total_deposit_paid) and writes it in
 --      the SAME UPDATE as total_deposit_paid/status, inside the
---      same row-locked transaction — no new race introduced.
+--      same row-locked transaction €” no new race introduced.
 --   2. One-off backfill UPDATE to correct every order currently
 --      sitting on a stale value in production.
 --
 -- Safe to re-run (CREATE OR REPLACE; backfill UPDATE is idempotent
--- — a row already correct just doesn't match the WHERE clause a
+-- €” a row already correct just doesn't match the WHERE clause a
 -- second time).
 -- ============================================================
 
@@ -79,7 +79,7 @@ BEGIN
     RAISE EXCEPTION 'payment_not_claimable';
   END IF;
 
-  -- Row lock on the order (unchanged from migration 022) — now also
+  -- Row lock on the order (unchanged from migration 022) €” now also
   -- reads total_amount, needed to (re)derive total_balance_remaining
   -- the same way sync_order_totals does for the order_items path.
   SELECT total_amount, total_deposit_required, total_deposit_paid
@@ -97,7 +97,7 @@ BEGIN
   -- Same formula sync_order_totals() uses for the order_items path:
   -- balance_remaining = amount owed - amount paid. Not floored at 0
   -- on purpose, for the same reason order_items.balance_remaining
-  -- isn't floored either — an overpayment should be visible as a
+  -- isn't floored either €” an overpayment should be visible as a
   -- negative balance, not silently clamped to zero.
   v_new_balance_remaining := COALESCE(v_total_amount, 0) - v_new_deposit_paid;
 
@@ -106,7 +106,7 @@ BEGIN
     ELSE 'deposit_paid'
   END;
 
-  -- ⭐ THE FIX: total_balance_remaining is now part of this same
+  -- ­ THE FIX: total_balance_remaining is now part of this same
   -- UPDATE, inside the same row lock, instead of being silently
   -- skipped.
   UPDATE public.orders
@@ -127,7 +127,7 @@ END;
 $$;
 
 -- CREATE OR REPLACE does not preserve prior REVOKEs (see migration
--- 028's note on this exact footgun) — re-assert the full migration
+-- 028's note on this exact footgun) €” re-assert the full migration
 -- 027 lockdown so this function doesn't silently reopen the
 -- anon/authenticated EXECUTE hole.
 REVOKE ALL ON FUNCTION public.admin_verify_payment(UUID, UUID)
@@ -139,7 +139,7 @@ GRANT EXECUTE ON FUNCTION public.admin_verify_payment(UUID, UUID)
 -- Backfill: fix every order already sitting on a stale
 -- total_balance_remaining because of the bug above. Only touches
 -- rows where the stored value disagrees with the correct derived
--- value — orders that only ever went through
+-- value €” orders that only ever went through
 -- partner_verify_payment() (or never had any payment verified) are
 -- already correct and this UPDATE is a no-op for them.
 -- ============================================================
@@ -149,7 +149,7 @@ SET total_balance_remaining = total_amount - total_deposit_paid
 WHERE total_balance_remaining IS DISTINCT FROM (total_amount - total_deposit_paid);
 
 -- ------------------------------------------------------------
--- Verify after running — should return 0 rows:
+-- Verify after running €” should return 0 rows:
 --
 --   select id, order_number, total_amount, total_deposit_paid,
 --          total_balance_remaining

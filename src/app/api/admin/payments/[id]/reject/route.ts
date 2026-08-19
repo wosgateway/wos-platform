@@ -13,18 +13,29 @@
 
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  const auth = await requireAdmin();
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  const cookieCarrier = new NextResponse();
+
+  const auth = await requireAdmin(cookieCarrier);
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.message }, { status: auth.status });
+    return withRefreshedCookies(
+      NextResponse.json({ error: auth.message }, { status: auth.status }),
+      cookieCarrier
+    );
   }
 
   const body = await request.json().catch(() => ({}));
   const reason: string | undefined = body?.reason?.trim();
   if (!reason) {
-    return NextResponse.json({ error: 'A rejection reason is required.' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'A rejection reason is required.' }, { status: 400 }),
+      cookieCarrier
+    );
   }
 
   const paymentId = params.id;
@@ -37,13 +48,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
     .single();
 
   if (fetchErr || !payment) {
-    return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Payment not found' }, { status: 404 }),
+      cookieCarrier
+    );
   }
 
   if (payment.order_item_id) {
-    return NextResponse.json(
-      { error: 'This payment is tied to a single order item — reject it from the partner portal instead.' },
-      { status: 400 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'This payment is tied to a single order item — reject it from the partner portal instead.' },
+        { status: 400 }
+      ),
+      cookieCarrier
     );
   }
 
@@ -52,23 +69,28 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const { data: rejected, error: updateErr } = await supabase
     .from('payments')
     .update({
-      status: 'rejected',
-      verified_by: auth.user.id,
-      verified_at: new Date().toISOString(),
-      rejection_reason: reason,
-    })
+  status: 'rejected',
+  verified_at: new Date().toISOString(),
+  rejection_reason: reason,
+})
     .in('status', ['waiting_verification', 'pending'])
     .eq('id', paymentId)
     .select('id');
 
   if (updateErr) {
-    return NextResponse.json({ error: updateErr.message }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: updateErr.message }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   if (!rejected || rejected.length === 0) {
-    return NextResponse.json(
-      { error: 'Payment is already handled (or was just handled) and cannot be rejected.' },
-      { status: 409 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'Payment is already handled (or was just handled) and cannot be rejected.' },
+        { status: 409 }
+      ),
+      cookieCarrier
     );
   }
 
@@ -76,5 +98,5 @@ export async function POST(request: Request, { params }: { params: { id: string 
   // 'deposit_paid' from a partial prior payment) so the customer's
   // payment page can prompt them to resubmit a corrected slip.
 
-  return NextResponse.json({ success: true, paymentId });
+  return withRefreshedCookies(NextResponse.json({ success: true, paymentId }), cookieCarrier);
 }

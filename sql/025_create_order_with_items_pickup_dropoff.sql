@@ -1,7 +1,7 @@
 -- ============================================================
 -- MIGRATION 025: teach create_order_with_items() to read/store the
 -- pickup_location / dropoff_location columns added by migration 024
--- (024_transport_pickup_dropoff_location.sql) — the manual step that
+-- (024_transport_pickup_dropoff_location.sql) €” the manual step that
 -- migration flagged as not yet done, now done here.
 --
 -- Same shape as migration 014's hotel_checkout_date /
@@ -15,14 +15,14 @@
 --   p_items[].transport_dropoff_location -> order_items.dropoff_location
 --
 -- route.ts already forwards these two keys as-is (added alongside
--- this migration) — BookingForm.tsx / JourneyBookingForm.tsx resolve
+-- this migration) €” BookingForm.tsx / JourneyBookingForm.tsx resolve
 -- them client-side from the pickup/dropoff dropdown +
 -- hotel/other free-text input before submit. Not validated here
--- (free text, doesn't affect price/partner/deposit) — same trust
+-- (free text, doesn't affect price/partner/deposit) €” same trust
 -- level as `notes`.
 --
 -- Function signature (4 args) is unchanged from migration 014, so
--- this is a straight CREATE OR REPLACE — no DROP FUNCTION needed and
+-- this is a straight CREATE OR REPLACE €” no DROP FUNCTION needed and
 -- no change required in route.ts's supabase.rpc() call itself.
 -- ============================================================
 
@@ -68,7 +68,7 @@ BEGIN
         v_is_unassigned := NOT (v_item ? 'package_id');
 
         -- ----------------------------------------------------
-        -- Branch A: "let team decide" — no package chosen yet.
+        -- Branch A: "let team decide" €” no package chosen yet.
         -- ----------------------------------------------------
         IF v_is_unassigned THEN
             IF NOT (v_item ? 'service_type') THEN
@@ -106,7 +106,7 @@ BEGIN
         END IF;
 
         -- ----------------------------------------------------
-        -- Branch B: resolved item — same price/partner/service_type
+        -- Branch B: resolved item €” same price/partner/service_type
         -- derivation as migration 012/014, plus the new location
         -- columns.
         -- ----------------------------------------------------
@@ -196,13 +196,13 @@ BEGIN
 END;
 $$;
 
--- Signature unchanged from migration 014 — REVOKE/GRANT is a no-op
+-- Signature unchanged from migration 014 €” REVOKE/GRANT is a no-op
 -- safety re-assert, not a new lockdown.
 REVOKE ALL ON FUNCTION public.create_order_with_items(UUID, JSONB, TEXT, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_order_with_items(UUID, JSONB, TEXT, TEXT) TO service_role;
 
 -- ------------------------------------------------------------
--- Run 024_transport_pickup_dropoff_location.sql BEFORE this one —
+-- Run 024_transport_pickup_dropoff_location.sql BEFORE this one €”
 -- it adds the pickup_location/dropoff_location columns this
 -- function now writes to. Running this migration first will fail
 -- with "column does not exist".

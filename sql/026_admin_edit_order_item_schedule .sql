@@ -1,5 +1,5 @@
 -- ============================================================
--- MIGRATION 026: admin_update_order_item_schedule() — lets an
+-- MIGRATION 026: admin_update_order_item_schedule() €” lets an
 -- admin correct the transport pickup/return date-time and hotel
 -- check-in/checkout date-time (plus pickup/dropoff location text
 -- from migration 024) on an order_items row AFTER partner
@@ -13,7 +13,7 @@
 -- state already attached to it (migration 021/022).
 --
 -- Scope: hotel/transport order_items only (service_type IN
--- ('hotel','transport')) — same scope restriction as the
+-- ('hotel','transport')) €” same scope restriction as the
 -- reassignment RPCs (016/017/018). Editable columns:
 --   scheduled_date, scheduled_time            (pickup / check-in)
 --   hotel_checkout_date
@@ -21,7 +21,7 @@
 --   pickup_location, dropoff_location          (migration 024)
 --
 -- This function always overwrites all 7 columns with the values
--- passed in — the admin edit form is expected to submit the full
+-- passed in €” the admin edit form is expected to submit the full
 -- current state (pre-filled), not a sparse patch. There is
 -- therefore no NULL-means-"leave unchanged" ambiguity: NULL means
 -- "clear this field", same as how the columns behave everywhere
@@ -29,19 +29,19 @@
 --
 -- Guards (in order):
 --   1. Row lock (FOR UPDATE) on both order_items and its parent
---      orders row — serializes concurrent edits the same way
+--      orders row €” serializes concurrent edits the same way
 --      022/018 do, instead of racing on a blind UPDATE.
 --   2. service_type must be 'hotel' or 'transport'.
 --   3. order_items.status must NOT be 'cancelled' or 'refunded'.
 --      NOTE: as of this migration, nothing in the reviewed codebase
 --      (migrations 008-025, admin API routes reviewed so far) is
---      seen writing to order_items.status — it may be dead, or set
+--      seen writing to order_items.status €” it may be dead, or set
 --      by code not yet reviewed (e.g. partner portal). This check
 --      is included defensively per product decision; it is cheap
 --      and correct either way (a cancelled/refunded item should
 --      never have its schedule "corrected").
 --   4. orders.status must be 'draft', 'pending_deposit', or
---      'deposit_paid' — the exact same boundary migration 018 uses
+--      'deposit_paid' €” the exact same boundary migration 018 uses
 --      for hotel/transport reassignment ("locked once confirmed").
 --      Once staff mark the order 'confirmed' (or checked_in /
 --      completed / cancelled / refunded), the schedule is locked;
@@ -50,7 +50,7 @@
 --
 -- Audit trail: every successful edit writes one row to the new
 -- order_item_schedule_edits table capturing who, when, and the full
--- before/after column values as jsonb — so a customer dispute
+-- before/after column values as jsonb €” so a customer dispute
 -- ("I never asked to change the time") can be checked against a
 -- record of which admin changed what and when.
 --
@@ -79,14 +79,14 @@ CREATE INDEX IF NOT EXISTS idx_order_item_schedule_edits_order_item_id
 CREATE INDEX IF NOT EXISTS idx_order_item_schedule_edits_order_id
   ON public.order_item_schedule_edits (order_id);
 
--- RLS is enabled with NO policies — same convention noted in
+-- RLS is enabled with NO policies €” same convention noted in
 -- BookingsManager.tsx's header comment for customers/order_items
 -- ("no admin-readable RLS policy"). This means anon/authenticated
 -- roles (i.e. anything reachable from the browser Supabase client)
 -- get a hard deny on every row; the only way in is the service-role
 -- client used by the admin API route, which bypasses RLS entirely.
 -- Audit rows exist specifically to survive a dispute, so they should
--- be even less exposed to the browser than order_items itself — no
+-- be even less exposed to the browser than order_items itself €” no
 -- policy is ever added here, not even a read-only one for admins.
 ALTER TABLE public.order_item_schedule_edits ENABLE ROW LEVEL SECURITY;
 
@@ -152,7 +152,7 @@ BEGIN
        AND v_order_status IS DISTINCT FROM 'pending_deposit'
        AND v_order_status IS DISTINCT FROM 'deposit_paid' THEN
         RAISE EXCEPTION
-            'cannot edit schedule for order_item %: parent order status is % — schedule is locked once confirmed',
+            'cannot edit schedule for order_item %: parent order status is % €” schedule is locked once confirmed',
             p_order_item_id, v_order_status;
     END IF;
 

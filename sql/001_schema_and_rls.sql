@@ -2,7 +2,7 @@
 -- PARTNER PORTAL SCHEMA + RLS (ALL-IN-ONE)
 -- ============================================================
 
--- 1. DROP EXISTING POLICIES (เพื่อป้องกัน error)
+-- 1. DROP EXISTING POLICIES (à¹€à¸žà¸·à¹ˆà¸­à¸›à¹‰à¸­à¸‡à¸à¸±à¸™ error)
 DO $$
 DECLARE
   pol record;
@@ -17,7 +17,7 @@ BEGIN
   END LOOP;
 END $$;
 
--- 2. DROP TABLES (ถ้ามี) เพื่อสร้างใหม่ทั้งหมด
+-- 2. DROP TABLES (à¸–à¹‰à¸²à¸¡à¸µ) à¹€à¸žà¸·à¹ˆà¸­à¸ªà¸£à¹‰à¸²à¸‡à¹ƒà¸«à¸¡à¹ˆà¸—à¸±à¹‰à¸‡à¸«à¸¡à¸”
 DROP TABLE IF EXISTS public.notifications CASCADE;
 DROP TABLE IF EXISTS public.subscriptions CASCADE;
 DROP TABLE IF EXISTS public.documents CASCADE;
@@ -193,7 +193,7 @@ CREATE TABLE public.subscriptions (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- ✅ NOTIFICATIONS TABLE (เพิ่มให้ครบ)
+-- œ… NOTIFICATIONS TABLE (à¹€à¸žà¸´à¹ˆà¸¡à¹ƒà¸«à¹‰à¸„à¸£à¸š)
 CREATE TABLE public.notifications (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     organization_id UUID NOT NULL REFERENCES public.organizations(id) ON DELETE CASCADE,
@@ -251,7 +251,7 @@ ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
 
--- 7. RLS POLICIES (ใช้ user_metadata ตามที่ auth.ts ใช้จริง)
+-- 7. RLS POLICIES (à¹ƒà¸Šà¹‰ user_metadata à¸•à¸²à¸¡à¸—à¸µà¹ˆ auth.ts à¹ƒà¸Šà¹‰à¸ˆà¸£à¸´à¸‡)
 CREATE POLICY "Users can view their own organization" ON public.organizations
     FOR SELECT USING (id = (auth.jwt() -> 'user_metadata' ->> 'organization_id')::UUID);
 

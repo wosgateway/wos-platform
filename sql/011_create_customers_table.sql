@@ -1,9 +1,9 @@
 -- ============================================================
--- MIGRATION 010: customers — org-agnostic customer identity for
+-- MIGRATION 010: customers €” org-agnostic customer identity for
 -- the multi-partner `orders` model.
 --
 -- Why not reuse `patients`: `patients.organization_id` is NOT NULL
--- (migration 001) — every patient row belongs to exactly one
+-- (migration 001) €” every patient row belongs to exactly one
 -- partner org, matching the old single-partner `bookings` flow.
 -- But migration 008 explicitly designed `orders` to span multiple
 -- partner orgs in one order (order_items.organization_id varies
@@ -11,7 +11,7 @@
 -- whole order. An org-scoped patient can't represent a customer
 -- whose order includes items from 2-3 different partners at once.
 --
--- `patients` is left completely untouched — it keeps serving the
+-- `patients` is left completely untouched €” it keeps serving the
 -- legacy `bookings` table and any per-org CRM/dashboard views.
 -- `customers` is the new, separate identity used only by
 -- orders/order_items/payments going forward. The two are
@@ -20,7 +20,7 @@
 -- that's a deliberate follow-up decision, not implied here.
 --
 -- No RLS policies are added (table stays RLS-enabled, zero
--- policies) — same "service role only" pattern already used for
+-- policies) €” same "service role only" pattern already used for
 -- `payment_attachments` and `invoices` in migration 008, since
 -- there's still no customer-facing Supabase Auth session to key a
 -- policy off of.
@@ -40,7 +40,7 @@ CREATE TABLE public.customers (
     updated_at TIMESTAMPTZ DEFAULT now()
 );
 
--- Lookup index only — deliberately NOT a unique constraint. A phone
+-- Lookup index only €” deliberately NOT a unique constraint. A phone
 -- number isn't guaranteed to map 1:1 to a person (shared household
 -- phones, re-issued numbers), so "find or create" logic in the API
 -- route does an explicit SELECT-then-INSERT rather than relying on
@@ -52,7 +52,7 @@ CREATE TRIGGER set_updated_at_customers
     FOR EACH ROW EXECUTE FUNCTION public.handle_updated_at();
 
 ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
--- No policies added on purpose — see header comment. All access
+-- No policies added on purpose €” see header comment. All access
 -- goes through the service-role client (src/lib/supabase/service.ts).
 
 -- ============================================================
@@ -62,7 +62,7 @@ ALTER TABLE public.customers ENABLE ROW LEVEL SECURITY;
 -- which table the FK checks against, not the column itself. If any
 -- orders already exist with a patient_id that only exists in
 -- `patients` (not yet in `customers`), this ALTER will fail loudly
--- with a FK violation rather than silently corrupting data — in
+-- with a FK violation rather than silently corrupting data €” in
 -- that case those rows need a corresponding `customers` row
 -- inserted first (one-off backfill, not included here).
 -- ============================================================
@@ -77,5 +77,5 @@ ALTER TABLE public.orders
 -- Note: the column is still literally named `patient_id` (not
 -- renamed to `customer_id`) to avoid touching every other place in
 -- migration 008/009/the app layer that already references it by
--- that name. Purely cosmetic — worth a follow-up rename later if it
+-- that name. Purely cosmetic €” worth a follow-up rename later if it
 -- causes confusion, but not required for correctness.

@@ -4,7 +4,7 @@
 -- Run this BEFORE 021_payment_security_fixes.sql.
 --
 -- orders.status has a CHECK constraint (chk_order_status) that does
--- NOT currently allow 'pending_verification' — confirmed directly
+-- NOT currently allow 'pending_verification' €” confirmed directly
 -- from the live constraint definition:
 --
 --   CHECK ((status = ANY (ARRAY['draft','pending_deposit',
@@ -45,7 +45,7 @@ alter table public.orders
 -- ------------------------------------------------------------
 -- Also check any admin-UI code (e.g. a status badge/label map,
 -- filter dropdown, or ALLOWED_STATUSES array in TypeScript) that
--- enumerates these same 8 statuses — it needs 'pending_verification'
+-- enumerates these same 8 statuses €” it needs 'pending_verification'
 -- added too, or that status will render blank / fall into an
 -- "unknown" bucket in the dashboard. This migration only fixes the
 -- database side.

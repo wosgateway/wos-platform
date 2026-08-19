@@ -14,7 +14,7 @@ export default function NotFound() {
     <html lang="th">
       <body className="flex min-h-screen items-center justify-center bg-white text-slate-900">
         <div className="mx-auto max-w-md px-6 text-center">
-          <p className="text-sm font-semibold uppercase tracking-wider text-primary">404</p>
+          <p className="text-sm font-semibold uppercase tracking-wider text-primary-dark">404</p>
           <h1 className="mt-3 text-2xl font-bold text-slate-900">ไม่พบหน้านี้</h1>
           <p className="mt-2 text-sm text-slate-500">
             หน้าที่คุณกำลังหาอาจถูกย้าย ลบ หรือ URL ไม่ถูกต้อง

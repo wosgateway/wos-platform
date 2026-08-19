@@ -11,7 +11,7 @@
 -- Problem: SELECT/UPDATE with USING (true) for the `anon` role means
 -- anyone holding the public anon key (i.e. anyone who opens the site's
 -- network tab) can read AND modify every row in `cases` directly via
--- the Supabase client — including customer name, phone, LINE ID for
+-- the Supabase client €” including customer name, phone, LINE ID for
 -- every booking/B2B lead ever submitted. No part of the public site
 -- reads or updates `cases` (public forms only ever INSERT), so SELECT
 -- and UPDATE never needed to be open to anon in the first place.
@@ -20,7 +20,7 @@
 --   1. Drops the anon-inclusive SELECT/UPDATE policies.
 --   2. Recreates SELECT/UPDATE restricted to `authenticated` only
 --      (i.e. someone logged into /admin via Supabase Auth).
---   3. Leaves INSERT untouched — public forms (BecomePartnerForm.tsx,
+--   3. Leaves INSERT untouched €” public forms (BecomePartnerForm.tsx,
 --      the booking form) submit as anon and must keep working.
 --   4. Cleans up the duplicate "Enable public insert" policy, which
 --      was redundant with "Allow public insert on cases".

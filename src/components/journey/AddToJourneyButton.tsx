@@ -51,7 +51,7 @@ export function AddToJourneyButton({
       className={`${base} ${
         inJourney
           ? 'bg-primary text-white'
-          : 'border border-primary text-primary hover:bg-primary-light/40'
+          : 'border border-primary text-primary-dark hover:bg-primary-light/40'
       }`}
     >
       {inJourney ? `✓ ${t('added')}` : `+ ${t('addToJourney')}`}

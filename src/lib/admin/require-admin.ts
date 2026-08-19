@@ -1,25 +1,28 @@
-// lib/admin/require-admin.ts
+// src/lib/admin/require-admin.ts
 //
-// Verifies the request is from a signed-in admin, using the
-// Supabase session cookie (NOT the service-role key — that's only
-// pulled in after this check passes, inside each route).
+// Verifies the request is from a signed-in WOS platform admin.
 //
-// ⚠️ ASSUMPTION TO VERIFY: this checks `user.app_metadata.role ===
-// 'admin'`. That's the common Supabase convention (app_metadata is
-// only settable server-side, so it's safe to trust — unlike
-// user_metadata, which the user can edit themselves via
-// supabase.auth.updateUser()). If your project actually stores the
-// admin flag differently (a separate `admins` table, a Postgres
-// custom claim, user_metadata, etc.), update the `role` lookup below
-// — nothing else in this file needs to change.
+// Platform admin authorization is stored in public.users.is_platform_admin
+// and checked through the SECURITY DEFINER RPC function is_platform_admin().
+//
+// This keeps Admin UI, API routes, and database RLS using the same
+// authorization rule instead of relying on separate role systems.
+//
+// IMPORTANT: pass a NextResponse ("cookie carrier") from the calling route
+// so that a refreshed access/refresh token pair can actually be written
+// back to the browser. Without this, Supabase silently refreshes the
+// token in-memory for a single request but the browser cookie stays
+// stale, causing intermittent 401s once the original token expires.
+
 import { cookies } from 'next/headers';
-import { createServerClient } from '@supabase/ssr';
+import { createServerClient, type CookieOptions } from '@supabase/ssr';
+import type { NextResponse } from 'next/server';
 
 type RequireAdminResult =
   | { authorized: true; user: { id: string; email?: string } }
   | { authorized: false; status: 401 | 403; message: string };
 
-export async function requireAdmin(): Promise<RequireAdminResult> {
+export async function requireAdmin(response?: NextResponse): Promise<RequireAdminResult> {
   const cookieStore = await cookies();
 
   const supabase = createServerClient(
@@ -30,9 +33,15 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
         getAll() {
           return cookieStore.getAll();
         },
-        // API routes only ever read the session here — never
-        // refresh/write it — so setAll is intentionally a no-op.
-        setAll() {},
+        // If the caller gave us a response to write into, forward any
+        // refreshed session cookies onto it. Otherwise no-op (falls back
+        // to the old read-only behavior).
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          if (!response) return;
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
       },
     }
   );
@@ -43,41 +52,41 @@ export async function requireAdmin(): Promise<RequireAdminResult> {
   } = await supabase.auth.getUser();
 
   if (error || !user) {
-    return { authorized: false, status: 401, message: 'not signed in' };
+    return {
+      authorized: false,
+      status: 401,
+      message: 'not signed in',
+    };
   }
 
-  const role = (user.app_metadata as Record<string, unknown> | null)?.role;
-  if (role !== 'admin') {
-    return { authorized: false, status: 403, message: 'admin role required' };
+  const {
+    data: isPlatformAdmin,
+    error: adminError,
+  } = await supabase.rpc('is_platform_admin');
+
+  if (adminError) {
+    console.error('is_platform_admin RPC failed:', adminError);
+
+    return {
+      authorized: false,
+      status: 403,
+      message: 'admin authorization check failed',
+    };
   }
 
-  const { data: dbUser, error: dbUserError } = await supabase
-  .from('users')
-  .select('id, role, email, is_platform_admin')
-  .eq('supabase_user_id', user.id)
-  .single();
+  if (!isPlatformAdmin) {
+    return {
+      authorized: false,
+      status: 403,
+      message: 'platform admin required',
+    };
+  }
 
-if (dbUserError || !dbUser) {
   return {
-    authorized: false,
-    status: 403,
-    message: 'user profile not found'
+    authorized: true,
+    user: {
+      id: user.id,
+      email: user.email,
+    },
   };
-}
-
-if (dbUser.role !== 'admin' && !dbUser.is_platform_admin) {
-  return {
-    authorized: false,
-    status: 403,
-    message: 'admin role required'
-  };
-}
-
-return {
-  authorized: true,
-  user: {
-    id: dbUser.id,
-    email: dbUser.email
-  }
-};
 }

@@ -2,6 +2,7 @@
 import { createClient } from '@/lib/supabase/server';
 import { redirect } from 'next/navigation';
 import type { Session } from '@supabase/supabase-js';
+import type { NextResponse } from 'next/server';
 
 export interface PartnerUser {
   id: string;
@@ -28,8 +29,17 @@ export interface PartnerUser {
   } | null;
 }
 
-export async function getPartnerSession(): Promise<{ user: PartnerUser | null; session: Session | null }> {
-  const supabase = createClient();
+// OPTIONAL `response` ("cookie carrier"): pass a NextResponse from a
+// Route Handler — auth.getSession()/getUser() below can trigger a
+// Supabase token refresh, and without a carrier the refreshed cookie
+// only lives for this one request, causing intermittent 401s later.
+// See createClient()'s comment in src/lib/supabase/server.ts. Server
+// Component callers (page.tsx files via requirePartnerAuth) have no
+// response to pass — that's fine, middleware handles refresh there.
+export async function getPartnerSession(
+  response?: NextResponse
+): Promise<{ user: PartnerUser | null; session: Session | null }> {
+  const supabase = createClient(response);
   const { data: { session } } = await supabase.auth.getSession();
 
   if (!session) {

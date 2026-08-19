@@ -25,6 +25,8 @@
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { simpleRateLimit } from '@/lib/rate-limit';
+import { attachSignedSlipUrls } from '@/lib/storage/signed-slip-url';
+import { loadAuthorizedOrder } from '@/lib/orders/authorize-order';
 
 const ALLOWED_METHODS = ['bank_transfer', 'qr'] as const;
 type PaymentMethod = (typeof ALLOWED_METHODS)[number];
@@ -67,7 +69,39 @@ function getAllowedSlipHost(): string | null {
   }
 }
 
-function isValidSlipUrl(raw: string): boolean {
+const PUBLIC_PATH_MARKER = '/storage/v1/object/public/payment-slips/';
+
+// Pulls the object path (e.g. "ORD-2026-0042/1755500000-slip.jpg") out
+// of a stored public payment-slips URL. Returns null if the URL
+// doesn't match the expected Supabase Storage shape at all.
+function extractSlipObjectPath(url: URL): string | null {
+  const idx = url.pathname.indexOf(PUBLIC_PATH_MARKER);
+  if (idx === -1) return null;
+  try {
+    return decodeURIComponent(url.pathname.slice(idx + PUBLIC_PATH_MARKER.length));
+  } catch {
+    return null;
+  }
+}
+
+// Ownership check, not just shape/host validation: the customer
+// payment page uploads to `${orderNumber}/${Date.now()}-${filename}`
+// (see my-trip/[orderNumber]/payment/page.tsx), so a slip belongs to
+// an order iff its object path is namespaced under that order's own
+// number. Without this, a valid token for Order A's link is enough to
+// submit *any* other order's slip path as Order A's payment — the
+// token only proves you're allowed to act on Order A, it says nothing
+// about which slip you're claiming. Reject anything that isn't
+// exactly "<orderNumber>/<rest>", including attempts to fake the
+// prefix (e.g. "ORD-1/../ORD-2/x" or "ORD-10/x" matching an "ORD-1"
+// startsWith check) by requiring the literal next character be '/'.
+function slipBelongsToOrder(path: string, orderNumber: string): boolean {
+  if (path.includes('..')) return false;
+  const prefix = `${orderNumber}/`;
+  return path.startsWith(prefix) && path.length > prefix.length;
+}
+
+function isValidSlipUrl(raw: string, orderNumber: string): boolean {
   let url: URL;
   try {
     url = new URL(raw);
@@ -79,52 +113,25 @@ function isValidSlipUrl(raw: string): boolean {
   if (!allowedHost || url.host !== allowedHost) return false;
   // Supabase public storage URLs look like:
   //   https://<project>.supabase.co/storage/v1/object/public/payment-slips/<path>
-  const pathOk = /\/storage\/v1\/object\/public\/payment-slips\//.test(url.pathname);
-  return pathOk;
+  const path = extractSlipObjectPath(url);
+  if (!path) return false;
+  return slipBelongsToOrder(path, orderNumber);
 }
 
-function validate(body: Partial<CreatePaymentBody>): string | null {
+function validate(body: Partial<CreatePaymentBody>, orderNumber: string): string | null {
   if (typeof body.amount !== 'number' || !(body.amount > 0)) {
     return 'amount must be a positive number';
   }
   if (!body.slip_url || typeof body.slip_url !== 'string') {
     return 'slip_url is required';
   }
-  if (!isValidSlipUrl(body.slip_url)) {
-    return 'slip_url must be a valid https URL in our own payment-slips storage bucket';
+  if (!isValidSlipUrl(body.slip_url, orderNumber)) {
+    return 'slip_url must be a valid https URL in our own payment-slips storage bucket, under this order\'s own path';
   }
   if (body.method && !ALLOWED_METHODS.includes(body.method)) {
     return `method must be one of: ${ALLOWED_METHODS.join(', ')}`;
   }
   return null;
-}
-
-async function loadAuthorizedOrder(
-  supabase: ReturnType<typeof createServiceClient>,
-  orderNumber: string,
-  token: string | null
-) {
-  if (!token) {
-    return { order: null, error: NextResponse.json({ error: 'ลิงก์ไม่ถูกต้อง (missing access token)' }, { status: 401 }) };
-  }
-
-  const { data: order, error: orderErr } = await supabase
-    .from('orders')
-    .select(
-      'id, order_number, status, currency, total_amount, total_deposit_required, total_deposit_paid, total_balance_remaining, payment_access_token'
-    )
-    .eq('order_number', orderNumber)
-    .single();
-
-  if (orderErr || !order) {
-    return { order: null, error: NextResponse.json({ error: 'ไม่พบใบเสนอราคานี้' }, { status: 404 }) };
-  }
-
-  if (order.payment_access_token !== token) {
-    return { order: null, error: NextResponse.json({ error: 'ลิงก์ไม่ถูกต้องหรือหมดอายุ' }, { status: 403 }) };
-  }
-
-  return { order, error: null };
 }
 
 export async function POST(
@@ -149,7 +156,7 @@ export async function POST(
     return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
   }
 
-  const validationError = validate(body);
+  const validationError = validate(body, orderNumber);
   if (validationError) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
@@ -270,7 +277,7 @@ export async function GET(
 
   const { data: payments, error: paymentsErr } = await supabase
     .from('payments')
-    .select('id, amount, currency, method, status, submitted_at, verified_at, rejection_reason')
+    .select('id, amount, currency, method, status, submitted_at, verified_at, rejection_reason, slip_url')
     .eq('order_id', order!.id)
     .order('submitted_at', { ascending: false });
 
@@ -279,9 +286,19 @@ export async function GET(
     return NextResponse.json({ error: 'failed to load payments' }, { status: 500 });
   }
 
+  // slip_url in the DB is a stored path against the private
+  // `payment-slips` bucket (migration 033) — not viewable as-is.
+  // attachSignedSlipUrls() is normally admin/partner-only, but this
+  // call site is a deliberate, scoped exception: loadAuthorizedOrder()
+  // above already required `?token=` to match this order's
+  // payment_access_token, which is the same ownership proof admin
+  // routes rely on. The signed URL is generated fresh per request,
+  // expires in 10 minutes, and is never cached or logged.
+  const paymentsWithSlips = await attachSignedSlipUrls(payments ?? []);
+
   // Don't leak payment_access_token back out in the response.
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { payment_access_token: _omit, ...safeOrder } = order!;
 
-  return NextResponse.json({ order: safeOrder, payments: payments ?? [] });
+  return NextResponse.json({ order: safeOrder, payments: paymentsWithSlips });
 }

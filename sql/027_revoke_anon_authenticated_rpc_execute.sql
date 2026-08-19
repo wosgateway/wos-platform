@@ -13,7 +13,7 @@
 -- EXECUTE on every new function in the public schema to `anon` and
 -- `authenticated` at CREATE FUNCTION time (so PostgREST can expose
 -- them by default). Those are grants held DIRECTLY by anon/
--- authenticated, not inherited via the PUBLIC pseudo-role — so
+-- authenticated, not inherited via the PUBLIC pseudo-role €” so
 -- `REVOKE ALL ... FROM PUBLIC` never touches them. Confirmed via:
 --
 --   select routine_name, grantee, privilege_type
@@ -23,7 +23,7 @@
 --
 -- IMPACT: every function below is SECURITY DEFINER, and the actual
 -- admin/partner auth check (requireAdmin() / partner session check)
--- lives only in the Next.js API route that calls it — NOT inside the
+-- lives only in the Next.js API route that calls it €” NOT inside the
 -- function itself. With EXECUTE granted to anon/authenticated, any
 -- browser holding the public anon key can call these directly via
 -- `supabase.rpc(...)`, bypassing the Next.js auth layer entirely.
@@ -31,16 +31,16 @@
 -- admin_assign_order_item / admin_update_order_item_schedule this
 -- means an unauthenticated caller could mark arbitrary payments
 -- verified, reassign order items, or edit schedules. This is exactly
--- the class of test listed as NOT YET DONE in "Priority 2 — Payment
+-- the class of test listed as NOT YET DONE in "Priority 2 €” Payment
 -- Security Test" in the handoff doc.
 --
 -- FIX: explicitly revoke from anon AND authenticated (not just
 -- PUBLIC) on every affected function, then re-assert the
--- service_role-only grant. Safe to re-run — REVOKE on a grant that
+-- service_role-only grant. Safe to re-run €” REVOKE on a grant that
 -- doesn't exist is a no-op, not an error.
 --
 -- create_order_with_items() is parameterized 4 args per migration
--- 025 (UUID, JSONB, TEXT, TEXT) — signature included explicitly since
+-- 025 (UUID, JSONB, TEXT, TEXT) €” signature included explicitly since
 -- Postgres requires the exact arg list to identify the function.
 -- ============================================================
 
@@ -72,7 +72,7 @@ GRANT EXECUTE ON FUNCTION public.admin_update_order_item_schedule(
   ) TO service_role;
 
 -- ------------------------------------------------------------
--- ⚠️ MANUAL STEP — check for OTHER functions this migration doesn't
+-- š ï¸ MANUAL STEP €” check for OTHER functions this migration doesn't
 -- know about. Every SECURITY DEFINER function in public that was
 -- created before someone knew about the default-privilege behavior
 -- above is a candidate. Run this to find any not covered by the list

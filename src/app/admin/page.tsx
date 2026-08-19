@@ -15,7 +15,7 @@ export default function AdminPage() {
         <button
           onClick={() => setTab('partners')}
           className={`rounded-t-lg px-4 py-2 text-sm font-medium ${
-            tab === 'partners' ? 'border-b-2 border-primary text-primary' : 'text-slate-400'
+            tab === 'partners' ? 'border-b-2 border-primary text-primary-dark' : 'text-slate-400'
           }`}
         >
           พาร์ทเนอร์
@@ -23,7 +23,7 @@ export default function AdminPage() {
         <button
           onClick={() => setTab('packages')}
           className={`rounded-t-lg px-4 py-2 text-sm font-medium ${
-            tab === 'packages' ? 'border-b-2 border-primary text-primary' : 'text-slate-400'
+            tab === 'packages' ? 'border-b-2 border-primary text-primary-dark' : 'text-slate-400'
           }`}
         >
           แพ็กเกจ
@@ -31,7 +31,7 @@ export default function AdminPage() {
         <button
           onClick={() => setTab('bookings')}
           className={`rounded-t-lg px-4 py-2 text-sm font-medium ${
-            tab === 'bookings' ? 'border-b-2 border-primary text-primary' : 'text-slate-400'
+            tab === 'bookings' ? 'border-b-2 border-primary text-primary-dark' : 'text-slate-400'
           }`}
         >
           รายการจอง
@@ -39,7 +39,7 @@ export default function AdminPage() {
         <button
           onClick={() => setTab('leads')}
           className={`rounded-t-lg px-4 py-2 text-sm font-medium ${
-            tab === 'leads' ? 'border-b-2 border-primary text-primary' : 'text-slate-400'
+            tab === 'leads' ? 'border-b-2 border-primary text-primary-dark' : 'text-slate-400'
           }`}
         >
           พันธมิตรสมัครใหม่

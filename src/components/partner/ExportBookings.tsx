@@ -2,90 +2,109 @@
 'use client';
 
 import { useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
 
 interface ExportBookingsProps {
-  organizationId: string;
+  partnerId: string | null;
   onExport?: () => void;
 }
 
-interface PartnerBookingRow {
+interface PartnerOrderRow {
   id: string;
+  order_number: string;
   customer_name: string;
   customer_phone: string;
   customer_line: string | null;
   customer_country: string | null;
-  booking_date: string | null;
-  booking_time: string | null;
+  service_type: string;
   status: string;
-  total_price: number | null;
+  price: number;
+  quantity: number | null;
+  room_quantity: number | null;
+  scheduled_date: string | null;
+  scheduled_time: string | null;
+  hotel_checkout_date: string | null;
+  transport_mode: string | null;
+  transport_return_date: string | null;
+  transport_return_time: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
   created_at: string;
   packages: { title: string } | null;
 }
 
-export function ExportBookings({ organizationId, onExport }: ExportBookingsProps) {
-  const supabase = createClient();
+export function ExportBookings({ partnerId, onExport }: ExportBookingsProps) {
   const [exporting, setExporting] = useState(false);
 
   async function exportCSV() {
-    setExporting(true);
-
-    const { data, error } = await supabase
-      .from('partner_bookings')
-      .select(`
-        id,
-        customer_name,
-        customer_phone,
-        customer_line,
-        customer_country,
-        booking_date,
-        booking_time,
-        status,
-        total_price,
-        created_at,
-        packages!bookings_package_id_fkey ( title ),
-        patients ( full_name, phone )
-      `)
-      .eq('organization_id', organizationId)
-      .order('created_at', { ascending: false });
-
-    setExporting(false);
-
-    if (error) {
-      alert('ส่งออกไม่สำเร็จ: ' + error.message);
+    if (!partnerId) {
+      alert('บัญชีนี้ยังไม่ได้ผูกกับ partner');
       return;
     }
 
-    if (!data || data.length === 0) {
+    setExporting(true);
+
+    let data: PartnerOrderRow[] = [];
+    try {
+      const res = await fetch('/api/partner/orders');
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json?.error || 'ส่งออกไม่สำเร็จ');
+      }
+
+      data = (json.orders as PartnerOrderRow[]) ?? [];
+    } catch (err) {
+      setExporting(false);
+      alert('ส่งออกไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+      return;
+    }
+
+    setExporting(false);
+
+    if (data.length === 0) {
       alert('ไม่มีข้อมูลที่จะส่งออก');
       return;
     }
 
     const headers = [
-      'รหัสการจอง',
+      'เลขที่ออเดอร์',
       'ชื่อลูกค้า',
       'เบอร์โทร',
       'LINE ID',
       'ประเทศ',
+      'ประเภทบริการ',
       'วันที่ใช้บริการ',
       'เวลา',
+      'เช็คเอาท์ (โรงแรม)',
+      'จำนวนห้อง',
+      'โหมดรถ',
+      'จำนวนวัน (เหมา)',
+      'รับที่',
+      'ส่งที่',
       'โปรแกรม',
       'สถานะ',
-      'ราคารวม',
+      'ราคา',
       'วันที่แจ้ง',
     ];
 
-    const rows = (data as unknown as PartnerBookingRow[]).map((b) => [
-      b.id,
+    const rows = data.map((b) => [
+      b.order_number,
       b.customer_name,
       b.customer_phone,
       b.customer_line || '',
       b.customer_country || '',
-      b.booking_date || '',
-      b.booking_time || '',
+      b.service_type,
+      b.scheduled_date || '',
+      b.scheduled_time || '',
+      b.hotel_checkout_date || '',
+      b.service_type === 'hotel' ? b.room_quantity ?? 1 : '',
+      b.service_type === 'transport' ? b.transport_mode || '' : '',
+      b.service_type === 'transport' && b.transport_mode === 'daily' ? b.quantity ?? 1 : '',
+      b.pickup_location || '',
+      b.dropoff_location || '',
       b.packages?.title || '',
       b.status,
-      b.total_price || 0,
+      b.price || 0,
       new Date(b.created_at).toLocaleString('th-TH'),
     ]);
 

@@ -4,22 +4,22 @@
 -- the columns; this teaches the function to fill them).
 --
 -- Each item in p_items can now be EITHER:
---   a) a resolved item — has "package_id" — priced/partnered from
+--   a) a resolved item €” has "package_id" €” priced/partnered from
 --      packages/partners exactly as migration 012 did, plus the
 --      new optional detail fields below.
---   b) an unassigned item — has "service_type" instead of
---      "package_id" (only 'hotel' or 'transport' allowed — those
+--   b) an unassigned item €” has "service_type" instead of
+--      "package_id" (only 'hotel' or 'transport' allowed €” those
 --      are the only two categories BookingForm.tsx lets the
 --      customer defer to the team). No price/partner is resolved;
 --      the row is inserted with needs_assignment = true and must
 --      be completed manually by an admin before it can be paid.
 --
 -- New optional per-item detail fields (apply to either shape):
---   "hotel_checkout_date"     — hotel items only
---   "transport_mode"          — transport items only: one_way |
+--   "hotel_checkout_date"     €” hotel items only
+--   "transport_mode"          €” transport items only: one_way |
 --                                round_trip | daily
---   "transport_return_date"   — transport items, round_trip only
---   "transport_return_time"   — transport items, round_trip only
+--   "transport_return_date"   €” transport items, round_trip only
+--   "transport_return_time"   €” transport items, round_trip only
 --
 -- p_attachment_url is a new optional param stored on the order
 -- itself (one attachment per order, matching BookingForm.tsx's
@@ -68,7 +68,7 @@ BEGIN
         v_is_unassigned := NOT (v_item ? 'package_id');
 
         -- ----------------------------------------------------
-        -- Branch A: "let team decide" — no package chosen yet.
+        -- Branch A: "let team decide" €” no package chosen yet.
         -- ----------------------------------------------------
         IF v_is_unassigned THEN
             IF NOT (v_item ? 'service_type') THEN
@@ -103,7 +103,7 @@ BEGIN
         END IF;
 
         -- ----------------------------------------------------
-        -- Branch B: resolved item — same price/partner/service_type
+        -- Branch B: resolved item €” same price/partner/service_type
         -- derivation as migration 012, plus the new detail columns.
         -- ----------------------------------------------------
         SELECT * INTO v_pkg FROM public.packages
@@ -193,7 +193,7 @@ REVOKE ALL ON FUNCTION public.create_order_with_items(UUID, JSONB, TEXT, TEXT) F
 GRANT EXECUTE ON FUNCTION public.create_order_with_items(UUID, JSONB, TEXT, TEXT) TO service_role;
 
 -- The old 3-arg signature (UUID, JSONB, TEXT) from migration 012 is
--- superseded, not overloaded — Postgres would otherwise keep both
+-- superseded, not overloaded €” Postgres would otherwise keep both
 -- functions around as separate overloads and route.ts's RPC call
 -- must be updated to always pass p_attachment_url (even as null).
 DROP FUNCTION IF EXISTS public.create_order_with_items(UUID, JSONB, TEXT);

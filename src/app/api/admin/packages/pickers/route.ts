@@ -1,4 +1,5 @@
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
@@ -13,11 +14,18 @@ function getPartnerCategory(partners: unknown): string | null {
 }
 
 export async function GET(request: NextRequest) {
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  const cookieCarrier = new NextResponse();
+
   try {
     // ตรวจสอบสิทธิ์ Admin
-    const auth = await requireAdmin();
+    const auth = await requireAdmin(cookieCarrier);
     if (!auth.authorized) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      return withRefreshedCookies(
+        NextResponse.json({ error: 'Unauthorized' }, { status: 401 }),
+        cookieCarrier
+      );
     }
 
     const searchParams = request.nextUrl.searchParams;
@@ -44,9 +52,12 @@ export async function GET(request: NextRequest) {
 
     if (error) {
       console.error('Error fetching packages:', error);
-      return NextResponse.json(
-        { error: 'Failed to fetch packages' },
-        { status: 500 }
+      return withRefreshedCookies(
+        NextResponse.json(
+          { error: 'Failed to fetch packages' },
+          { status: 500 }
+        ),
+        cookieCarrier
       );
     }
 
@@ -54,7 +65,7 @@ export async function GET(request: NextRequest) {
 
     // ไม่ระบุ categories -> คืนค่าแบบเดิม (array เดียว) เพื่อไม่พังการใช้งานเดิมที่อื่น
     if (categories.length === 0) {
-      return NextResponse.json({ packages: all });
+      return withRefreshedCookies(NextResponse.json({ packages: all }), cookieCarrier);
     }
 
     // ระบุ categories -> จัดกลุ่มเป็น { <category ตัวเล็ก>: [...] }
@@ -68,12 +79,15 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json(grouped);
+    return withRefreshedCookies(NextResponse.json(grouped), cookieCarrier);
   } catch (error) {
     console.error('Error in /api/admin/packages/pickers:', error);
-    return NextResponse.json(
-      { error: 'Internal server error' },
-      { status: 500 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'Internal server error' },
+        { status: 500 }
+      ),
+      cookieCarrier
     );
   }
 }

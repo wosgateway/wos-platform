@@ -1,12 +1,12 @@
 -- ============================================================
--- MIGRATION 012: create_order_with_items() — atomic order creation
+-- MIGRATION 012: create_order_with_items() €” atomic order creation
 -- for the customer-facing booking API route.
 --
 -- Supersedes the earlier draft of this function (which trusted
 -- client-supplied organization_id/service_type/price directly).
 -- After confirming the real schema against live Supabase data:
 --   - packages.partner_id -> partners(id) is the real identity
---     chain (see migration 010) — NOT organizations.
+--     chain (see migration 010) €” NOT organizations.
 --   - packages has no service_type column. The only service
 --     classification that exists is partners.category
 --     ('Hospital'|'Clinic'|'Dental'|'Wellness'|'Spa'|'Hotel'|
@@ -15,12 +15,12 @@
 --     ('clinic'|'hotel'|'transport'|'wellness'|'insurance').
 --   - packages.original_price/special_price are the only real
 --     prices. The client now sends package_id + quantity (nights
---     for hotel, days for transport, 1 otherwise) — never a price
---     or a service_type — so a tampered request can't submit an
+--     for hotel, days for transport, 1 otherwise) €” never a price
+--     or a service_type €” so a tampered request can't submit an
 --     arbitrary price or claim a cheaper category's deposit rate.
 --
 -- Still SECURITY DEFINER, still service_role-only (no customer auth
--- yet — see migration 008 note), still atomic (order + every
+-- yet €” see migration 008 note), still atomic (order + every
 -- order_item succeed or fail together).
 -- ============================================================
 
@@ -65,7 +65,7 @@ BEGIN
             RAISE EXCEPTION 'each item requires package_id';
         END IF;
 
-        -- Only real, published packages can be booked — matches the
+        -- Only real, published packages can be booked €” matches the
         -- same status filter the public catalog (data.ts) already
         -- uses so a draft/rejected/archived package can't be booked
         -- via a direct API call even if its id leaks somehow.
@@ -153,6 +153,6 @@ END;
 $$;
 
 -- SECURITY DEFINER functions are PUBLIC-executable by default in
--- Postgres — explicitly lock this down to service_role only.
+-- Postgres €” explicitly lock this down to service_role only.
 REVOKE ALL ON FUNCTION public.create_order_with_items(UUID, JSONB, TEXT) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_order_with_items(UUID, JSONB, TEXT) TO service_role;

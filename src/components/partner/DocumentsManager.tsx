@@ -8,6 +8,7 @@ interface Document {
   id: string;
   name: string;
   file_url: string;
+  storage_path: string | null;
   file_type: string | null;
   category: string | null;
   description: string | null;
@@ -15,6 +16,13 @@ interface Document {
   status: 'active' | 'expired';
   created_at: string;
 }
+
+// Signed URLs expire, so they can't be generated once at upload time and
+// reused forever — every load of the list needs a fresh one. 1 hour is
+// long enough for someone to view/download without the link dying mid-use,
+// short enough that a leaked link (e.g. pasted in chat) doesn't stay valid
+// indefinitely.
+const SIGNED_URL_TTL_SECONDS = 60 * 60;
 
 const CATEGORY_OPTIONS = [
   { value: 'license', label: '📜 ใบอนุญาต' },
@@ -32,6 +40,7 @@ export function DocumentsManager({
 }) {
   const supabase = createClient();
   const [documents, setDocuments] = useState<Document[]>([]);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -53,7 +62,33 @@ export function DocumentsManager({
       return;
     }
 
-    setDocuments(data as Document[]);
+    const docs = data as Document[];
+    setDocuments(docs);
+
+    // Docs uploaded before this migration have no storage_path (they live
+    // in the old public "partner-images" bucket) — their file_url still
+    // works as-is, nothing to sign. Only new-bucket docs need a signed URL,
+    // and it has to be regenerated on every load since the old one may
+    // have expired.
+    const docsNeedingSignedUrl = docs.filter((d) => d.storage_path);
+    if (docsNeedingSignedUrl.length === 0) return;
+
+    const results = await Promise.all(
+      docsNeedingSignedUrl.map((d) =>
+        supabase.storage
+          .from('partner-documents')
+          .createSignedUrl(d.storage_path as string, SIGNED_URL_TTL_SECONDS)
+          .then((res) => [d.id, res.data?.signedUrl ?? null] as const)
+      )
+    );
+
+    setSignedUrls((prev) => {
+      const next = { ...prev };
+      for (const [id, url] of results) {
+        if (url) next[id] = url;
+      }
+      return next;
+    });
   }
 
   useEffect(() => {
@@ -90,18 +125,30 @@ export function DocumentsManager({
 
       // หมายเหตุ: supabase-js storage.upload() ไม่รองรับ onUploadProgress
       // จึงตัด progress bar ออก แสดงแค่สถานะ "กำลังอัปโหลด..." แทน
+      //
+      // partner-documents คือ bucket แบบ private (migration 032) — ต่างจาก
+      // partner-images ที่ public เพราะไฟล์ในนี้คือเอกสารบริษัทจริง (ใบอนุญาต/
+      // สัญญา) ที่ไม่ควรเปิดให้ใครก็ได้เข้าถึงผ่านลิงก์เฉยๆ
       const { error: uploadError } = await supabase.storage
-        .from('partner-images')
+        .from('partner-documents')
         .upload(path, file);
 
       if (uploadError) throw uploadError;
 
-      const { data } = supabase.storage.from('partner-images').getPublicUrl(path);
+      // getPublicUrl() ใช้ไม่ได้กับ private bucket — สร้าง signed URL แทน
+      // เก็บไว้ให้ใช้แสดงผลได้ทันทีหลังอัปโหลด แต่ storage_path คือตัวจริงที่
+      // ใช้สร้าง signed URL ใหม่ทุกครั้งที่โหลดรายการ (signed URL หมดอายุได้)
+      const { data: signedData, error: signError } = await supabase.storage
+        .from('partner-documents')
+        .createSignedUrl(path, SIGNED_URL_TTL_SECONDS);
+
+      if (signError) throw signError;
 
       const payload = {
         organization_id: organizationId,
         name: nameInput.value.trim() || file.name,
-        file_url: data.publicUrl,
+        file_url: signedData.signedUrl,
+        storage_path: path,
         file_type: file.type || null,
         file_size: file.size,
         category: categorySelect.value || null,
@@ -259,21 +306,37 @@ export function DocumentsManager({
                     }`}>
                       {displayStatus === 'expired' ? '⏰ หมดอายุ' : '✅ ปกติ'}
                     </span>
-                    <a
-                      href={doc.file_url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-primary hover:underline text-xs"
-                    >
-                      👁️ ดู
-                    </a>
-                    <a
-                      href={doc.file_url}
-                      download
-                      className="text-slate-500 hover:text-primary text-xs"
-                    >
-                      ⬇️
-                    </a>
+                    {(() => {
+                      // เอกสารใหม่ (storage_path มีค่า) อยู่ใน bucket private
+                      // — ต้องใช้ signed URL ที่ regenerate ใหม่ทุกครั้งที่โหลด
+                      // (ดู loadDocuments) ไฟล์เก่าที่ไม่มี storage_path ยังอยู่
+                      // ใน bucket public เดิม ใช้ file_url ตรงๆ ได้เหมือนเดิม
+                      const url = doc.storage_path ? signedUrls[doc.id] : doc.file_url;
+                      if (!url) {
+                        return (
+                          <span className="text-xs text-slate-300">⏳ กำลังสร้างลิงก์...</span>
+                        );
+                      }
+                      return (
+                        <>
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-primary-dark hover:underline text-xs"
+                          >
+                            👁️ ดู
+                          </a>
+                          <a
+                            href={url}
+                            download
+                            className="text-slate-500 hover:text-primary-dark text-xs"
+                          >
+                            ⬇️
+                          </a>
+                        </>
+                      );
+                    })()}
                     <button
                       onClick={() => handleDelete(doc.id)}
                       className="text-red-400 hover:text-red-600 text-xs"

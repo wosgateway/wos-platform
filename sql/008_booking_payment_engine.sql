@@ -1,6 +1,6 @@
 -- ============================================================
 -- MIGRATION 008: BOOKING & PAYMENT ENGINE (MVP v1.0)
--- Ref: WOS Backend Brief — Booking & Payment Management System
+-- Ref: WOS Backend Brief €” Booking & Payment Management System
 --
 -- Design notes:
 -- - Introduces a NEW multi-item order model, deliberately named
@@ -10,15 +10,15 @@
 --   boolean transport/hotel add-ons) is left untouched. Migration
 --   path: each existing `bookings` row becomes one `order` with
 --   1-3 `order_items` (clinic/transport/hotel). Do that as a
---   separate data-migration script once the app layer is ready —
+--   separate data-migration script once the app layer is ready €”
 --   not included here.
 -- - `order_items.organization_id` is the PARTNER fulfilling that
---   line item. `orders` itself is NOT organization-scoped — it's
+--   line item. `orders` itself is NOT organization-scoped €” it's
 --   owned by the customer/patient and can span multiple partners.
 --   This is why RLS on orders differs from the partner-portal
 --   pattern used in migration 007 (org-scoped tables).
 -- - Payment Provider is stored as free text (`payment_provider`)
---   on purpose — per the brief, provider-specific logic (One Bank,
+--   on purpose €” per the brief, provider-specific logic (One Bank,
 --   PromptPay, future gateways) must live in an app-layer Payment
 --   Provider abstraction, never hardcoded into the schema.
 -- ============================================================
@@ -39,7 +39,7 @@ END;
 $$ LANGUAGE plpgsql;
 
 -- ============================================================
--- 1. deposit_rules — configurable deposit/refund/cancellation
+-- 1. deposit_rules €” configurable deposit/refund/cancellation
 --    policy per service_type, optionally overridden per partner.
 --    Resolution order: exact (service_type + organization_id)
 --    match first, then (service_type + organization_id IS NULL)
@@ -71,7 +71,7 @@ CREATE TABLE public.deposit_rules (
 CREATE INDEX idx_deposit_rules_lookup ON public.deposit_rules(service_type, organization_id) WHERE active = true;
 
 -- ============================================================
--- 2. orders — the "Booking" header. Owned by a patient, can
+-- 2. orders €” the "Booking" header. Owned by a patient, can
 --    contain items fulfilled by different partners.
 -- ============================================================
 CREATE TABLE public.orders (
@@ -107,7 +107,7 @@ CREATE INDEX idx_orders_status ON public.orders(status);
 CREATE INDEX idx_orders_order_number ON public.orders(order_number);
 
 -- ============================================================
--- 3. order_items — the "Booking Item". One per service, each
+-- 3. order_items €” the "Booking Item". One per service, each
 --    tied to exactly one partner organization.
 -- ============================================================
 CREATE TABLE public.order_items (
@@ -145,7 +145,7 @@ CREATE INDEX idx_order_items_org_id ON public.order_items(organization_id);
 CREATE INDEX idx_order_items_status ON public.order_items(status);
 
 -- ============================================================
--- 4. payments — NOT tied 1:1 to orders. Many payments per order,
+-- 4. payments €” NOT tied 1:1 to orders. Many payments per order,
 --    each optionally scoped to a single order_item.
 -- ============================================================
 CREATE TABLE public.payments (
@@ -184,7 +184,7 @@ CREATE INDEX idx_payments_order_item_id ON public.payments(order_item_id);
 CREATE INDEX idx_payments_status ON public.payments(status);
 
 -- ============================================================
--- 5. payment_attachments — uploaded slips / proof of payment
+-- 5. payment_attachments €” uploaded slips / proof of payment
 -- ============================================================
 CREATE TABLE public.payment_attachments (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -200,7 +200,7 @@ CREATE TABLE public.payment_attachments (
 CREATE INDEX idx_payment_attachments_payment_id ON public.payment_attachments(payment_id);
 
 -- ============================================================
--- 6. settlements — partner payout accounting (Phase 1: computed
+-- 6. settlements €” partner payout accounting (Phase 1: computed
 --    only, no actual transfer). One row per partner per period.
 -- ============================================================
 CREATE TABLE public.settlements (
@@ -226,7 +226,7 @@ CREATE INDEX idx_settlements_org_id ON public.settlements(organization_id);
 CREATE INDEX idx_settlements_period ON public.settlements(period_start, period_end);
 
 -- ============================================================
--- 7. invoices — Phase 2 stub (minimal columns, extend later)
+-- 7. invoices €” Phase 2 stub (minimal columns, extend later)
 -- ============================================================
 CREATE TABLE public.invoices (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -321,7 +321,7 @@ CREATE POLICY "Anyone can view active deposit rules" ON public.deposit_rules
 
 -- order_items: partner staff see items belonging to their org.
 -- NOTE: migration 007 found that auth.jwt() -> 'user_metadata' is NEVER
--- set for real users in this project and silently blocks everyone — see
+-- set for real users in this project and silently blocks everyone €” see
 -- PROJECT_STRUCTURE.md section 5.3-5.4. Use the SECURITY DEFINER helper
 -- (current_user_organization_id()) instead, same as every other
 -- partner-portal table.
@@ -341,10 +341,10 @@ CREATE POLICY "Partners can view payments for their order items" ON public.payme
     );
 
 -- Deliberately no INSERT/UPDATE policy for partners on `payments`.
--- Slip verification touches money (deposit_paid → balance_remaining →
+-- Slip verification touches money (deposit_paid †’ balance_remaining †’
 -- settlements via triggers) and needs role + amount validation that RLS
 -- alone can't express, so it goes through a server route using the
--- service role key instead — see src/app/api/partner/payments/[id]/verify
+-- service role key instead €” see src/app/api/partner/payments/[id]/verify
 -- and .../reject.
 
 -- settlements: partner staff see only their own org's settlements
@@ -352,7 +352,7 @@ CREATE POLICY "Partners can view their organization's settlements" ON public.set
     FOR SELECT USING (organization_id = public.current_user_organization_id());
 
 -- orders / invoices: NOT organization-scoped (customer-owned, cross-partner).
--- No customer-facing RLS policy yet — customers currently authenticate via
+-- No customer-facing RLS policy yet €” customers currently authenticate via
 -- phone/Line, not Supabase Auth, so there's no auth.uid() to key off of.
 -- Until customer accounts exist, orders/invoices/payment_attachments reads
 -- for the customer portal MUST go through a server-side route using the
