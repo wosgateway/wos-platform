@@ -23,12 +23,20 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin();
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  const cookieCarrier = new NextResponse();
+
+  const auth = await requireAdmin(cookieCarrier);
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.message }, { status: auth.status });
+    return withRefreshedCookies(
+      NextResponse.json({ error: auth.message }, { status: auth.status }),
+      cookieCarrier
+    );
   }
 
   const { id } = await params;
@@ -37,14 +45,23 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'invalid JSON body' }, { status: 400 }),
+      cookieCarrier
+    );
   }
 
   if (!body.package_id || typeof body.package_id !== 'string') {
-    return NextResponse.json({ error: 'package_id is required' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'package_id is required' }, { status: 400 }),
+      cookieCarrier
+    );
   }
   if (body.quantity !== undefined && (typeof body.quantity !== 'number' || body.quantity <= 0)) {
-    return NextResponse.json({ error: 'quantity must be a positive number' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'quantity must be a positive number' }, { status: 400 }),
+      cookieCarrier
+    );
   }
 
   const supabase = createServiceClient();
@@ -61,7 +78,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   if (rowErr || !row) {
     console.error('order_items lookup failed before assign:', rowErr);
-    return NextResponse.json({ error: 'order item not found' }, { status: 404 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'order item not found' }, { status: 404 }),
+      cookieCarrier
+    );
   }
 
   const nightsOrDays = body.quantity ?? 1;
@@ -74,15 +94,33 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     p_quantity: combinedQuantity,
   });
 
-  if (error) {
+      if (error) {
     console.error('admin_assign_order_item RPC failed:', error);
-    const isClientError = /not found|already assigned|category mismatch|unpublished|no active deposit_rule|quantity must be positive/.test(
-      error.message ?? ''
-    );
-    return NextResponse.json(
-      { error: isClientError ? error.message : 'failed to assign' },
-      { status: isClientError ? 400 : 500 }
+
+    const message = error.message ?? '';
+
+    // Business-state conflicts: the DB correctly refuses changes to
+    // confirmed/completed orders. These are conflicts, not server errors.
+    const isConflict =
+      /parent order status is (confirmed|completed)/i.test(message);
+
+    const isClientError =
+      /not found|already assigned|category mismatch|unpublished|no active deposit_rule|quantity must be positive/i.test(
+        message
+      );
+
+    const status = isConflict ? 409 : isClientError ? 400 : 500;
+
+    return withRefreshedCookies(
+      NextResponse.json(
+        {
+          error: message || 'failed to assign',
+        },
+        { status }
+      ),
+      cookieCarrier
     );
   }
-  return NextResponse.json(data);
+
+  return withRefreshedCookies(NextResponse.json(data), cookieCarrier);
 }

@@ -24,7 +24,7 @@ export default async function CategoryPage({
 
       <section className="pb-6 pt-4">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 sm:px-6">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-3xl text-primary">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-3xl text-primary-dark">
             {category.icon}
           </div>
           <div>
@@ -53,7 +53,7 @@ export default async function CategoryPage({
           href="https://line.me/ti/p/@vlf9996z"
           target="_blank"
           rel="noopener noreferrer"
-          className="text-sm text-slate-500 transition hover:text-primary"
+          className="text-sm text-slate-500 transition hover:text-primary-dark"
         >
           {t('helpLink')}
         </a>

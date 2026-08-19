@@ -1,7 +1,7 @@
 -- ============================================================
--- MIGRATION 017: admin_assign_order_item() — allow reassignment of
--- hotel/transport add-on items from the orders list ("เปลี่ยน
--- แพ็กเกจ" dropdown in BookingsManager.tsx), which migration 016
+-- MIGRATION 017: admin_assign_order_item() €” allow reassignment of
+-- hotel/transport add-on items from the orders list ("à¹€à¸›à¸¥à¸µà¹ˆà¸¢à¸™
+-- à¹à¸žà¹‡à¸à¹€à¸à¸ˆ" dropdown in BookingsManager.tsx), which migration 016
 -- explicitly left out of scope.
 --
 -- Original guard (016): only allowed when needs_assignment = true
@@ -12,13 +12,13 @@
 --   - First assignment (needs_assignment = true): unchanged, same
 --     as migration 016.
 --   - Reassignment (needs_assignment = false): now allowed, but
---     ONLY for service_type IN ('hotel', 'transport') — these are
+--     ONLY for service_type IN ('hotel', 'transport') €” these are
 --     add-ons an admin routinely swaps (e.g. wrong hotel picked,
 --     partner unavailable). Reassigning a clinic/wellness/insurance
 --     item is still blocked here; that touches the patient's core
 --     medical program and stays a manual/DB-level operation.
 --   - Reassignment is blocked outright if deposit_paid > 0 for that
---     item — per product decision, a paid deposit must be
+--     item €” per product decision, a paid deposit must be
 --     cancelled/refunded before the package can be changed, rather
 --     than silently recalculating balance_remaining under it.
 -- ============================================================
@@ -61,7 +61,7 @@ BEGIN
         END IF;
 
         -- A paid deposit must be cancelled/refunded before the
-        -- package can change — never silently recompute balance
+        -- package can change €” never silently recompute balance
         -- under a payment that was collected against the old price.
         IF COALESCE(v_row.deposit_paid, 0) > 0 THEN
             RAISE EXCEPTION

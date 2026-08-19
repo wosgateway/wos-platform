@@ -50,7 +50,7 @@ interface FormData {
   instagram: string;
 }
 
-const DEFAULT_COLORS = ['#0d7c66', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'];
+const DEFAULT_COLORS = ['#5B8C6E', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'];
 
 export function CompanyProfile({
   organizationId,
@@ -76,7 +76,7 @@ export function CompanyProfile({
     province: '',
     logo_url: '',
     cover_image_url: '',
-    primaryColor: '#0d7c66',
+    primaryColor: '#5B8C6E',
     line: '',
     whatsapp: '',
     facebook: '',
@@ -112,7 +112,7 @@ export function CompanyProfile({
       province: data.province || '',
       logo_url: data.logo_url || '',
       cover_image_url: data.cover_image_url || '',
-      primaryColor: data.settings?.theme?.primaryColor || '#0d7c66',
+      primaryColor: data.settings?.theme?.primaryColor || '#5B8C6E',
       line: data.settings?.social?.line || '',
       whatsapp: data.settings?.social?.whatsapp || '',
       facebook: data.settings?.social?.facebook || '',

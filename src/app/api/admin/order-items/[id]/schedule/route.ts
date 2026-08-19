@@ -19,6 +19,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
 
 interface ScheduleBody {
@@ -42,9 +43,16 @@ function isNullableString(v: unknown): v is string | null | undefined {
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await requireAdmin();
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  const cookieCarrier = new NextResponse();
+
+  const auth = await requireAdmin(cookieCarrier);
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.message }, { status: auth.status });
+    return withRefreshedCookies(
+      NextResponse.json({ error: auth.message }, { status: auth.status }),
+      cookieCarrier
+    );
   }
 
   const { id } = await params;
@@ -53,7 +61,10 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'invalid JSON body' }, { status: 400 }),
+      cookieCarrier
+    );
   }
 
   // The RPC overwrites all 7 columns every call (see migration 026
@@ -65,24 +76,42 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   // send an explicit null.
   for (const [key, value] of Object.entries(body)) {
     if (!isNullableString(value)) {
-      return NextResponse.json({ error: `${key} must be a string or null` }, { status: 400 });
+      return withRefreshedCookies(
+        NextResponse.json({ error: `${key} must be a string or null` }, { status: 400 }),
+        cookieCarrier
+      );
     }
   }
 
   if (body.scheduled_date && !DATE_RE.test(body.scheduled_date)) {
-    return NextResponse.json({ error: 'scheduled_date must be YYYY-MM-DD' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'scheduled_date must be YYYY-MM-DD' }, { status: 400 }),
+      cookieCarrier
+    );
   }
   if (body.hotel_checkout_date && !DATE_RE.test(body.hotel_checkout_date)) {
-    return NextResponse.json({ error: 'hotel_checkout_date must be YYYY-MM-DD' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'hotel_checkout_date must be YYYY-MM-DD' }, { status: 400 }),
+      cookieCarrier
+    );
   }
   if (body.transport_return_date && !DATE_RE.test(body.transport_return_date)) {
-    return NextResponse.json({ error: 'transport_return_date must be YYYY-MM-DD' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'transport_return_date must be YYYY-MM-DD' }, { status: 400 }),
+      cookieCarrier
+    );
   }
   if (body.scheduled_time && !TIME_RE.test(body.scheduled_time)) {
-    return NextResponse.json({ error: 'scheduled_time must be HH:MM[:SS]' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'scheduled_time must be HH:MM[:SS]' }, { status: 400 }),
+      cookieCarrier
+    );
   }
   if (body.transport_return_time && !TIME_RE.test(body.transport_return_time)) {
-    return NextResponse.json({ error: 'transport_return_time must be HH:MM[:SS]' }, { status: 400 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'transport_return_time must be HH:MM[:SS]' }, { status: 400 }),
+      cookieCarrier
+    );
   }
 
   const supabase = createServiceClient();
@@ -103,11 +132,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     const isClientError = /not found|only supported for hotel\/transport|item status is|schedule is locked once confirmed/.test(
       error.message ?? ''
     );
-    return NextResponse.json(
-      { error: isClientError ? error.message : 'failed to update schedule' },
-      { status: isClientError ? 400 : 500 }
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: isClientError ? error.message : 'failed to update schedule' },
+        { status: isClientError ? 400 : 500 }
+      ),
+      cookieCarrier
     );
   }
 
-  return NextResponse.json(data);
+  return withRefreshedCookies(NextResponse.json(data), cookieCarrier);
 }

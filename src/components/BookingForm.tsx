@@ -24,7 +24,8 @@ type LocationType =
   | 'chong_mek'
   | 'udon_airport'
   | 'hotel'
-  | 'other';
+  | 'other'
+  | 'per_itinerary';
 
 interface FormState {
   bookingDate: string;
@@ -105,6 +106,8 @@ function resolveLocationLabel(
       return trimmed ? `${t('fields.locationHotel')}: ${trimmed}` : t('fields.locationHotel');
     case 'other':
       return trimmed || t('fields.locationOther');
+    case 'per_itinerary':
+      return t('fields.locationPerItinerary');
     default:
       return '';
   }
@@ -160,7 +163,22 @@ export function BookingForm({
     payment_access_token?: string;
   } | null>(null);
 
-  const totalSteps = 3;
+  // Step 1 used to cram schedule + transport (up to ~8 fields) + hotel
+  // (up to ~4 fields) into one screen — up to 15-18 fields before the
+  // customer could even reach step 2, especially painful on mobile.
+  // Now each concern gets its own step, and transport/hotel steps only
+  // exist at all when the customer actually opted into them.
+  type StepKey = 'schedule' | 'transport' | 'hotel' | 'contact' | 'review';
+  const stepKeys = useMemo<StepKey[]>(() => {
+    const keys: StepKey[] = ['schedule'];
+    if (form.needTransport) keys.push('transport');
+    if (form.needHotel) keys.push('hotel');
+    keys.push('contact', 'review');
+    return keys;
+  }, [form.needTransport, form.needHotel]);
+
+  const totalSteps = stepKeys.length;
+  const currentStepKey = stepKeys[step - 1] ?? 'schedule';
 
   const selectedHotel = hotelOptions.find((p) => p.id === form.hotelPartnerId);
   const selectedTransport = transportOptions.find((p) => p.id === form.transportPartnerId);
@@ -198,46 +216,50 @@ export function BookingForm({
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
-  function validateStep(n: number): boolean {
+  function validateStep(key: StepKey): boolean {
     setError(null);
-    if (n === 1) {
+    if (key === 'schedule') {
       if (!form.bookingDate || !form.bookingTime) {
         setError(t('errorSchedule'));
         return false;
       }
-      if (form.needHotel) {
-        const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
-        if (!form.hotelCheckinDate || !form.hotelCheckoutDate || nights <= 0) {
-          setError(t('errorHotelDates'));
-          return false;
-        }
-      }
-      if (form.needTransport) {
-        const pickupNeedsDetail =
-          form.transportPickupLocationType === 'hotel' || form.transportPickupLocationType === 'other';
-        if (!form.transportPickupLocationType || (pickupNeedsDetail && !form.transportPickupLocationDetail.trim())) {
-          setError(t('errorPickupLocation'));
-          return false;
-        }
-        const dropoffNeedsDetail =
-          form.transportDropoffLocationType === 'hotel' || form.transportDropoffLocationType === 'other';
-        if (!form.transportDropoffLocationType || (dropoffNeedsDetail && !form.transportDropoffLocationDetail.trim())) {
-          setError(t('errorDropoffLocation'));
-          return false;
-        }
-      }
+      return true;
     }
-    if (n === 2) {
+    if (key === 'transport') {
+      const pickupNeedsDetail =
+        form.transportPickupLocationType === 'hotel' || form.transportPickupLocationType === 'other';
+      if (!form.transportPickupLocationType || (pickupNeedsDetail && !form.transportPickupLocationDetail.trim())) {
+        setError(t('errorPickupLocation'));
+        return false;
+      }
+      const dropoffNeedsDetail =
+        form.transportDropoffLocationType === 'hotel' || form.transportDropoffLocationType === 'other';
+      if (!form.transportDropoffLocationType || (dropoffNeedsDetail && !form.transportDropoffLocationDetail.trim())) {
+        setError(t('errorDropoffLocation'));
+        return false;
+      }
+      return true;
+    }
+    if (key === 'hotel') {
+      const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
+      if (!form.hotelCheckinDate || !form.hotelCheckoutDate || nights <= 0) {
+        setError(t('errorHotelDates'));
+        return false;
+      }
+      return true;
+    }
+    if (key === 'contact') {
       if (!form.customerName.trim() || !form.customerPhone.trim() || !form.country) {
         setError(t('errorContact'));
         return false;
       }
+      return true;
     }
     return true;
   }
 
   function next() {
-    if (!validateStep(step)) return;
+    if (!validateStep(currentStepKey)) return;
     setStep((s) => Math.min(totalSteps, s + 1));
   }
 
@@ -247,9 +269,12 @@ export function BookingForm({
   }
 
   async function handleSubmit() {
-    if (!validateStep(1) || !validateStep(2)) {
-      setStep(!validateStep(1) ? 1 : 2);
-      return;
+    const keysToCheck = stepKeys.filter((k) => k !== 'review');
+    for (let i = 0; i < keysToCheck.length; i++) {
+      if (!validateStep(keysToCheck[i])) {
+        setStep(i + 1);
+        return;
+      }
     }
     setSubmitting(true);
     setError(null);
@@ -381,10 +406,7 @@ export function BookingForm({
             )}`}
             className="mt-4 inline-block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-white"
           >
-            {/* TODO: replace with a proper t('viewOrderStatus') key in
-                your locale JSON files once you add one — hardcoded
-                here so this doesn't throw at runtime for a missing key */}
-            ดูสถานะการจอง / ชำระเงิน
+            {t('viewOrderStatus')}
           </Link>
         ) : null}
       </div>
@@ -395,20 +417,23 @@ export function BookingForm({
     <div className="card-shadow rounded-2xl border border-slate-100 bg-white p-6">
       {/* Step indicator */}
       <div className="mb-6 flex items-center gap-2">
-        {[1, 2, 3].map((n) => (
-          <div key={n} className="flex flex-1 items-center gap-2">
-            <div
-              className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                n <= step ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'
-              }`}
-            >
-              {n}
+        {stepKeys.map((key, i) => {
+          const n = i + 1;
+          return (
+            <div key={key} className="flex flex-1 items-center gap-2">
+              <div
+                className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
+                  n <= step ? 'bg-primary text-white' : 'bg-slate-100 text-slate-400'
+                }`}
+              >
+                {n}
+              </div>
+              {n < totalSteps ? (
+                <div className={`h-0.5 flex-1 ${n < step ? 'bg-primary' : 'bg-slate-100'}`} />
+              ) : null}
             </div>
-            {n < 3 ? (
-              <div className={`h-0.5 flex-1 ${n < step ? 'bg-primary' : 'bg-slate-100'}`} />
-            ) : null}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <h1 className="mb-1 text-lg font-bold text-slate-900">{pkg.title as string}</h1>
@@ -420,8 +445,9 @@ export function BookingForm({
         </div>
       ) : null}
 
-      {/* Step 1: schedule + optional hotel/transport */}
-      {step === 1 ? (
+      {/* Step: schedule + opt-in toggles only. Transport/hotel details
+          moved to their own dedicated steps below. */}
+      {currentStepKey === 'schedule' ? (
         <div className="space-y-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -451,141 +477,6 @@ export function BookingForm({
             {t('fields.needTransport')}
           </label>
 
-          {form.needTransport ? (
-            <div className="space-y-4 rounded-xl bg-primary-light/40 p-4">
-              <select
-                className="form-input"
-                value={form.transportPartnerId}
-                onChange={(e) => update('transportPartnerId', e.target.value)}
-              >
-                <option value="">{t('fields.letTeamDecide')}</option>
-                {transportOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title as string}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="form-input"
-                value={form.transportMode}
-                onChange={(e) => update('transportMode', e.target.value as TransportMode)}
-              >
-                <option value="one_way">{t('fields.oneWay')}</option>
-                <option value="round_trip">{t('fields.roundTrip')}</option>
-                <option value="daily">{t('fields.daily')}</option>
-              </select>
-
-              <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
-                <p className="text-sm font-semibold text-primary-dark">{t('fields.pickupSectionTitle')}</p>
-                <div>
-                  <label className="form-label">{t('fields.pickupLocation')} *</label>
-                  <select
-                    className="form-input"
-                    value={form.transportPickupLocationType}
-                    onChange={(e) => update('transportPickupLocationType', e.target.value as LocationType)}
-                  >
-                    <option value="">{t('fields.select')}</option>
-                    <option value="nongkhai_bridge">{t('fields.locationNongkhaiBridge')}</option>
-                    <option value="nakhon_phanom_bridge">{t('fields.locationNakhonPhanomBridge')}</option>
-                    <option value="mukdahan_bridge">{t('fields.locationMukdahanBridge')}</option>
-                    <option value="chong_mek">{t('fields.locationChongMek')}</option>
-                    <option value="udon_airport">{t('fields.locationUdonAirport')}</option>
-                    <option value="hotel">{t('fields.locationHotel')}</option>
-                    <option value="other">{t('fields.locationOther')}</option>
-                  </select>
-                  {form.transportPickupLocationType === 'hotel' || form.transportPickupLocationType === 'other' ? (
-                    <input
-                      type="text"
-                      className="form-input mt-2"
-                      placeholder={
-                        form.transportPickupLocationType === 'hotel'
-                          ? t('fields.locationHotelPlaceholder')
-                          : t('fields.locationOtherPlaceholder')
-                      }
-                      value={form.transportPickupLocationDetail}
-                      onChange={(e) => update('transportPickupLocationDetail', e.target.value)}
-                    />
-                  ) : null}
-                </div>
-                <div className="space-y-2">
-                  <DatePicker
-                    value={form.transportPickupDate}
-                    onChange={(v) => update('transportPickupDate', v)}
-                    min={new Date().toISOString().slice(0, 10)}
-                  />
-                  <TimePicker
-                    value={form.transportPickupTime}
-                    onChange={(v) => update('transportPickupTime', v)}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
-                <p className="text-sm font-semibold text-primary-dark">{t('fields.dropoffSectionTitle')}</p>
-                <div>
-                  <label className="form-label">{t('fields.dropoffLocation')} *</label>
-                  <select
-                    className="form-input"
-                    value={form.transportDropoffLocationType}
-                    onChange={(e) => update('transportDropoffLocationType', e.target.value as LocationType)}
-                  >
-                    <option value="">{t('fields.select')}</option>
-                    <option value="nongkhai_bridge">{t('fields.locationNongkhaiBridge')}</option>
-                    <option value="nakhon_phanom_bridge">{t('fields.locationNakhonPhanomBridge')}</option>
-                    <option value="mukdahan_bridge">{t('fields.locationMukdahanBridge')}</option>
-                    <option value="chong_mek">{t('fields.locationChongMek')}</option>
-                    <option value="udon_airport">{t('fields.locationUdonAirport')}</option>
-                    <option value="hotel">{t('fields.locationHotel')}</option>
-                    <option value="other">{t('fields.locationOther')}</option>
-                  </select>
-                  {form.transportDropoffLocationType === 'hotel' || form.transportDropoffLocationType === 'other' ? (
-                    <input
-                      type="text"
-                      className="form-input mt-2"
-                      placeholder={
-                        form.transportDropoffLocationType === 'hotel'
-                          ? t('fields.locationHotelPlaceholder')
-                          : t('fields.locationOtherPlaceholder')
-                      }
-                      value={form.transportDropoffLocationDetail}
-                      onChange={(e) => update('transportDropoffLocationDetail', e.target.value)}
-                    />
-                  ) : null}
-                </div>
-                {/* Intentionally no date/time here — arrival time at
-                    the drop-off point isn't something the customer
-                    can set themselves (depends on route/traffic from
-                    the pickup time above). */}
-              </div>
-
-              {form.transportMode === 'round_trip' ? (
-                <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
-                  <p className="text-sm font-semibold text-primary-dark">{t('fields.returnSectionTitle')}</p>
-                  <div className="space-y-2">
-                    <DatePicker
-                      value={form.transportReturnDate}
-                      onChange={(v) => update('transportReturnDate', v)}
-                      min={form.transportPickupDate || new Date().toISOString().slice(0, 10)}
-                    />
-                    <TimePicker
-                      value={form.transportReturnTime}
-                      onChange={(v) => update('transportReturnTime', v)}
-                    />
-                  </div>
-                </div>
-              ) : null}
-              {form.transportMode === 'daily' ? (
-                <input
-                  type="number"
-                  min={1}
-                  className="form-input"
-                  value={form.transportDays}
-                  onChange={(e) => update('transportDays', parseInt(e.target.value, 10) || 1)}
-                />
-              ) : null}
-            </div>
-          ) : null}
-
           <label className="flex items-center gap-2 text-sm text-slate-600">
             <input
               type="checkbox"
@@ -595,78 +486,219 @@ export function BookingForm({
             />
             {t('fields.needHotel')}
           </label>
+        </div>
+      ) : null}
 
-          {form.needHotel ? (
-            <div className="space-y-4 rounded-xl bg-primary-light/40 p-4">
+      {/* Step: transport details — only reachable when needTransport is on */}
+      {currentStepKey === 'transport' ? (
+        <div className="space-y-4">
+          <select
+            className="form-input"
+            value={form.transportPartnerId}
+            onChange={(e) => update('transportPartnerId', e.target.value)}
+          >
+            <option value="">{t('fields.letTeamDecide')}</option>
+            {transportOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title as string}
+              </option>
+            ))}
+          </select>
+          <select
+            className="form-input"
+            value={form.transportMode}
+            onChange={(e) => update('transportMode', e.target.value as TransportMode)}
+          >
+            <option value="one_way">{t('fields.oneWay')}</option>
+            <option value="round_trip">{t('fields.roundTrip')}</option>
+            <option value="daily">{t('fields.daily')}</option>
+          </select>
+
+          <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
+            <p className="text-sm font-semibold text-primary-dark">{t('fields.pickupSectionTitle')}</p>
+            <div>
+              <label className="form-label">{t('fields.pickupLocation')} *</label>
               <select
                 className="form-input"
-                value={form.hotelPartnerId}
-                onChange={(e) => update('hotelPartnerId', e.target.value)}
+                value={form.transportPickupLocationType}
+                onChange={(e) => update('transportPickupLocationType', e.target.value as LocationType)}
               >
-                <option value="">{t('fields.letTeamDecide')}</option>
-                {hotelOptions.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.title as string}
-                  </option>
-                ))}
+                <option value="">{t('fields.select')}</option>
+                <option value="nongkhai_bridge">{t('fields.locationNongkhaiBridge')}</option>
+                <option value="nakhon_phanom_bridge">{t('fields.locationNakhonPhanomBridge')}</option>
+                <option value="mukdahan_bridge">{t('fields.locationMukdahanBridge')}</option>
+                <option value="chong_mek">{t('fields.locationChongMek')}</option>
+                <option value="udon_airport">{t('fields.locationUdonAirport')}</option>
+                <option value="hotel">{t('fields.locationHotel')}</option>
+                <option value="other">{t('fields.locationOther')}</option>
               </select>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="form-label">{t('fields.hotelCheckin')} *</label>
-                  <DatePicker
-                    value={form.hotelCheckinDate}
-                    min={new Date().toISOString().slice(0, 10)}
-                    onChange={(newCheckin) => {
-                      update('hotelCheckinDate', newCheckin);
-                      // If checkout is no longer after the new checkin, clear it
-                      // so the customer can't submit an invalid range.
-                      if (form.hotelCheckoutDate && calcNights(newCheckin, form.hotelCheckoutDate) <= 0) {
-                        update('hotelCheckoutDate', '');
-                      }
-                    }}
-                  />
-                </div>
-                <div>
-                  <label className="form-label">{t('fields.hotelCheckout')} *</label>
-                  <DatePicker
-                    value={form.hotelCheckoutDate}
-                    min={form.hotelCheckinDate || undefined}
-                    onChange={(v) => update('hotelCheckoutDate', v)}
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="form-label">{t('fields.roomQuantity')}</label>
-                <select
-                  className="form-input"
-                  value={form.roomQuantity}
-                  onChange={(e) => update('roomQuantity', Number(e.target.value))}
-                >
-                  {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
-                    <option key={n} value={n}>
-                      {n}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {hotelNights > 0 ? (
-                <p className="text-sm font-medium text-primary">
-                  {t('summary.nightsCount', { count: hotelNights })}
-                  {form.roomQuantity > 1
-                    ? ` · ${t('summary.roomsCount', { count: form.roomQuantity })}`
-                    : ''}
-                </p>
+              {form.transportPickupLocationType === 'hotel' || form.transportPickupLocationType === 'other' ? (
+                <input
+                  type="text"
+                  className="form-input mt-2"
+                  placeholder={
+                    form.transportPickupLocationType === 'hotel'
+                      ? t('fields.locationHotelPlaceholder')
+                      : t('fields.locationOtherPlaceholder')
+                  }
+                  value={form.transportPickupLocationDetail}
+                  onChange={(e) => update('transportPickupLocationDetail', e.target.value)}
+                />
               ) : null}
             </div>
+            <div className="space-y-2">
+              <DatePicker
+                value={form.transportPickupDate}
+                onChange={(v) => update('transportPickupDate', v)}
+                min={new Date().toISOString().slice(0, 10)}
+              />
+              <TimePicker
+                value={form.transportPickupTime}
+                onChange={(v) => update('transportPickupTime', v)}
+              />
+            </div>
+          </div>
+
+          <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
+            <p className="text-sm font-semibold text-primary-dark">{t('fields.dropoffSectionTitle')}</p>
+            <div>
+              <label className="form-label">{t('fields.dropoffLocation')} *</label>
+              <select
+                className="form-input"
+                value={form.transportDropoffLocationType}
+                onChange={(e) => update('transportDropoffLocationType', e.target.value as LocationType)}
+              >
+                <option value="">{t('fields.select')}</option>
+                {/* Follows whatever drop-off the booked itinerary already
+                    implies (e.g. next stop on plan) — lets the customer
+                    skip picking a specific point when one isn't needed. */}
+                <option value="per_itinerary">{t('fields.locationPerItinerary')}</option>
+                <option value="nongkhai_bridge">{t('fields.locationNongkhaiBridge')}</option>
+                <option value="nakhon_phanom_bridge">{t('fields.locationNakhonPhanomBridge')}</option>
+                <option value="mukdahan_bridge">{t('fields.locationMukdahanBridge')}</option>
+                <option value="chong_mek">{t('fields.locationChongMek')}</option>
+                <option value="udon_airport">{t('fields.locationUdonAirport')}</option>
+                <option value="hotel">{t('fields.locationHotel')}</option>
+                <option value="other">{t('fields.locationOther')}</option>
+              </select>
+              {form.transportDropoffLocationType === 'hotel' || form.transportDropoffLocationType === 'other' ? (
+                <input
+                  type="text"
+                  className="form-input mt-2"
+                  placeholder={
+                    form.transportDropoffLocationType === 'hotel'
+                      ? t('fields.locationHotelPlaceholder')
+                      : t('fields.locationOtherPlaceholder')
+                  }
+                  value={form.transportDropoffLocationDetail}
+                  onChange={(e) => update('transportDropoffLocationDetail', e.target.value)}
+                />
+              ) : null}
+            </div>
+            {/* Intentionally no date/time here — arrival time at
+                the drop-off point isn't something the customer
+                can set themselves (depends on route/traffic from
+                the pickup time above). */}
+          </div>
+
+          {form.transportMode === 'round_trip' ? (
+            <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
+              <p className="text-sm font-semibold text-primary-dark">{t('fields.returnSectionTitle')}</p>
+              <div className="space-y-2">
+                <DatePicker
+                  value={form.transportReturnDate}
+                  onChange={(v) => update('transportReturnDate', v)}
+                  min={form.transportPickupDate || new Date().toISOString().slice(0, 10)}
+                />
+                <TimePicker
+                  value={form.transportReturnTime}
+                  onChange={(v) => update('transportReturnTime', v)}
+                />
+              </div>
+            </div>
+          ) : null}
+          {form.transportMode === 'daily' ? (
+            <input
+              type="number"
+              min={1}
+              className="form-input"
+              value={form.transportDays}
+              onChange={(e) => update('transportDays', parseInt(e.target.value, 10) || 1)}
+            />
           ) : null}
         </div>
       ) : null}
 
-      {/* Step 2: contact info + attachment */}
-      {step === 2 ? (
+      {/* Step: hotel details — only reachable when needHotel is on */}
+      {currentStepKey === 'hotel' ? (
+        <div className="space-y-4">
+          <select
+            className="form-input"
+            value={form.hotelPartnerId}
+            onChange={(e) => update('hotelPartnerId', e.target.value)}
+          >
+            <option value="">{t('fields.letTeamDecide')}</option>
+            {hotelOptions.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.title as string}
+              </option>
+            ))}
+          </select>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="form-label">{t('fields.hotelCheckin')} *</label>
+              <DatePicker
+                value={form.hotelCheckinDate}
+                min={new Date().toISOString().slice(0, 10)}
+                onChange={(newCheckin) => {
+                  update('hotelCheckinDate', newCheckin);
+                  // If checkout is no longer after the new checkin, clear it
+                  // so the customer can't submit an invalid range.
+                  if (form.hotelCheckoutDate && calcNights(newCheckin, form.hotelCheckoutDate) <= 0) {
+                    update('hotelCheckoutDate', '');
+                  }
+                }}
+              />
+            </div>
+            <div>
+              <label className="form-label">{t('fields.hotelCheckout')} *</label>
+              <DatePicker
+                value={form.hotelCheckoutDate}
+                min={form.hotelCheckinDate || undefined}
+                onChange={(v) => update('hotelCheckoutDate', v)}
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="form-label">{t('fields.roomQuantity')}</label>
+            <select
+              className="form-input"
+              value={form.roomQuantity}
+              onChange={(e) => update('roomQuantity', Number(e.target.value))}
+            >
+              {Array.from({ length: 10 }, (_, i) => i + 1).map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {hotelNights > 0 ? (
+            <p className="text-sm font-medium text-primary-dark">
+              {t('summary.nightsCount', { count: hotelNights })}
+              {form.roomQuantity > 1
+                ? ` · ${t('summary.roomsCount', { count: form.roomQuantity })}`
+                : ''}
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+
+      {/* Step: contact info + attachment */}
+      {currentStepKey === 'contact' ? (
         <div className="space-y-5">
           <div>
             <label className="form-label">{t('fields.name')} *</label>
@@ -720,8 +752,8 @@ export function BookingForm({
         </div>
       ) : null}
 
-      {/* Step 3: review + price summary + submit */}
-      {step === 3 ? (
+      {/* Step: review + price summary + submit */}
+      {currentStepKey === 'review' ? (
         <div className="space-y-5">
           <div className="space-y-1 rounded-2xl border border-primary/10 bg-primary-light/60 px-5 py-4 text-sm">
             <div className="flex justify-between text-slate-600">

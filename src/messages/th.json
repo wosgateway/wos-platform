@@ -7,6 +7,14 @@
       "ctaPrimary": "ค้นหาโปรแกรมสุขภาพ",
       "ctaSecondary": "สำหรับพันธมิตร"
     },
+    "heroV2": {
+      "eyebrow": "CROSS-BORDER HEALTHCARE",
+      "title": "WOS — แพลตฟอร์มสุขภาพข้ามแดน ไทย–ลาว",
+      "subtitle": "เชื่อมทุกขั้นตอนการดูแลสุขภาพระหว่างลาวและไทยไว้ในที่เดียว",
+      "ctaPrimary": "ค้นหาบริการสุขภาพ",
+      "ctaSecondary": "เป็นพันธมิตรกับ WOS",
+      "badge": "Health Journey Platform"
+    },
     "trustBar": {
       "items": [
         {
@@ -25,7 +33,8 @@
           "value": "2 ประเทศ",
           "label": "ไทย–ลาว"
         }
-      ]
+      ],
+      "headline": "เครือข่ายข้ามพรมแดนที่เชื่อถือได้"
     },
     "partners": {
       "label": "ได้รับความไว้วางใจจากพันธมิตรชั้นนำ",
@@ -94,6 +103,31 @@
         }
       ]
     },
+    "healthGoals": {
+      "eyebrow": "WHAT BRINGS YOU HERE?",
+      "title": "ค้นหาเป้าหมายสุขภาพของคุณ",
+      "subtitle": "เลือกเป้าหมาย เราจะช่วยคุณวางแผนการดูแลสุขภาพที่เหมาะสมที่สุด",
+      "viewAllCta": "ดูโปรแกรมทั้งหมด",
+      "exploreCta": "ดูรายละเอียด",
+      "items": [
+        {
+          "label": "PREVENT",
+          "desc": "ตรวจสุขภาพและคัดกรอง"
+        },
+        {
+          "label": "RESTORE",
+          "desc": "รักษาและฟื้นฟู"
+        },
+        {
+          "label": "RENEW",
+          "desc": "ความงามและสุขภาพองค์รวม"
+        },
+        {
+          "label": "OPTIMIZE",
+          "desc": "ชะลอวัยและยืดอายุ"
+        }
+      ]
+    },
     "categoriesTitle": "เลือกเป้าหมายสุขภาพของคุณ",
     "categoriesSubtitle": "ไม่ว่าจะดูแลป้องกัน ฟื้นฟู หรือรักษา เราพาคุณไปหาพันธมิตรที่ใช่",
     "featured": {
@@ -119,6 +153,32 @@
           "quote": "ประสานงานเรื่องที่พักและรถรับส่งให้ครบ สะดวกมาก",
           "name": "คุณมาลี",
           "meta": "ไทย"
+        }
+      ]
+    },
+    "testimonialsV2": {
+      "title": "เรื่องราวจากผู้ใช้บริการจริง",
+      "items": [
+        {
+          "quote": "ทีมงานดูแลตั้งแต่ต้นจนจบ ประทับใจมากค่ะ",
+          "name": "คุณสุดา",
+          "route": "ลาว → ไทย",
+          "service": "ตรวจสุขภาพ",
+          "rating": 5.0
+        },
+        {
+          "quote": "จองง่าย ราคาชัดเจน ไม่มีค่าใช้จ่ายแอบแฝง",
+          "name": "คุณจอห์น",
+          "route": "ลูกค้าต่างชาติ",
+          "service": "ทันตกรรม",
+          "rating": 5.0
+        },
+        {
+          "quote": "ประสานงานเรื่องที่พักและรถรับส่งให้ครบ สะดวกมาก",
+          "name": "คุณมาลี",
+          "route": "ไทย",
+          "service": "เวลเนสและดีท็อกซ์",
+          "rating": 5.0
         }
       ]
     },
@@ -195,7 +255,8 @@
     "viewPackagesAndBook": "ดูแพ็กเกจ & จอง",
     "reviewsSuffix": "รีวิว",
     "searchPlaceholder": "ค้นหาชื่อพาร์ทเนอร์หรือจังหวัด...",
-    "noSearchResults": "ไม่พบพาร์ทเนอร์ที่ตรงกับการค้นหา"
+    "noSearchResults": "ไม่พบพาร์ทเนอร์ที่ตรงกับการค้นหา",
+    "verifiedPartner": "พาร์ทเนอร์ยืนยันแล้ว"
   },
   "booking": {
     "back": "ย้อนกลับ",
@@ -245,7 +306,8 @@
       "hotelCheckoutPlaceholder": "เลือกวันเช็คเอาท์",
       "roomQuantity": "จำนวนห้อง",
       "hv": "ผู้ใหญ่",
-      "mv": "เด็ก"
+      "mv": "เด็ก",
+      "locationPerItinerary": "🗺️ ตามแผนการเดินทาง (ไม่ต้องระบุจุด)"
     },
     "summary": {
       "main": "โปรแกรมหลัก",
@@ -260,7 +322,8 @@
     },
     "errorHotelDates": "กรุณาเลือกวันเช็คอินและเช็คเอาท์ให้ถูกต้อง",
     "errorPickupLocation": "กรุณาระบุจุดรับ",
-    "errorDropoffLocation": "กรุณาระบุจุดส่ง"
+    "errorDropoffLocation": "กรุณาระบุจุดส่ง",
+    "viewOrderStatus": "ดูสถานะการจอง / ชำระเงิน"
   },
   "becomePartner": {
     "meta": {
@@ -332,21 +395,21 @@
   },
   "footer": {
     "tagline": "แพลตฟอร์ม Health & Longevity เชื่อมการดูแลสุขภาพข้ามพรมแดน",
-    "servicesTitle": "บริการ",
+    "servicesTitle": "สำรวจ",
     "services": [
       "Consult",
       "Checkup",
       "Aesthetics",
       "Dental"
     ],
-    "partnersTitle": "พันธมิตร",
+    "partnersTitle": "เครือข่าย",
     "partners": [
       "Join Network",
       "Investor",
       "Hospital",
       "Hotel"
     ],
-    "contactTitle": "ติดต่อ",
+    "contactTitle": "ติดต่อเรา",
     "contactPhoneTh": "โทร (ไทย): 085-590-7666",
     "contactPhoneLo": "โทร (ลาว): +856 20 9872 4718",
     "companyLine": "หจก. รอยัล บริตจ์ 99 · เลขที่ 211 หมู่ 3 ถ.มิตรภาพ ต.บ้านจั่น อ.เมือง อุดรธานี 41000 · ทะเบียนนิติบุคคล: 0413568000586",
@@ -764,6 +827,8 @@
     "notPayableStatus": "รายการนี้ไม่สามารถชำระเงินได้ในสถานะปัจจุบัน",
     "backToStatus": "กลับไปดูสถานะการจอง",
     "fullyPaid": "✅ ชำระเงินครบถ้วนแล้ว ไม่มียอดคงเหลือ",
+    "pendingVerificationTitle": "🔍 มีสลิปรอตรวจสอบอยู่แล้ว",
+    "pendingVerificationBody": "ทีมงานกำลังตรวจสอบสลิปที่คุณส่งไว้ กรุณารอ (ปกติภายใน 24 ชั่วโมง) ก่อนส่งสลิปใหม่",
     "submittedTitle": "✅ ส่งสลิปสำเร็จ",
     "submittedBody": "ทีมงานจะตรวจสอบและยืนยันภายใน 24 ชั่วโมง",
     "currencyLabel": "เลือกสกุลเงิน",
@@ -801,6 +866,13 @@
     "programFallback": "โปรแกรม",
     "pickupLabel": "รับ:",
     "dropoffLabel": "ส่ง:",
+    "checkoutLabel": "ถึง",
+    "nightsLabel": "{count} คืน",
+    "roomsLabel": "{count} ห้อง",
+    "dailyLabel": "เหมารายวัน · {count} วัน",
+    "roundTripLabel": "ไป-กลับ",
+    "oneWayLabel": "เที่ยวเดียว",
+    "returnLabel": "ส่งกลับ",
     "totalLabel": "ยอดรวมทั้งหมด",
     "depositRequiredLabel": "มัดจำที่ต้องชำระ",
     "confirmedBanner": "ยืนยันรายการแล้ว — ไปต่อที่ขั้นตอนชำระมัดจำได้เลย",

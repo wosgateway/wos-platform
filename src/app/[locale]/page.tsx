@@ -1,30 +1,33 @@
 import { getTranslations } from 'next-intl/server';
-import { Link } from '@/i18n/navigation';
 import { CATEGORIES } from '@/lib/categories';
-import { WHY_IMAGES } from '@/lib/why';
 import { fetchFeaturedPackages } from '@/lib/data';
 import { CategoryCard } from '@/components/CategoryCard';
-import { WhyCard } from '@/components/WhyCard';
-import { TrustBar } from '@/components/TrustBar';
 import { PartnerLogos } from '@/components/PartnerLogos';
-import { JourneyTimeline } from '@/components/JourneyTimeline';
-import { FeaturedProgramsSlider } from '@/components/FeaturedProgramsSlider';
-import { Testimonials } from '@/components/Testimonials';
+import { JourneyTimelineV2 } from '@/components/JourneyTimelineV2';
+import { WhyWosV2 } from '@/components/WhyWosV2';
+// HealthGoalFinder disabled — duplicated the Categories section title/subtitle
+// right below it. Keeping the import/component/translations in place in case
+// we want to bring it back later (e.g. once Explore is wired to real filters).
+// import { HealthGoalFinder } from '@/components/HealthGoalFinder';
+import { FeaturedProgramsSliderV2 } from '@/components/FeaturedProgramsSliderV2';
+import { TestimonialsV2 } from '@/components/TestimonialsV2';
 import { FAQ } from '@/components/FAQ';
 import { KnowledgeCenter } from '@/components/KnowledgeCenter';
-import HeroSlider from '@/components/HeroSlider';
-
-const HERO_SLIDES = [
-  { src: '/images/hero/hero-1.webp', alt: 'โรงพยาบาลพันธมิตร WOS' },
-  { src: '/images/hero/hero-2.webp', alt: 'ทีมแพทย์มืออาชีพ' },
-  { src: '/images/hero/hero-3.webp', alt: 'บริการข้ามพรมแดนไทย-ลาว' },
-];
+import HeroV2 from '@/components/HeroV2';
 
 export default async function HomePage() {
   const t = await getTranslations('home');
   const tCat = await getTranslations('categories');
 
   const whyItems = t.raw('why.items') as { title: string; desc: string }[];
+  // const goalItems = t.raw('healthGoals.items') as { label: string; desc: string }[]; // HealthGoalFinder disabled
+  const testimonialItemsV2 = t.raw('testimonialsV2.items') as {
+    quote: string;
+    name: string;
+    route: string;
+    service: string;
+    rating: number;
+  }[];
 
   // ดึงแพ็กเกจโปรโมชันมาแสดงเป็นสไลด์ "โปรแกรมแนะนำ" — กันพังทั้งหน้า
   // ถ้า query ล้มเหลว (เช่น ยังไม่มีแพ็กเกจติด is_promotion) ให้ fallback เป็น [] เฉยๆ
@@ -37,65 +40,35 @@ export default async function HomePage() {
 
   return (
     <main>
-      {/* ===== HERO ===== */}
-      <section className="relative min-h-[70vh] flex items-center overflow-hidden">
-        <HeroSlider slides={HERO_SLIDES} />
+      {/* ===== HERO (WOS.os rebrand, network diagram slotted in) ===== */}
+      <HeroV2 image={{ src: '/images/hero/hero-1.webp', alt: 'WOS.os cross-border health journey' }} />
 
-        <div className="relative z-10 mx-auto max-w-4xl px-4 text-center py-20">
-          <span className="inline-block rounded-full bg-white/20 backdrop-blur-sm px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-white">
-            {t('hero.badge')}
-          </span>
-          <h1 className="mt-5 text-3xl font-bold leading-tight text-white md:text-5xl drop-shadow-md">
-            {t('hero.title')}
-          </h1>
-          <p className="mx-auto mt-4 max-w-2xl text-white/90 drop-shadow-md md:text-lg">
-            {t('hero.subtitle')}
-          </p>
-          <div className="mt-8 flex flex-wrap items-center justify-center gap-4">
-            <a href="#categories" className="btn-primary">
-              {t('hero.ctaPrimary')}
-            </a>
-            <Link
-              href="/become-partner"
-              className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-white px-8 py-[0.8rem] font-semibold text-white transition-all duration-200 hover:bg-white hover:text-primary"
-            >
-              {t('hero.ctaSecondary')}
-            </Link>
-          </div>
-
-          {/* NEW: trust stats under the CTAs */}
-          <TrustBar />
-        </div>
-      </section>
-
-      {/* ===== PARTNER LOGOS (NEW) ===== */}
+      {/* ===== PARTNER LOGOS ===== */}
       <PartnerLogos />
 
-      {/* ===== PATIENT JOURNEY (NEW) ===== */}
-      <JourneyTimeline />
+      {/* ===== PATIENT JOURNEY ===== */}
+      <JourneyTimelineV2 />
 
       {/* ===== WHY WOS ===== */}
-      <section className="section-padding bg-white">
-        <div className="mx-auto max-w-5xl px-4">
-          <h2 className="text-center text-2xl font-bold text-slate-900 md:text-3xl">
-            {t('why.title')}
-          </h2>
-          <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {whyItems.map((item, i) => (
-              <WhyCard
-                key={i}
-                image={WHY_IMAGES[i]?.image ?? '/images/hero/hero-main.webp'}
-                alt={WHY_IMAGES[i]?.alt ?? item.title}
-                title={item.title}
-                desc={item.desc}
-              />
-            ))}
-          </div>
-        </div>
-      </section>
+      <WhyWosV2 title={t('why.title')} items={whyItems} />
+
+      {/* ===== HEALTH GOAL FINDER (disabled) =====
+          Duplicated the Categories title/subtitle right below it, and its
+          Explore buttons are still presentation-only stubs. Removed from the
+          page for now; component + translations left untouched to re-enable
+          later.
+      <HealthGoalFinder
+        eyebrow={t('healthGoals.eyebrow')}
+        title={t('healthGoals.title')}
+        subtitle={t('healthGoals.subtitle')}
+        viewAllCta={t('healthGoals.viewAllCta')}
+        exploreCta={t('healthGoals.exploreCta')}
+        items={goalItems}
+      />
+      */}
 
       {/* ===== CATEGORIES ===== */}
-      <section id="categories" className="section-padding mx-auto max-w-5xl px-4">
+      <section id="categories" className="section-padding mx-auto max-w-5xl scroll-mt-16 px-4">
         <div className="mb-10 text-center">
           <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">{t('categoriesTitle')}</h2>
           <p className="mt-2 text-slate-500">{t('categoriesSubtitle')}</p>
@@ -108,16 +81,21 @@ export default async function HomePage() {
         </div>
       </section>
 
-      {/* ===== FEATURED PROGRAMS SLIDER (NEW) ===== */}
-      <FeaturedProgramsSlider packages={featuredPackages} />
+      {/* ===== FEATURED PROGRAMS =====
+          Uses the real AddToJourneyButton / lib/journey/context — adding an
+          item here actually shows up in the JourneyCartBar, same as
+          anywhere else on the site. Not a mock. */}
+      <FeaturedProgramsSliderV2 packages={featuredPackages} />
 
       {/* ===== KNOWLEDGE CENTER (replaces old HowItWorks 3-step block) ===== */}
       <KnowledgeCenter />
 
-      {/* ===== TESTIMONIALS (NEW) ===== */}
-      <Testimonials />
+      {/* ===== TESTIMONIALS ("Real Journeys") =====
+          Initials avatars, not photos — no consented patient photos exist
+          yet (PDPA). Quotes are still placeholder copy either way. */}
+      <TestimonialsV2 title={t('testimonialsV2.title')} items={testimonialItemsV2} />
 
-      {/* ===== FAQ (NEW) ===== */}
+      {/* ===== FAQ ===== */}
       <FAQ />
     </main>
   );

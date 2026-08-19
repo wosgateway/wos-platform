@@ -51,16 +51,41 @@ interface PaymentRow {
   currency: string | null;
   method: string | null;
   status: string;
-  slip_url: string | null;
+  // slip_url intentionally NOT selected/typed here — this is the
+  // list view, and no component here ever renders it. As of
+  // migration 033 (private payment-slips bucket) the stored value
+  // would be a dead public URL anyway; a live one would require a
+  // signed-URL call per payment on every list page load. The one
+  // place that DOES need to show a slip is the order detail route
+  // (/api/admin/orders/[id]/route.ts), which calls
+  // attachSignedSlipUrls() — see src/lib/storage/signed-slip-url.ts.
   submitted_at: string | null;
   verified_at: string | null;
   rejection_reason: string | null;
 }
 
+// Copies any refreshed session cookies from the "carrier" response
+// (the one requireAdmin wrote into) onto the real outgoing response.
+// Every return path below goes through this so a token refresh that
+// happens mid-request is never silently dropped.
+function withRefreshedCookies(res: NextResponse, carrier: NextResponse): NextResponse {
+  carrier.cookies.getAll().forEach((cookie) => {
+    res.cookies.set(cookie);
+  });
+  return res;
+}
+
 export async function GET() {
-  const auth = await requireAdmin();
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  const cookieCarrier = new NextResponse();
+
+  const auth = await requireAdmin(cookieCarrier);
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.message }, { status: auth.status });
+    return withRefreshedCookies(
+      NextResponse.json({ error: auth.message }, { status: auth.status }),
+      cookieCarrier
+    );
   }
 
   const supabase = createServiceClient();
@@ -75,10 +100,13 @@ export async function GET() {
 
   if (ordersErr) {
     console.error('fetch orders failed:', ordersErr);
-    return NextResponse.json({ error: 'failed to load orders' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load orders' }, { status: 500 }),
+      cookieCarrier
+    );
   }
   if (!orders || orders.length === 0) {
-    return NextResponse.json({ orders: [] });
+    return withRefreshedCookies(NextResponse.json({ orders: [] }), cookieCarrier);
   }
 
   const orderIds = orders.map((o) => o.id);
@@ -91,15 +119,18 @@ export async function GET() {
   // both) — and now also needs room_quantity (migration 028). All
   // three fixed here together.
   const { data: items, error: itemsErr } = await supabase
-    .from('order_items')
-    .select(
-      'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity'
-    )
-    .in('order_id', orderIds);
+  .from('order_items')
+  .select(
+    'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity'
+  )
+  .in('order_id', orderIds)
 
   if (itemsErr) {
     console.error('fetch order_items failed:', itemsErr);
-    return NextResponse.json({ error: 'failed to load order items' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load order items' }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   // 3. Customers
@@ -110,7 +141,10 @@ export async function GET() {
 
   if (customersErr) {
     console.error('fetch customers failed:', customersErr);
-    return NextResponse.json({ error: 'failed to load customers' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load customers' }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   // 3b. Whole-order payments (order_item_id IS NULL) — these are the
@@ -120,14 +154,17 @@ export async function GET() {
   // to render a Payments section with Verify/Reject actions.
   const { data: payments, error: paymentsErr } = await supabase
     .from('payments')
-    .select('id, order_id, amount, currency, method, status, slip_url, submitted_at, verified_at, rejection_reason')
+    .select('id, order_id, amount, currency, method, status, submitted_at, verified_at, rejection_reason')
     .in('order_id', orderIds)
     .is('order_item_id', null)
     .order('submitted_at', { ascending: false });
 
   if (paymentsErr) {
     console.error('fetch payments failed:', paymentsErr);
-    return NextResponse.json({ error: 'failed to load payments' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load payments' }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   const paymentsByOrder = new Map<string, PaymentRow[]>();
@@ -162,11 +199,17 @@ export async function GET() {
 
   if (packagesRes.error) {
     console.error('fetch packages failed:', packagesRes.error);
-    return NextResponse.json({ error: 'failed to load packages' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load packages' }, { status: 500 }),
+      cookieCarrier
+    );
   }
   if (partnersRes.error) {
     console.error('fetch partners failed:', partnersRes.error);
-    return NextResponse.json({ error: 'failed to load partners' }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'failed to load partners' }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
   const customerById = new Map((customers ?? []).map((c) => [c.id, c]));
@@ -191,5 +234,5 @@ export async function GET() {
     payments: paymentsByOrder.get(order.id) ?? [],
   }));
 
-  return NextResponse.json({ orders: enriched });
+  return withRefreshedCookies(NextResponse.json({ orders: enriched }), cookieCarrier);
 }

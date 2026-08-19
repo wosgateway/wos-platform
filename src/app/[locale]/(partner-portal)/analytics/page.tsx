@@ -13,7 +13,7 @@ export default async function AnalyticsPage() {
           ภาพรวมยอดจองและรายได้ของ {user.organization.name}
         </p>
       </div>
-      <AnalyticsDashboard organizationId={user.organization_id} />
+      <AnalyticsDashboard partnerId={user.branch?.partner_id ?? null} />
     </div>
   );
 }

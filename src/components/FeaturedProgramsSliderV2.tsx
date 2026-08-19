@@ -2,10 +2,16 @@
 
 import { useRef } from 'react';
 import { useTranslations } from 'next-intl';
-import { PackageCard } from '@/components/PackageCard';
+import { ProgramCardV2 } from '@/components/ProgramCardV2';
 import type { Package } from '@/lib/data';
 
-export function FeaturedProgramsSlider({ packages }: { packages: Package[] }) {
+/**
+ * STEP 8 preview — identical slider mechanics to FeaturedProgramsSlider.tsx,
+ * swapped to render ProgramCardV2 instead of PackageCard so the new card
+ * design can be compared side by side on the homepage before it replaces
+ * the original everywhere (FeaturedProgramsSlider.tsx + PackagesGrid.tsx).
+ */
+export function FeaturedProgramsSliderV2({ packages }: { packages: Package[] }) {
   const t = useTranslations('home');
   const trackRef = useRef<HTMLDivElement>(null);
 
@@ -20,7 +26,7 @@ export function FeaturedProgramsSlider({ packages }: { packages: Package[] }) {
   };
 
   return (
-    <section className="section-padding bg-slate-50">
+    <section className="section-padding bg-white">
       <div className="mx-auto max-w-5xl px-4">
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
@@ -57,7 +63,7 @@ export function FeaturedProgramsSlider({ packages }: { packages: Package[] }) {
               data-slide
               className="w-[75%] shrink-0 snap-start sm:w-[45%] lg:w-[31%]"
             >
-              <PackageCard pkg={pkg} />
+              <ProgramCardV2 pkg={pkg} />
             </div>
           ))}
         </div>

@@ -10,7 +10,7 @@
 --   2. transport_mode (one_way / round_trip / daily)
 --   3. transport return date/time (round_trip only)
 --   4. attachment_url (id doc / referral letter upload)
---   5. "let team decide" hotel/transport — customer can leave the
+--   5. "let team decide" hotel/transport €” customer can leave the
 --      partner unpicked; no real package_id exists yet to resolve
 --      price/partner from, so package_id/partner_id/price/
 --      deposit_required must become nullable, with a flag marking
@@ -39,7 +39,7 @@ ALTER TABLE public.order_items
     CHECK (transport_mode IS NULL OR transport_mode IN ('one_way', 'round_trip', 'daily'));
 
 -- ------------------------------------------------------------
--- 3. order_items: allow "let team decide" rows — no package/partner/
+-- 3. order_items: allow "let team decide" rows €” no package/partner/
 --    price known yet, filled in manually by an admin later.
 --    Safe to run even with existing rows: existing rows already
 --    have all of these populated, so DROP NOT NULL is a no-op for
@@ -53,7 +53,7 @@ ALTER TABLE public.order_items ALTER COLUMN deposit_rule_id DROP NOT NULL;
 
 -- A row is either fully resolved (package_id set, needs_assignment
 -- false) or a placeholder awaiting assignment (package_id null,
--- needs_assignment true) — never a silent in-between state.
+-- needs_assignment true) €” never a silent in-between state.
 ALTER TABLE public.order_items DROP CONSTRAINT IF EXISTS order_items_assignment_consistency_check;
 ALTER TABLE public.order_items
     ADD CONSTRAINT order_items_assignment_consistency_check
@@ -66,7 +66,7 @@ ALTER TABLE public.order_items
 -- ------------------------------------------------------------
 -- NOTE: order total triggers (wherever total_amount /
 -- total_deposit_required get summed on `orders`) must use SUM(),
--- which already skips NULLs — a needs_assignment row with price
+-- which already skips NULLs €” a needs_assignment row with price
 -- NULL simply contributes 0 to the running total until an admin
 -- fills it in. No trigger changes required *if* that's how the
 -- existing trigger is written; worth a quick check if totals look

@@ -33,10 +33,53 @@ interface QuoteItem {
   id: string;
   service_type: string;
   price: number | null;
+  quantity: number | null;
+  room_quantity: number | null;
   scheduled_date: string | null;
   scheduled_time: string | null;
+  hotel_checkout_date: string | null;
+  transport_mode: string | null;
+  transport_return_date: string | null;
+  transport_return_time: string | null;
+  pickup_location: string | null;
+  dropoff_location: string | null;
   package: { title: string } | null;
   partner: { name: string } | null;
+}
+
+// Extra detail lines under an item's title — room count for hotel,
+// mode/days/pickup-dropoff for transport. Mirrors the logic already
+// used correctly in admin/BookingsManager.tsx's transportDetailLabel,
+// extended here to also cover 'daily' (เหมา) mode, which that helper
+// never handled either.
+function tripItemDetailLines(item: QuoteItem): string[] {
+  const lines: string[] = [];
+
+  if (item.service_type === 'hotel') {
+    if (item.scheduled_date || item.hotel_checkout_date) {
+      lines.push(`เข้าพัก ${item.scheduled_date || '-'} ถึง ${item.hotel_checkout_date || '-'}`);
+    }
+    if ((item.room_quantity ?? 1) > 1) {
+      lines.push(`${item.room_quantity} ห้อง`);
+    }
+  }
+
+  if (item.service_type === 'transport') {
+    const mode = item.transport_mode || 'one_way';
+    const pickupTime = `${item.scheduled_date || '-'} ${item.scheduled_time || ''}`.trim();
+    if (mode === 'daily') {
+      lines.push(`เหมารายวัน · ${item.quantity || 1} วัน · เริ่ม ${pickupTime}`);
+    } else if (mode === 'round_trip') {
+      const ret = `${item.transport_return_date || '-'} ${item.transport_return_time || ''}`.trim();
+      lines.push(`ไป-กลับ · รับ ${pickupTime} · ส่งกลับ ${ret}`);
+    } else {
+      lines.push(`เที่ยวเดียว · รับ ${pickupTime}`);
+    }
+    if (item.pickup_location) lines.push(`รับที่: ${item.pickup_location}`);
+    if (item.dropoff_location) lines.push(`ส่งที่: ${item.dropoff_location}`);
+  }
+
+  return lines;
 }
 
 interface OrderData {
@@ -60,6 +103,7 @@ interface PaymentRow {
   submitted_at: string | null;
   verified_at: string | null;
   rejection_reason: string | null;
+  slip_url: string | null;
 }
 
 const STATUS_META: Record<OrderStatus, { label: string; color: string; desc: string }> = {
@@ -137,7 +181,7 @@ export default function MyTripPage() {
     setError(null);
     try {
       const [quoteRes, paymentsRes] = await Promise.all([
-        fetch(`/api/quote/${orderNumber}`),
+        fetch(`/api/quote/${orderNumber}?token=${encodeURIComponent(token)}`),
         fetch(`/api/quote/${orderNumber}/payments?token=${encodeURIComponent(token)}`),
       ]);
       const quoteResult = await quoteRes.json();
@@ -197,7 +241,18 @@ export default function MyTripPage() {
     (order.total_deposit_required ?? 0) - (order.total_deposit_paid ?? 0),
     0
   );
-  const canPay = !NON_PAYABLE_STATUSES.includes(order.status) && balanceRemaining > 0;
+  // A submitted-but-unverified slip doesn't always flip order.status
+  // (that only happens automatically from 'pending_deposit' — see
+  // POST /api/quote/[orderNumber]/payments). If the order was already
+  // 'confirmed'/'deposit_paid' when the customer paid off the
+  // remaining balance, status stays put until admin verifies, so
+  // balanceRemaining is still > 0 too. Without this check the "ชำระเงิน"
+  // button kept showing even though a slip was already waiting for
+  // review — confusing customers into thinking they hadn't paid.
+  const hasPendingPayment = payments.some(
+    (p) => p.status === 'waiting_verification' || p.status === 'pending'
+  );
+  const canPay = !NON_PAYABLE_STATUSES.includes(order.status) && !hasPendingPayment && balanceRemaining > 0;
 
   return (
     <div className="mx-auto max-w-lg space-y-4 p-6">
@@ -217,18 +272,27 @@ export default function MyTripPage() {
       <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
         <h2 className="border-b border-slate-100 p-5 pb-3 text-sm font-bold text-slate-700">รายการเดินทาง</h2>
         <div className="divide-y divide-slate-50">
-          {order.items.map((item) => (
-            <div key={item.id} className="p-5">
-              <div className="font-medium text-slate-800">
-                {[item.partner?.name, item.package?.title].filter(Boolean).join(' — ') || item.service_type}
-              </div>
-              {item.scheduled_date ? (
-                <div className="text-xs text-slate-500">
-                  {item.scheduled_date} {item.scheduled_time || ''}
+          {order.items.map((item) => {
+            const detailLines = tripItemDetailLines(item);
+            return (
+              <div key={item.id} className="p-5">
+                <div className="font-medium text-slate-800">
+                  {[item.partner?.name, item.package?.title].filter(Boolean).join(' — ') || item.service_type}
                 </div>
-              ) : null}
-            </div>
-          ))}
+                {detailLines.length > 0 ? (
+                  detailLines.map((line, i) => (
+                    <div key={i} className="text-xs text-slate-500">
+                      {line}
+                    </div>
+                  ))
+                ) : item.scheduled_date ? (
+                  <div className="text-xs text-slate-500">
+                    {item.scheduled_date} {item.scheduled_time || ''}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -246,7 +310,7 @@ export default function MyTripPage() {
         </div>
         <div className="mt-1.5 flex justify-between text-sm">
           <span className="text-slate-500">ยอดคงเหลือ</span>
-          <span className="font-semibold text-primary">{formatMoney(balanceRemaining, order.currency)}</span>
+          <span className="font-semibold text-primary-dark">{formatMoney(balanceRemaining, order.currency)}</span>
         </div>
       </div>
 
@@ -257,6 +321,10 @@ export default function MyTripPage() {
         >
           💳 ชำระเงิน
         </Link>
+      ) : hasPendingPayment ? (
+        <div className="rounded-xl border border-blue-100 bg-blue-50 px-4 py-3 text-center text-sm text-blue-700">
+          🔍 ทีมงานกำลังตรวจสอบสลิปที่คุณส่งไว้ กรุณารอ (ปกติภายใน 24 ชม.)
+        </div>
       ) : null}
 
       {/* Payment history */}
@@ -270,6 +338,16 @@ export default function MyTripPage() {
                   <div className="font-medium text-slate-800">{formatMoney(p.amount, p.currency)}</div>
                   {p.rejection_reason ? (
                     <div className="mt-0.5 text-xs text-red-500">เหตุผล: {p.rejection_reason}</div>
+                  ) : null}
+                  {p.slip_url ? (
+                    <a
+                      href={p.slip_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-0.5 inline-block text-xs font-medium text-blue-600 underline underline-offset-2 hover:text-blue-700"
+                    >
+                      ดูสลิป
+                    </a>
                   ) : null}
                 </div>
                 <span className="text-xs font-medium text-slate-600">

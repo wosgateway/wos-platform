@@ -1,9 +1,36 @@
-﻿import type { ReactNode } from 'react';
+import type { ReactNode } from 'react';
+import { Prompt, Noto_Sans_Lao } from 'next/font/google';
+import './globals.css';
 
-// This root layout only exists because Next.js requires one at src/app.
-// All real markup (html/body/fonts/providers) lives further down:
-// src/app/[locale]/layout.tsx for public, locale-prefixed pages, and
-// src/app/admin/layout.tsx for the internal Thai-only admin panel.
-export default function RootLayout({ children }: { children: ReactNode }) {
-  return children;
+const prompt = Prompt({
+  subsets: ['thai', 'latin'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-prompt',
+});
+
+// Prompt has no Lao glyphs at all (Cadson Demak only ships thai/latin/vietnamese),
+// so the /lo pages were silently falling back to the OS default font. Noto Sans Lao
+// is the closest-weight match available on Google Fonts for pairing with Prompt.
+const notoSansLao = Noto_Sans_Lao({
+  subsets: ['lao'],
+  weight: ['400', '500', '600', '700'],
+  variable: '--font-lao',
+});
+
+export default function RootLayout({
+  children,
+  params: { locale },
+}: {
+  children: ReactNode;
+  params: { locale: string };
+}) {
+  return (
+    <html
+      lang={locale ?? 'th'}
+      className={`${prompt.variable} ${notoSansLao.variable}`}
+      suppressHydrationWarning
+    >
+      <body className="font-sans bg-white text-slate-900">{children}</body>
+    </html>
+  );
 }

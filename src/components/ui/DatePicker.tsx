@@ -192,7 +192,7 @@ export function DatePicker({ value, onChange, min, yearsAhead = 2, className }: 
                       : isDisabled
                         ? 'cursor-not-allowed text-slate-300'
                         : isToday
-                          ? 'border border-primary text-primary hover:bg-primary-light'
+                          ? 'border border-primary text-primary-dark hover:bg-primary-light'
                           : 'text-slate-700 hover:bg-slate-100'
                   }`}
                 >

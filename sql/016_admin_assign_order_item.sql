@@ -1,5 +1,5 @@
 -- ============================================================
--- MIGRATION 016: admin_assign_order_item() — lets an admin resolve
+-- MIGRATION 016: admin_assign_order_item() €” lets an admin resolve
 -- a "let team decide" order_items row (needs_assignment = true,
 -- from migration 013/014) into a fully priced, partnered row, using
 -- the exact same price/deposit derivation as
@@ -8,11 +8,11 @@
 --
 -- Guards:
 --   - row must currently have needs_assignment = true (can't
---     re-assign an already-resolved row through this path — that's
+--     re-assign an already-resolved row through this path €” that's
 --     an edit, a different and riskier operation, not in scope here)
 --   - the package's partner category must map to the SAME
 --     service_type the row was created with (hotel stays hotel,
---     transport stays transport) — stops an admin from accidentally
+--     transport stays transport) €” stops an admin from accidentally
 --     assigning a clinic package onto a hotel line item
 -- ============================================================
 
@@ -116,7 +116,7 @@ BEGIN
 END;
 $$;
 
--- Called from the admin API route via the service-role client — the
+-- Called from the admin API route via the service-role client €” the
 -- admin's own session is verified in Next.js (see
 -- lib/admin/require-admin.ts) *before* this is called, same
 -- division of responsibility as create_order_with_items().

@@ -19,12 +19,20 @@
 
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
-  const auth = await requireAdmin();
+  // Used only as a place for Supabase to write a refreshed access/refresh
+  // token pair into, via requireAdmin's setAll(). Never returned directly.
+  const cookieCarrier = new NextResponse();
+
+  const auth = await requireAdmin(cookieCarrier);
   if (!auth.authorized) {
-    return NextResponse.json({ error: auth.message }, { status: auth.status });
+    return withRefreshedCookies(
+      NextResponse.json({ error: auth.message }, { status: auth.status }),
+      cookieCarrier
+    );
   }
 
   const paymentId = params.id;
@@ -40,33 +48,61 @@ export async function POST(request: Request, { params }: { params: { id: string 
     .single();
 
   if (fetchErr || !payment) {
-    return NextResponse.json({ error: 'Payment not found' }, { status: 404 });
-  }
-
-  if (payment.order_item_id) {
-    return NextResponse.json(
-      { error: 'This payment is tied to a single order item — verify it from the partner portal instead.' },
-      { status: 400 }
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Payment not found' }, { status: 404 }),
+      cookieCarrier
     );
   }
 
-  const { data, error } = await supabase.rpc('admin_verify_payment', {
+  if (payment.order_item_id) {
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'This payment is tied to a single order item — verify it from the partner portal instead.' },
+        { status: 400 }
+      ),
+      cookieCarrier
+    );
+  }
+
+  console.log("VERIFY PAYMENT", {
+  paymentId,
+  adminId: auth.user.id,
+});
+
+const { data, error } = await supabase.rpc(
+  'admin_verify_payment',
+  {
     p_payment_id: paymentId,
     p_admin_id: auth.user.id,
-  });
+  }
+);
+
+console.log("RPC RESULT", {
+  data,
+  error,
+});
 
   if (error) {
     if (error.message.includes('payment_not_claimable')) {
-      return NextResponse.json(
-        { error: 'Payment is already verified/rejected (or was just handled) and cannot be re-verified.' },
-        { status: 409 }
+      return withRefreshedCookies(
+        NextResponse.json(
+          { error: 'Payment is already verified/rejected (or was just handled) and cannot be re-verified.' },
+          { status: 409 }
+        ),
+        cookieCarrier
       );
     }
     if (error.message.includes('order_not_found')) {
-      return NextResponse.json({ error: 'Order not found for this payment' }, { status: 404 });
+      return withRefreshedCookies(
+        NextResponse.json({ error: 'Order not found for this payment' }, { status: 404 }),
+        cookieCarrier
+      );
     }
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    return withRefreshedCookies(
+      NextResponse.json({ error: error.message }, { status: 500 }),
+      cookieCarrier
+    );
   }
 
-  return NextResponse.json({ success: true, ...data });
+  return withRefreshedCookies(NextResponse.json({ success: true, ...data }), cookieCarrier);
 }

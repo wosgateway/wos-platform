@@ -1,7 +1,7 @@
 -- ============================================================
 -- 000b_check_real_state.sql
 -- Purpose: the earlier assumption (organization_id columns, no
--- customers table yet) was WRONG — actual schema already has
+-- customers table yet) was WRONG €” actual schema already has
 -- partner_id columns and a customers table. This script finds
 -- out the REAL current state before touching anything.
 -- All read-only. Safe to run anytime.
@@ -51,7 +51,7 @@ FROM public.settlements s
 LEFT JOIN public.partners p ON p.id = s.partner_id
 WHERE s.partner_id IS NOT NULL AND p.id IS NULL;
 
--- 4) orders.patient_id values — are they real UUIDs pointing at
+-- 4) orders.patient_id values €” are they real UUIDs pointing at
 --    an existing `patients` table row, or at a `customers` row,
 --    or neither?
 SELECT id, order_number, patient_id, status, created_at

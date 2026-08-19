@@ -6,14 +6,21 @@
 // 3-step fetch pattern as /api/admin/orders/route.ts (no nested
 // PostgREST selects — FK names not confirmed from migrations).
 //
-// SECURITY: only returns fields safe to show an unauthenticated visitor.
-// Deliberately excludes: notes (internal admin notes), cancelled_reason,
-// attachment_url, patient_id, and the customer's phone/line_id/country —
-// only full_name is returned, for a friendly greeting on the page.
+// SECURITY: order_number is a predictable sequence
+// (WOS-YYYYMMDD-00001, 00002, ...) — NOT a secret. As of this fix,
+// this route requires `?token=` (orders.payment_access_token, added
+// in migration 021) alongside order_number, same boundary already
+// enforced correctly by /payments and the /my-trip pages. Also only
+// returns fields safe to show an unauthenticated visitor who does
+// hold the right token. Deliberately excludes: notes (internal admin
+// notes), cancelled_reason, attachment_url, patient_id, and the
+// customer's phone/line_id/country — only full_name is returned, for
+// a friendly greeting on the page.
 
 import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { simpleRateLimit } from '@/lib/rate-limit';
+import { loadAuthorizedOrder } from '@/lib/orders/authorize-order';
 
 interface PackageRow {
   id: string;
@@ -37,7 +44,7 @@ export async function GET(
   }
 
   // Loose rate limit — this is a read-only public page, but still worth
-  // capping to slow down enumeration attempts against order_number.
+  // capping to slow down brute-force attempts against the token.
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
   const { allowed } = simpleRateLimit(`quote-view:${ip}`, 30, 60 * 60 * 1000);
   if (!allowed) {
@@ -46,24 +53,21 @@ export async function GET(
 
   const supabase = createServiceClient();
 
-  // 1. Order — only the fields safe to expose publicly
-  const { data: order, error: orderErr } = await supabase
-    .from('orders')
-    .select(
-      'id, order_number, patient_id, status, currency, total_amount, total_deposit_required, total_deposit_paid, total_balance_remaining, created_at'
-    )
-    .eq('order_number', orderNumber)
-    .single();
+  const token = new URL(request.url).searchParams.get('token');
+  const { order, error: authError } = await loadAuthorizedOrder(supabase, orderNumber, token);
 
-  if (orderErr || !order) {
-    return NextResponse.json({ error: 'ไม่พบใบเสนอราคานี้' }, { status: 404 });
-  }
+if (authError || !order) {
+  return NextResponse.json(
+    { error: 'order not found' },
+    { status: 404 }
+  );
+}
 
   // 2. Order items
   const { data: items, error: itemsErr } = await supabase
-    .from('order_items')
-    .select('id, package_id, partner_id, service_type, price, scheduled_date, scheduled_time, transport_mode, transport_return_date, transport_return_time, hotel_checkout_date, pickup_location, dropoff_location')
-    .eq('order_id', order.id);
+  .from('order_items')
+  .select('id, package_id, partner_id, service_type, price, room_quantity, scheduled_date, scheduled_time, transport_mode, transport_return_date, transport_return_time, hotel_checkout_date, pickup_location, dropoff_location')
+  .eq('order_id', order.id);
 
   if (itemsErr) {
     console.error('fetch order_items failed:', itemsErr);
@@ -74,7 +78,7 @@ export async function GET(
   const { data: customer, error: customerErr } = await supabase
     .from('customers')
     .select('full_name')
-    .eq('id', order.patient_id)
+    .eq('id', order!.patient_id)
     .single();
 
   if (customerErr) {
@@ -105,14 +109,14 @@ export async function GET(
 
   return NextResponse.json({
     order: {
-      order_number: order.order_number,
-      status: order.status,
-      currency: order.currency,
-      total_amount: order.total_amount,
-      total_deposit_required: order.total_deposit_required,
-      total_deposit_paid: order.total_deposit_paid,
-      total_balance_remaining: order.total_balance_remaining,
-      created_at: order.created_at,
+      order_number: order!.order_number,
+      status: order!.status,
+      currency: order!.currency,
+      total_amount: order!.total_amount,
+      total_deposit_required: order!.total_deposit_required,
+      total_deposit_paid: order!.total_deposit_paid,
+      total_balance_remaining: order!.total_balance_remaining,
+      created_at: order!.created_at,
       customer_name: customer?.full_name ?? null,
       items: enrichedItems,
     },

@@ -28,11 +28,14 @@
 // it shows the customer after a successful booking — see its
 // "done" screen.
 //
-// TODO before this goes live for real traffic: no rate-limiting or
-// captcha yet. This is a public unauthenticated endpoint that can
-// create rows in `customers`/`orders`/`order_items` — worth putting
-// behind something (e.g. Vercel/Upstash rate limit by IP, or a
-// lightweight turnstile/captcha on the BookingForm) before launch.
+// SECURITY: rate-limited by IP and by phone (see simpleRateLimit
+// calls in POST below) — same in-memory limiter already used by
+// quote/[orderNumber]/payments/route.ts. IP alone isn't enough on a
+// public unauthenticated endpoint (shared/rotating IPs, mobile
+// carrier NAT), and phone alone isn't enough either (one attacker can
+// cycle IPs), so both are checked. Still no CAPTCHA/Turnstile in
+// front of BookingForm — worth adding if abuse shows up in practice,
+// but the rate limit closes the "no cost to spam" gap for now.
 //
 // transport_pickup_location / transport_dropoff_location: forwarded
 // to create_order_with_items() same as transport_mode etc. Requires
@@ -44,6 +47,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { notifyNewOrder } from '@/lib/notify/order-notify';
+import { simpleRateLimit } from '@/lib/rate-limit';
+import { normalizePhone } from '@/lib/phone';
 
 interface CustomerInput {
   full_name: string;
@@ -171,49 +176,56 @@ export async function POST(req: NextRequest) {
   }
 
   const { customer, items, notes, attachment_url } = body as CreateOrderBody;
+  // Canonicalize once, here, before it's used as an identity key
+  // anywhere (rate-limit key, find_or_create_customer's lock/lookup
+  // key) — see lib/phone.ts header for why this has to be the server,
+  // not trusted from the client. Using the SAME normalized value for
+  // both the rate limit and the RPC call also means a customer who
+  // types "081-234-5678" then retries as "0812345678" gets rate-
+  // limited as one identity, not two.
+  const phone = normalizePhone(customer.phone);
+  if (!phone) {
+    return NextResponse.json({ error: 'customer.phone is required' }, { status: 400 });
+  }
+
+  // --- Rate limit: by IP and by phone, independently. ---
+  // IP alone isn't enough (shared/rotating IPs), phone alone isn't
+  // enough (attacker can vary the phone per request) — both must
+  // pass. Deliberately checked before any DB write.
+  const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
+  const ipLimit = simpleRateLimit(`order-create:ip:${ip}`, 10, 60 * 60 * 1000);
+  if (!ipLimit.allowed) {
+    return NextResponse.json({ error: 'too many requests, please try again later' }, { status: 429 });
+  }
+  const phoneLimit = simpleRateLimit(`order-create:phone:${phone}`, 5, 60 * 60 * 1000);
+  if (!phoneLimit.allowed) {
+    return NextResponse.json({ error: 'too many requests, please try again later' }, { status: 429 });
+  }
+
   const supabase = createServiceClient();
 
   // --- Resolve customer: find by phone, create if none exists. ---
-  // Not race-safe against two simultaneous submissions from the same
-  // phone number (no unique constraint on customers.phone — see
-  // migration 011 for why). Acceptable for now; revisit if duplicate
-  // customers become a real problem.
-  const phone = customer.phone.trim();
+  // Race-safety against concurrent submissions from the same phone is
+  // handled inside find_or_create_customer() (migration 034) via an
+  // advisory lock keyed on the (already-normalized) phone — NOT a
+  // unique constraint on customers.phone, which migration 011
+  // deliberately omitted (a phone number isn't guaranteed to map 1:1
+  // to a person). This keeps that business rule intact while still
+  // closing both the concurrent-INSERT race and the "same number,
+  // different formatting" identity gap.
 
-  const { data: existing, error: findErr } = await supabase
-    .from('customers')
-    .select('id')
-    .eq('phone', phone)
-    .limit(1)
-    .maybeSingle();
+  const { data: customerId, error: customerErr } = await supabase.rpc('find_or_create_customer', {
+    p_phone: phone,
+    p_full_name: customer.full_name.trim(),
+    p_email: customer.email?.trim() || null,
+    p_line_id: customer.line_id?.trim() || null,
+    p_country: customer.country || null,
+    p_preferred_language: customer.preferred_language || 'th',
+  });
 
-  if (findErr) {
-    console.error('customer lookup failed:', findErr);
-    return NextResponse.json({ error: 'failed to look up customer' }, { status: 500 });
-  }
-
-  let customerId: string;
-  if (existing) {
-    customerId = existing.id;
-  } else {
-    const { data: created, error: createErr } = await supabase
-      .from('customers')
-      .insert({
-        full_name: customer.full_name.trim(),
-        phone,
-        email: customer.email?.trim() || null,
-        line_id: customer.line_id?.trim() || null,
-        country: customer.country || null,
-        preferred_language: customer.preferred_language || 'th',
-      })
-      .select('id')
-      .single();
-
-    if (createErr || !created) {
-      console.error('customer creation failed:', createErr);
-      return NextResponse.json({ error: 'failed to create customer' }, { status: 500 });
-    }
-    customerId = created.id;
+  if (customerErr || !customerId) {
+    console.error('find_or_create_customer RPC failed:', customerErr);
+    return NextResponse.json({ error: 'failed to resolve customer' }, { status: 500 });
   }
 
   // --- Create the order atomically via the DB function. ---

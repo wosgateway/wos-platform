@@ -158,9 +158,11 @@ type LocationType =
   | 'chong_mek'
   | 'udon_airport'
   | 'hotel'
-  | 'other';
+  | 'other'
+  | 'per_itinerary';
 
 const LOCATION_OPTIONS: { value: Exclude<LocationType, ''>; label: string }[] = [
+  { value: 'per_itinerary', label: '🗺️ ตามแผนการเดินทาง (ไม่ต้องระบุจุด)' },
   { value: 'nongkhai_bridge', label: '🛂 ด่านหนองคาย (สะพานมิตรภาพไทย-ลาว 1)' },
   { value: 'nakhon_phanom_bridge', label: '🛂 ด่านนครพนม (สะพานมิตรภาพไทย-ลาว 3)' },
   { value: 'mukdahan_bridge', label: '🛂 ด่านมุกดาหาร (สะพานมิตรภาพไทย-ลาว 2)' },
@@ -378,6 +380,14 @@ function printOrderSummary(order: Order) {
         if (item.dropoff_location) parts.push(`ส่ง: ${item.dropoff_location}`);
         detail += ` · ${parts.join(' · ')}`;
       }
+    } else if (item.service_type === 'hotel') {
+      // FIX: this print view was missing the date range / room count that
+      // buildOrderSummaryText() (WhatsApp) and the on-screen admin table
+      // already show for hotel items (see room_quantity, line ~68) —
+      // ported the same format here so all three views stay in sync.
+      detail += ` (เข้าพัก ${item.scheduled_date || '-'} ถึง ${item.hotel_checkout_date || '-'}${
+        item.room_quantity > 1 ? ` · ${item.room_quantity} ห้อง` : ''
+      })`;
     }
     return [SERVICE_TYPE_ROW_LABEL[item.service_type], detail, formatTHB(itemPrice(item))];
   });
@@ -392,18 +402,18 @@ function printOrderSummary(order: Order) {
     <title>สรุปการจอง — ${escapeHtml(order.customer?.full_name || '')}</title>
     <style>
       body { font-family: 'Prompt', 'Noto Sans Thai', sans-serif; color: #0f172a; padding: 40px; max-width: 640px; margin: 0 auto; }
-      .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #0d7c66; padding-bottom: 16px; margin-bottom: 24px; }
-      .brand { font-size: 22px; font-weight: 800; color: #0d7c66; }
+      .header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #5B8C6E; padding-bottom: 16px; margin-bottom: 24px; }
+      .brand { font-size: 22px; font-weight: 800; color: #5B8C6E; }
       .brand small { display: block; font-size: 12px; font-weight: 500; color: #64748b; }
       .meta { text-align: right; font-size: 12px; color: #64748b; }
-      .customer { background: #f0fdf9; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
+      .customer { background: #eef4f0; border-radius: 12px; padding: 16px; margin-bottom: 20px; }
       .customer div { margin-bottom: 4px; font-size: 14px; }
       table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
       th, td { text-align: left; padding: 10px 8px; border-bottom: 1px solid #e2e8f0; font-size: 13px; }
       th { color: #64748b; font-weight: 600; }
       td.price { text-align: right; white-space: nowrap; }
-      .total-row td { font-weight: 800; font-size: 16px; border-top: 2px solid #0d7c66; border-bottom: none; }
-      .status-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #e6f4f1; color: #0a5f4e; }
+      .total-row td { font-weight: 800; font-size: 16px; border-top: 2px solid #5B8C6E; border-bottom: none; }
+      .status-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #e3ede6; color: #3f6b52; }
       .footer { margin-top: 32px; font-size: 11px; color: #94a3b8; text-align: center; }
       @media print { body { padding: 20px; } }
     </style>
@@ -770,7 +780,7 @@ export function BookingsManager() {
         />
         <button
           onClick={applyManualDateRange}
-          className="rounded-lg border border-primary px-3 py-1.5 text-xs font-medium text-primary hover:bg-primary-light"
+          className="rounded-lg border border-primary px-3 py-1.5 text-xs font-medium text-primary-dark hover:bg-primary-light"
         >
           ใช้ช่วงนี้
         </button>
@@ -824,7 +834,7 @@ export function BookingsManager() {
                     <td className="whitespace-nowrap px-4 py-3">
                       <Link
                         href={`/admin/orders/${order.id}`}
-                        className="font-medium text-slate-800 hover:text-primary hover:underline"
+                        className="font-medium text-slate-800 hover:text-primary-dark hover:underline"
                       >
                         {order.order_number || order.id.slice(0, 8)}
                       </Link>
@@ -844,7 +854,7 @@ export function BookingsManager() {
                           href={order.attachment_url}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline"
+                          className="text-xs text-primary-dark hover:underline"
                         >
                           📎 ไฟล์แนบ
                         </a>

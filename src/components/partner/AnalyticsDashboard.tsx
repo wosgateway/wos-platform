@@ -1,16 +1,15 @@
 // src/components/partner/AnalyticsDashboard.tsx
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
-import { createClient } from '@/lib/supabase/client';
+import { useEffect, useState } from 'react';
 import { formatTHB } from '@/lib/format';
 
 type Period = '7d' | '30d' | '90d' | 'all';
 
-interface BookingRow {
+interface OrderRow {
   status: string;
-  total_price: number | null;
-  booking_date: string;
+  price: number;
+  scheduled_date: string | null;
   created_at: string;
   packages: { title: string } | null;
 }
@@ -40,16 +39,20 @@ function periodStartDate(period: Period): string | null {
   return d.toISOString().slice(0, 10);
 }
 
-function computeAnalytics(rows: BookingRow[]): AnalyticsData {
+// order_items ไม่มี booking_date เสมอไป (ยังไม่ถูก assign วันนัดหมาย
+// ก็ได้ — ดู migration 013/016) จึงกรองตามช่วงเวลาด้วย created_at
+// ของ order แทน booking_date/scheduled_date เดิม เพื่อไม่ให้รายการที่
+// ยังไม่ assign วันหายไปจากรายงาน
+function computeAnalytics(rows: OrderRow[]): AnalyticsData {
   const totalBookings = rows.length;
   const pendingBookings = rows.filter((r) => r.status === 'pending').length;
-  const confirmedBookings = rows.filter((r) => r.status === 'confirmed').length;
+  const confirmedBookings = rows.filter((r) => r.status === 'confirmed' || r.status === 'checked_in').length;
   const completedBookings = rows.filter((r) => r.status === 'completed').length;
-  const cancelledBookings = rows.filter((r) => r.status === 'cancelled').length;
+  const cancelledBookings = rows.filter((r) => r.status === 'cancelled' || r.status === 'refunded').length;
 
   const totalRevenue = rows
-    .filter((r) => r.status !== 'cancelled')
-    .reduce((sum, r) => sum + (r.total_price || 0), 0);
+    .filter((r) => r.status !== 'cancelled' && r.status !== 'refunded')
+    .reduce((sum, r) => sum + (r.price || 0), 0);
 
   const packageCounts = new Map<string, number>();
   for (const r of rows) {
@@ -63,10 +66,10 @@ function computeAnalytics(rows: BookingRow[]): AnalyticsData {
 
   const monthMap = new Map<string, { count: number; revenue: number }>();
   for (const r of rows) {
-    const month = r.booking_date?.slice(0, 7) || r.created_at.slice(0, 7);
+    const month = r.created_at.slice(0, 7);
     const entry = monthMap.get(month) || { count: 0, revenue: 0 };
     entry.count += 1;
-    if (r.status !== 'cancelled') entry.revenue += r.total_price || 0;
+    if (r.status !== 'cancelled' && r.status !== 'refunded') entry.revenue += r.price || 0;
     monthMap.set(month, entry);
   }
   const monthlyBreakdown = Array.from(monthMap.entries())
@@ -91,13 +94,14 @@ function formatMonthLabel(month: string): string {
   return new Intl.DateTimeFormat('th-TH', { month: 'short', year: '2-digit' }).format(date);
 }
 
-export function AnalyticsDashboard({ organizationId }: { organizationId: string }) {
-  const supabase = useMemo(() => createClient(), []);
+export function AnalyticsDashboard({ partnerId }: { partnerId: string | null }) {
   const [period, setPeriod] = useState<Period>('30d');
-  const [data, setData] = useState<AnalyticsData | null>(null);
+  const [allRows, setAllRows] = useState<OrderRow[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // ดึงข้อมูลทั้งหมดครั้งเดียว แล้วกรองตามช่วงเวลาในเครื่อง — API
+  // /api/partner/orders ยังไม่มี query param สำหรับช่วงวันที่
   useEffect(() => {
     let cancelled = false;
 
@@ -105,34 +109,46 @@ export function AnalyticsDashboard({ organizationId }: { organizationId: string 
       setLoading(true);
       setError(null);
 
-      let query = supabase
-        .from('partner_bookings')
-        .select('status, total_price, booking_date, created_at, packages!bookings_package_id_fkey ( title )')
-        .eq('organization_id', organizationId);
-
-      const startDate = periodStartDate(period);
-      if (startDate) {
-        query = query.gte('booking_date', startDate);
-      }
-
-      const { data: rows, error: fetchError } = await query;
-
-      if (cancelled) return;
-      setLoading(false);
-
-      if (fetchError) {
-        setError('โหลดข้อมูลไม่สำเร็จ: ' + fetchError.message);
+      if (!partnerId) {
+        // เหมือน DashboardMetrics.tsx: user ยังไม่ผูก branch_id
+        if (!cancelled) {
+          setAllRows([]);
+          setLoading(false);
+        }
         return;
       }
 
-      setData(computeAnalytics((rows as unknown as BookingRow[]) ?? []));
+      try {
+        const res = await fetch('/api/partner/orders');
+        const json = await res.json();
+
+        if (!res.ok) {
+          throw new Error(json?.error || 'โหลดข้อมูลไม่สำเร็จ');
+        }
+
+        if (!cancelled) {
+          setAllRows((json.orders as OrderRow[]) ?? []);
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setError('โหลดข้อมูลไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
+        }
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
     }
 
     load();
     return () => {
       cancelled = true;
     };
-  }, [organizationId, period, supabase]);
+  }, [partnerId]);
+
+  const startDate = periodStartDate(period);
+  const filteredRows = (allRows ?? []).filter(
+    (r) => !startDate || r.created_at.slice(0, 10) >= startDate
+  );
+  const data = allRows === null ? null : computeAnalytics(filteredRows);
 
   if (loading) {
     return (
@@ -210,12 +226,12 @@ export function AnalyticsDashboard({ organizationId }: { organizationId: string 
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="bg-white rounded-xl border border-slate-100 shadow-card p-4">
-          <p className="text-2xl font-bold text-primary">{formatTHB(totalRevenue)}</p>
-          <p className="text-xs text-slate-500">รายได้ทั้งหมด (ไม่รวมรายการที่ยกเลิก)</p>
+          <p className="text-2xl font-bold text-primary-dark">{formatTHB(totalRevenue)}</p>
+          <p className="text-xs text-slate-500">รายได้ทั้งหมด (ไม่รวมรายการที่ยกเลิก/คืนเงิน)</p>
         </div>
         <div className="bg-white rounded-xl border border-slate-100 shadow-card p-4">
           <p className="text-2xl font-bold text-red-500">{cancelledBookings}</p>
-          <p className="text-xs text-slate-500">ยกเลิก</p>
+          <p className="text-xs text-slate-500">ยกเลิก/คืนเงิน</p>
         </div>
       </div>
 

@@ -1,27 +1,27 @@
 -- ============================================================
--- MIGRATION 028: multi-room hotel bookings — order_items.room_quantity
+-- MIGRATION 028: multi-room hotel bookings €” order_items.room_quantity
 --
 -- Customer can now request N rooms for the same hotel stay from
 -- BookingForm.tsx / JourneyBookingForm.tsx, instead of always 1.
 -- Existing `quantity` on a hotel item already means NIGHTS (see
--- migration 012/014 — customer sends quantity = calcNights(checkin,
+-- migration 012/014 €” customer sends quantity = calcNights(checkin,
 -- checkout)). room_quantity is a SEPARATE multiplier:
 --
---   hotel item price = unit_price × nights × room_quantity
+--   hotel item price = unit_price Ã— nights Ã— room_quantity
 --
 -- Scope: hotel items only. A main-package or transport item with
--- room_quantity != 1 is rejected server-side — same "never trust
+-- room_quantity != 1 is rejected server-side €” same "never trust
 -- the client for anything that touches price" rule as everything
 -- else create_order_with_items() derives.
 --
 -- Touches BOTH insert branches in create_order_with_items()
 -- (resolved package_id item, and "let team decide" service_type
 -- item), same as migration 025 did for pickup_location/
--- dropoff_location — either shape can be a hotel item.
+-- dropoff_location €” either shape can be a hotel item.
 --
 -- Also re-closes the anon/authenticated EXECUTE hole (migration 027)
 -- on create_order_with_items(): CREATE OR REPLACE FUNCTION does NOT
--- preserve previously-revoked grants — Supabase's default privilege
+-- preserve previously-revoked grants €” Supabase's default privilege
 -- rule re-grants EXECUTE to anon/authenticated at CREATE FUNCTION
 -- time regardless of what a prior migration revoked. Every migration
 -- that touches this function must re-run the anon/authenticated
@@ -39,7 +39,7 @@ ALTER TABLE public.order_items
   ADD CONSTRAINT chk_order_items_room_quantity_positive CHECK (room_quantity > 0);
 
 COMMENT ON COLUMN public.order_items.room_quantity IS
-  'Number of rooms booked for a hotel item (default 1). Multiplies into price alongside nights (quantity): price = unit_price × nights × room_quantity. Always 1 for non-hotel items — enforced in create_order_with_items(). Set from BookingForm.tsx / JourneyBookingForm.tsx room-quantity selector.';
+  'Number of rooms booked for a hotel item (default 1). Multiplies into price alongside nights (quantity): price = unit_price Ã— nights Ã— room_quantity. Always 1 for non-hotel items €” enforced in create_order_with_items(). Set from BookingForm.tsx / JourneyBookingForm.tsx room-quantity selector.';
 
 -- ------------------------------------------------------------
 -- create_order_with_items() update
@@ -87,7 +87,7 @@ BEGIN
         v_is_unassigned := NOT (v_item ? 'package_id');
 
         -- ----------------------------------------------------
-        -- Branch A: "let team decide" — no package chosen yet.
+        -- Branch A: "let team decide" €” no package chosen yet.
         -- ----------------------------------------------------
         IF v_is_unassigned THEN
             IF NOT (v_item ? 'service_type') THEN
@@ -135,7 +135,7 @@ BEGIN
         END IF;
 
         -- ----------------------------------------------------
-        -- Branch B: resolved item — same price/partner/service_type
+        -- Branch B: resolved item €” same price/partner/service_type
         -- derivation as migration 012/014/025, plus room_quantity.
         -- ----------------------------------------------------
         SELECT * INTO v_pkg FROM public.packages
@@ -234,7 +234,7 @@ BEGIN
 END;
 $$;
 
--- Signature unchanged from migration 014/025 — but see header note:
+-- Signature unchanged from migration 014/025 €” but see header note:
 -- CREATE OR REPLACE does not preserve prior REVOKEs, so re-assert
 -- the full migration-027 lockdown (anon/authenticated included, not
 -- just PUBLIC) here too.
@@ -244,7 +244,7 @@ GRANT EXECUTE ON FUNCTION public.create_order_with_items(UUID, JSONB, TEXT, TEXT
   TO service_role;
 
 -- ------------------------------------------------------------
--- NOT handled by this migration — see admin_assign_order_item()
+-- NOT handled by this migration €” see admin_assign_order_item()
 -- (migration 016, not in this repo's SQL folder). That function
 -- takes p_quantity directly from the admin's Next.js request and
 -- has no room_quantity parameter of its own; when an admin resolves

@@ -52,8 +52,8 @@ export function MobileSidebar({ user }: { user: PartnerUser }) {
         `}
       >
         <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-          <Link href="/dashboard" className="text-xl font-bold text-primary">
-            WOS<span className="text-accent">.os</span>
+          <Link href="/dashboard" className="text-xl font-bold text-primary-dark">
+            WOS<span className="text-accent-ink">.os</span>
             <span className="block text-xs font-normal text-slate-400">Partner Portal</span>
           </Link>
           <button
@@ -86,7 +86,7 @@ export function MobileSidebar({ user }: { user: PartnerUser }) {
                 className={`
                   flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors
                   ${isActive
-                    ? 'bg-primary-light text-primary'
+                    ? 'bg-primary-light text-primary-dark'
                     : 'text-slate-600 hover:bg-slate-50'
                   }
                 `}

@@ -4,7 +4,7 @@
 --
 -- Context (confirmed against the live Supabase schema, not a
 -- reconstructed file): the customer-facing catalog is real and
--- live — `partners` (12 rows), `packages` (9 rows, `partner_id` NOT
+-- live €” `partners` (12 rows), `packages` (9 rows, `partner_id` NOT
 -- NULL, no `organization_id` column at all), `bookings` (5 rows).
 -- `organizations` (2 rows), `partner_packages` (1 row), and
 -- `partner_bookings` (0 rows) are an unlaunched parallel portal
@@ -12,7 +12,7 @@
 --
 -- Migration 008 built order_items/deposit_rules/settlements against
 -- `organizations`, assuming that was the partner identity. It
--- isn't — `packages.partner_id` points at `partners`, and there is
+-- isn't €” `packages.partner_id` points at `partners`, and there is
 -- no mapping between the 12 real partners and the 2 organizations
 -- rows. Since none of this is live yet, we fix it at the root
 -- instead of adding a translation layer: order_items/deposit_rules/
@@ -23,7 +23,7 @@
 -- (via `users.organization_id`) resolve back to the real partner
 -- whose orders/settlements they should see. Until that link is
 -- populated for a given organizations row, that portal account sees
--- zero order_items/payments/settlements — RLS defaults closed, not
+-- zero order_items/payments/settlements €” RLS defaults closed, not
 -- open, which is the safe direction for a payments table.
 -- ============================================================
 
@@ -106,7 +106,7 @@ ALTER POLICY "Partners can view their organization's settlements" ON public.sett
         )
     );
 
--- payments policy from migration 009 — same two-branch item-level /
+-- payments policy from migration 009 €” same two-branch item-level /
 -- order-level logic, just repointed at the renamed column.
 ALTER POLICY "Partners can view payments for their order items" ON public.payments
     USING (
@@ -135,7 +135,7 @@ ALTER POLICY "Partners can view payments for their order items" ON public.paymen
 
 -- ------------------------------------------------------------
 -- NOTE: deposit_rules keeps its existing "Anyone can view active
--- deposit rules" public SELECT policy (migration 008) unchanged —
+-- deposit rules" public SELECT policy (migration 008) unchanged €”
 -- it was never organization_id-scoped to begin with, so nothing to
 -- update there.
 -- ------------------------------------------------------------

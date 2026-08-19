@@ -29,6 +29,7 @@
 //     off — previously this was blocked here even though the API
 //     itself already allowed it.
 
+import Image from 'next/image';
 import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
@@ -45,6 +46,11 @@ interface OrderSummary {
   total_deposit_required: number | null;
   total_deposit_paid: number | null;
   total_balance_remaining: number | null;
+}
+
+interface PaymentRow {
+  id: string;
+  status: string;
 }
 
 // Statuses where paying is definitely not applicable — kept in sync
@@ -104,6 +110,7 @@ export default function PaymentPage() {
   const token = searchParams?.get('token') ?? '';
 
   const [order, setOrder] = useState<OrderSummary | null>(null);
+  const [payments, setPayments] = useState<PaymentRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -128,6 +135,7 @@ export default function PaymentPage() {
         const result = await res.json();
         if (!res.ok) throw new Error(result?.error ?? t('errorLoad'));
         setOrder(result.order);
+        setPayments(result.payments ?? []);
         const remaining =
           result.order.total_balance_remaining ??
           Math.max((result.order.total_deposit_required ?? 0) - (result.order.total_deposit_paid ?? 0), 0);
@@ -143,7 +151,7 @@ export default function PaymentPage() {
     // token is included so a changed/late-arriving token re-fetches
     // with the correct value, instead of the effect being pinned to
     // whatever token happened to be present on first render.
-  }, [orderNumber, token]);
+  }, [orderNumber, token, t]);
 
   // Whenever the currency changes, default to whichever method
   // actually has data for it (prefer bank_transfer, fall back to qr)
@@ -260,6 +268,34 @@ export default function PaymentPage() {
     );
   }
 
+  // A slip already sitting at waiting_verification/pending means a second
+  // submit would just 409 against payments_one_pending_whole_order_idx
+  // (migration 021) anyway — catch it here with a clear message instead
+  // of letting the customer fill out the whole form first. Checked after
+  // `submitted` isn't set yet on purpose: `submitted` (this session's own
+  // just-now submission) should still show the normal success screen
+  // below, not this one.
+  const hasPendingPayment = !submitted && payments.some(
+    (p) => p.status === 'waiting_verification' || p.status === 'pending'
+  );
+
+  if (hasPendingPayment) {
+    return (
+      <div className="mx-auto max-w-lg space-y-4 p-6">
+        <div className="rounded-2xl border border-blue-200 bg-blue-50 p-6 text-center">
+          <p className="text-lg font-bold text-blue-700">{t('pendingVerificationTitle')}</p>
+          <p className="mt-1 text-sm text-blue-600">{t('pendingVerificationBody')}</p>
+        </div>
+        <Link
+          href={`/my-trip/${orderNumber}?token=${encodeURIComponent(token)}`}
+          className="block w-full rounded-xl bg-primary py-3 text-center text-sm font-semibold text-white"
+        >
+          {t('backToStatus')}
+        </Link>
+      </div>
+    );
+  }
+
   if (submitted) {
     return (
       <div className="mx-auto max-w-lg space-y-4 p-6">
@@ -286,7 +322,7 @@ export default function PaymentPage() {
         <p className="mt-1 text-sm text-slate-500">{t('orderNumber', { orderNumber: order.order_number })}</p>
         <div className="mt-3 flex justify-between text-sm">
           <span className="text-slate-500">{t('balanceRemaining')}</span>
-          <span className="font-semibold text-primary">{formatMoney(balanceRemaining, order.currency)}</span>
+          <span className="font-semibold text-primary-dark">{formatMoney(balanceRemaining, order.currency)}</span>
         </div>
       </div>
 
@@ -301,7 +337,7 @@ export default function PaymentPage() {
                 key={c}
                 onClick={() => setCurrency(c)}
                 className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-                  currency === c ? 'border-primary bg-primary-light text-primary' : 'border-slate-200 text-slate-600'
+                  currency === c ? 'border-primary bg-primary-light text-primary-dark' : 'border-slate-200 text-slate-600'
                 }`}
               >
                 {c}
@@ -318,7 +354,7 @@ export default function PaymentPage() {
               type="button"
               onClick={() => setMethod('bank_transfer')}
               className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-                method === 'bank_transfer' ? 'border-primary bg-primary-light text-primary' : 'border-slate-200 text-slate-600'
+                method === 'bank_transfer' ? 'border-primary bg-primary-light text-primary-dark' : 'border-slate-200 text-slate-600'
               }`}
             >
               {t('methodBankTransfer')}
@@ -327,7 +363,7 @@ export default function PaymentPage() {
               type="button"
               onClick={() => setMethod('qr')}
               className={`rounded-xl border px-3 py-2 text-sm font-medium transition-colors ${
-                method === 'qr' ? 'border-primary bg-primary-light text-primary' : 'border-slate-200 text-slate-600'
+                method === 'qr' ? 'border-primary bg-primary-light text-primary-dark' : 'border-slate-200 text-slate-600'
               }`}
             >
               {t('methodQr')}
@@ -355,7 +391,14 @@ export default function PaymentPage() {
                 </p>
               )
             ) : info.qrImage ? (
-              <img src={info.qrImage} alt={t('qrAlt', { currency })} className="mx-auto max-h-80 object-contain" />
+              <Image
+  src={info.qrImage}
+  alt={t('qrAlt', { currency })}
+  width={600}
+  height={600}
+  sizes="(max-width: 768px) 100vw, 600px"
+  className="mx-auto max-h-80 w-auto object-contain"
+/>
             ) : (
               <p className="text-center text-slate-400">{t('noQr')}</p>
             )}
@@ -375,7 +418,7 @@ export default function PaymentPage() {
                 }}
                 className={`rounded-xl border px-2 py-2 text-center text-xs font-medium transition-colors ${
                   amountMode === 'deposit'
-                    ? 'border-primary bg-primary-light text-primary'
+                    ? 'border-primary bg-primary-light text-primary-dark'
                     : 'border-slate-200 text-slate-600'
                 }`}
               >
@@ -393,7 +436,7 @@ export default function PaymentPage() {
               }}
               className={`rounded-xl border px-2 py-2 text-center text-xs font-medium transition-colors ${
                 amountMode === 'full'
-                  ? 'border-primary bg-primary-light text-primary'
+                  ? 'border-primary bg-primary-light text-primary-dark'
                   : 'border-slate-200 text-slate-600'
               }`}
             >
@@ -407,7 +450,7 @@ export default function PaymentPage() {
               onClick={() => setAmountMode('custom')}
               className={`rounded-xl border px-2 py-2 text-center text-xs font-medium transition-colors ${
                 amountMode === 'custom'
-                  ? 'border-primary bg-primary-light text-primary'
+                  ? 'border-primary bg-primary-light text-primary-dark'
                   : 'border-slate-200 text-slate-600'
               }`}
             >
@@ -429,7 +472,7 @@ export default function PaymentPage() {
           ) : (
             <div className="mt-3 rounded-xl bg-slate-50 px-3 py-2 text-sm text-slate-600">
               {t('amountToPay')}{' '}
-              <span className="font-semibold text-primary">{formatMoney(Number(amount) || 0, order.currency)}</span>
+              <span className="font-semibold text-primary-dark">{formatMoney(Number(amount) || 0, order.currency)}</span>
             </div>
           )}
         </div>

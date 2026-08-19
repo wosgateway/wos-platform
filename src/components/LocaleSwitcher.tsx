@@ -18,7 +18,7 @@ export function LocaleSwitcher() {
           key={l}
           onClick={() => router.replace(pathname, { locale: l })}
           className={`rounded-full px-2.5 py-1 transition ${
-            l === locale ? 'bg-white text-primary shadow-sm' : 'text-slate-500'
+            l === locale ? 'bg-white text-primary-dark shadow-sm' : 'text-slate-500'
           }`}
         >
           {LOCALE_LABELS[l]}

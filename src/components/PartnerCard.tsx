@@ -11,7 +11,7 @@ export function PartnerCard({ partner }: { partner: Partner }) {
 
   return (
     <Link
-      href={`/partner/${partner.id}`}
+      href={`/partners/${partner.id}`}
       className="card-shadow group flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white"
     >
       <div className="relative h-40 w-full">
@@ -22,7 +22,7 @@ export function PartnerCard({ partner }: { partner: Partner }) {
         </span>
       </div>
       <div className="flex flex-1 flex-col justify-between p-4">
-        <h3 className="font-bold leading-snug text-slate-900 group-hover:text-primary">
+        <h3 className="font-bold leading-snug text-slate-900 group-hover:text-primary-dark">
           {partner.name}
         </h3>
 
@@ -33,7 +33,7 @@ export function PartnerCard({ partner }: { partner: Partner }) {
           </span>
           {/* ปุ่ม CTA แยกเป็น visual element ชัดเจน แม้ทั้งการ์ดจะคลิกได้อยู่แล้ว
               (span แทน <a> ซ้อนใน <Link> เพื่อไม่ให้ nested-anchor ผิด HTML spec) */}
-          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-primary transition group-hover:gap-1.5">
+          <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-primary-dark transition group-hover:gap-1.5">
             {t('viewPackagesAndBook')} →
           </span>
         </div>

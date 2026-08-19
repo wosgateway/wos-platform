@@ -152,7 +152,7 @@ export const KNOWLEDGE_ARTICLES: KnowledgeMeta[] = [
     icon: '⚠️',
     image: '/images/knowledge/aftercare-recovery.svg',
   },
-  {
+    {
     slug: 'faq-lao-patients',
     icon: '❓',
     image: '/images/knowledge/faq-lao-patients.svg',

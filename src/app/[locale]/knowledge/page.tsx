@@ -60,7 +60,7 @@ export default async function KnowledgeIndexPage() {
                     <p className="mt-1 text-sm leading-relaxed text-slate-600">
                       {article.teaser}
                     </p>
-                    <span className="mt-4 text-sm font-semibold text-primary">
+                    <span className="mt-4 text-sm font-semibold text-primary-dark">
                       {t('readMore')}
                     </span>
                   </div>

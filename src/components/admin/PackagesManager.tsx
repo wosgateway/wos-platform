@@ -341,7 +341,7 @@ export function PackagesManager() {
                         </button>
                       </>
                     ) : null}
-                    <button onClick={() => openModal(pkg)} className="mr-3 text-primary hover:underline">
+                    <button onClick={() => openModal(pkg)} className="mr-3 text-primary-dark hover:underline">
                       แก้ไข
                     </button>
                     <button onClick={() => handleDelete(pkg.id)} className="text-red-500 hover:underline">

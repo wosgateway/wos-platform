@@ -5,6 +5,7 @@ import { RecentBookings } from '@/components/partner/RecentBookings';
 
 export default async function DashboardPage() {
   const { user } = await requirePartnerAuth();
+  const partnerId = user.branch?.partner_id ?? null;
 
   return (
     <div>
@@ -12,9 +13,9 @@ export default async function DashboardPage() {
         <h1 className="text-2xl font-bold text-slate-900">ภาพรวม</h1>
         <p className="text-sm text-slate-500">ยินดีต้อนรับกลับ, {user.full_name} 👋</p>
       </div>
-      <DashboardMetrics partnerId={user.branch?.partner_id ?? null} />
+      <DashboardMetrics partnerId={partnerId} />
       <div className="mt-8">
-        <RecentBookings organizationId={user.organization_id} />
+        <RecentBookings partnerId={partnerId} />
       </div>
     </div>
   );

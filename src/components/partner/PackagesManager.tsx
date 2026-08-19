@@ -239,7 +239,7 @@ export function PackagesManager({ partnerId }: { partnerId: string }) {
                 <tr key={pkg.id} className="border-b border-slate-50 hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-800">{pkg.title}</div>
-                    {pkg.duration && <div className="text-xs text-slate-400">⏱ {pkg.duration}</div>}
+                    {pkg.duration && <div className="text-xs text-slate-400">⏱️ {pkg.duration}</div>}
                   </td>
                   <td className="px-4 py-3">
                     {pkg.special_price ? (
@@ -247,7 +247,7 @@ export function PackagesManager({ partnerId }: { partnerId: string }) {
                         <span className="mr-1 text-xs text-slate-400 line-through">
                           {formatTHB(pkg.original_price)}
                         </span>
-                        <span className="font-medium text-primary">{formatTHB(pkg.special_price)}</span>
+                        <span className="font-medium text-primary-dark">{formatTHB(pkg.special_price)}</span>
                         {pkg.is_promotion && <span className="ml-1">🔥</span>}
                       </>
                     ) : (
@@ -260,7 +260,7 @@ export function PackagesManager({ partnerId }: { partnerId: string }) {
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
-                    <button onClick={() => openModal(pkg)} className="mr-3 text-xs text-primary hover:underline">
+                    <button onClick={() => openModal(pkg)} className="mr-3 text-xs text-primary-dark hover:underline">
                       แก้ไข
                     </button>
                     <button onClick={() => handleDelete(pkg.id)} className="text-xs text-red-500 hover:underline">
@@ -354,7 +354,7 @@ export function PackagesManager({ partnerId }: { partnerId: string }) {
                     type="checkbox"
                     checked={form.is_promotion}
                     onChange={(e) => setForm({ ...form, is_promotion: e.target.checked })}
-                    className="h-4 w-4 rounded border-slate-300 text-primary focus:ring-primary"
+                    className="h-4 w-4 rounded border-slate-300 text-primary-dark focus:ring-primary"
                   />
                   🔥 เป็นโปรโมชันพิเศษ
                 </label>

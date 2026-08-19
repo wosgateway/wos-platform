@@ -214,7 +214,7 @@ export function BillingDashboard({ organizationId }: { organizationId: string })
           <div>
             <h2 className="text-lg font-bold text-slate-900">แผนปัจจุบัน</h2>
             <div className="flex items-center gap-3 mt-1">
-              <span className="text-2xl font-bold text-primary">
+              <span className="text-2xl font-bold text-primary-dark">
                 {currentFeatures.label}
               </span>
               <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${
@@ -239,7 +239,7 @@ export function BillingDashboard({ organizationId }: { organizationId: string })
 
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-slate-50 rounded-lg p-3 text-center">
-            <p className="text-lg font-bold text-slate-800">∞</p>
+            <p className="text-lg font-bold text-slate-800">ˆž</p>
             <p className="text-xs text-slate-400">การจอง</p>
           </div>
           <div className="bg-slate-50 rounded-lg p-3 text-center">
@@ -282,12 +282,12 @@ export function BillingDashboard({ organizationId }: { organizationId: string })
                 <div className="flex items-center justify-between mb-2">
                   <h4 className="text-lg font-bold text-slate-900">{features.label}</h4>
                   {isCurrent && (
-                    <span className="text-xs font-medium text-primary bg-primary-light px-2 py-0.5 rounded-full">
+                    <span className="text-xs font-medium text-primary-dark bg-primary-light px-2 py-0.5 rounded-full">
                       ปัจจุบัน
                     </span>
                   )}
                 </div>
-                <p className="text-sm font-medium text-primary mb-4">{features.price}</p>
+                <p className="text-sm font-medium text-primary-dark mb-4">{features.price}</p>
 
                 <ul className="space-y-1.5 mb-4">
                   {features.features.map((f, i) => (

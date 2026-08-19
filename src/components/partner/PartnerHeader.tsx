@@ -36,7 +36,7 @@ export function PartnerHeader({
             onClick={() => setShowMenu(!showMenu)}
             className="flex items-center gap-2 px-3 py-1.5 rounded-xl hover:bg-slate-50 transition-colors"
           >
-            <div className="w-8 h-8 rounded-full bg-primary-light text-primary flex items-center justify-center text-sm font-bold">
+            <div className="w-8 h-8 rounded-full bg-primary-light text-primary-dark flex items-center justify-center text-sm font-bold">
               {user.full_name.charAt(0).toUpperCase()}
             </div>
             <span className="text-sm font-medium text-slate-700 hidden sm:inline">

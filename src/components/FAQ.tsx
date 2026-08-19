@@ -30,7 +30,7 @@ export function FAQ() {
                 >
                   <span className="font-semibold text-slate-900">{item.q}</span>
                   <span
-                    className={`shrink-0 text-xl leading-none text-primary transition-transform duration-200 ${
+                    className={`shrink-0 text-xl leading-none text-primary-dark transition-transform duration-200 ${
                       isOpen ? 'rotate-45' : ''
                     }`}
                     aria-hidden

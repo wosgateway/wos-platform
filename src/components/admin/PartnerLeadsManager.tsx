@@ -30,11 +30,21 @@ interface Lead {
   created_at: string;
 }
 
+// clinic_hospital/hotel_resort/transport_agent/investor = เดิม (จาก
+// BecomePartnerForm.tsx, เก็บไว้ให้ row เก่ายังขึ้น label ถูก) ส่วน
+// hospital/clinic/hotel/transport/corporate = จากฟอร์มใหม่ /partner/apply
+// (ApplyForm.tsx) — ต้อง sync กับ BUSINESS_TYPE_TO_LABEL_KEY ที่นั่นด้วย
 const BUSINESS_TYPE_LABEL: Record<string, string> = {
   clinic_hospital: 'คลินิก / โรงพยาบาล',
   hotel_resort: 'โรงแรม / ที่พัก',
   transport_agent: 'ผู้ให้บริการเดินทาง / รถรับส่ง',
   investor: 'นักลงทุน / ผู้สนใจร่วมธุรกิจ',
+  hospital: 'โรงพยาบาล',
+  clinic: 'คลินิก',
+  hotel: 'โรงแรม / ที่พัก',
+  transport: 'ผู้ให้บริการเดินทาง / รถรับส่ง',
+  corporate: 'องค์กร / บริษัท',
+  wellness_spa: 'กลุ่มบริการ Wellness และ สปา',
 };
 
 const STATUS_LABEL: Record<LeadStatus, string> = {
@@ -216,7 +226,7 @@ export function PartnerLeadsManager() {
                           href={`https://wa.me/${waNumber}`}
                           target="_blank"
                           rel="noopener noreferrer"
-                          className="text-xs text-primary hover:underline"
+                          className="text-xs text-primary-dark hover:underline"
                         >
                           📱 WhatsApp
                         </a>

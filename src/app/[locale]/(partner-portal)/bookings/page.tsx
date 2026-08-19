@@ -11,7 +11,7 @@ export default async function BookingsPage() {
         <h1 className="text-2xl font-bold text-slate-900">การจอง</h1>
         <p className="text-sm text-slate-500">รายการจองทั้งหมดของ {user.organization.name}</p>
       </div>
-      <BookingsList organizationId={user.organization_id} />
+      <BookingsList partnerId={user.branch?.partner_id ?? null} />
     </div>
   );
 }

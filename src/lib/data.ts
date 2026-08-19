@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server';
+import { createAnonClient } from '@/lib/supabase/server';
 
 export interface Partner {
   id: string;
@@ -32,7 +32,7 @@ export interface Package {
 }
 
 export async function fetchPartners(dbCategories?: string[]): Promise<Partner[]> {
-  const supabase = createClient();
+  const supabase = createAnonClient();
   let query = supabase.from('partners').select('*').eq('status', 'active');
   if (dbCategories && dbCategories.length > 0) {
     query = query.in('category', dbCategories);
@@ -43,7 +43,7 @@ export async function fetchPartners(dbCategories?: string[]): Promise<Partner[]>
 }
 
 export async function fetchPartnerById(id: string): Promise<Partner> {
-  const supabase = createClient();
+  const supabase = createAnonClient();
   const { data, error } = await supabase.from('partners').select('*').eq('id', id).single();
   if (error) throw error;
   return data;
@@ -53,7 +53,7 @@ export async function fetchPackagesByPartner(
   partnerId: string,
   promotionsOnly?: boolean
 ): Promise<Package[]> {
-  const supabase = createClient();
+  const supabase = createAnonClient();
   // .eq('status', 'published') กันไม่ให้โปรแกรมที่ยังรออนุมัติ/ถูกปฏิเสธ
   // โผล่ไปหน้าเว็บสาธารณะที่ลูกค้าเห็น
   let query = supabase
@@ -68,7 +68,7 @@ export async function fetchPackagesByPartner(
 }
 
 export async function fetchPackageById(id: string): Promise<Package> {
-  const supabase = createClient();
+  const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
     .select('*, partners(*)')
@@ -82,7 +82,7 @@ export async function fetchPackageById(id: string): Promise<Package> {
 // ใช้สำหรับสไลด์ "โปรแกรมแนะนำ" หน้า home — ดึงแพ็กเกจโปรโมชันจากพันธมิตรที่ active
 // เรียงตามล่าสุดก่อน จำกัดจำนวนไม่ให้สไลด์ยาวเกินไป
 export async function fetchFeaturedPackages(limit = 8): Promise<Package[]> {
-  const supabase = createClient();
+  const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
     .select('*, partners!inner(id, name, category, status)')
@@ -96,7 +96,7 @@ export async function fetchFeaturedPackages(limit = 8): Promise<Package[]> {
 }
 
 export async function fetchPackagesByCategory(dbCategories: string[]): Promise<Package[]> {
-  const supabase = createClient();
+  const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
     .select('*, partners!inner(id, name, category, status)')

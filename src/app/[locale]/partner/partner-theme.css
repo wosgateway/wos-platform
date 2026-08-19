@@ -1,0 +1,858 @@
+/* app/[locale]/partner/partner-theme.css
+ *
+ * Design direction: WOS sits at the intersection of healthcare and travel —
+ * a partner "signs on" the way a traveler boards a flight. The signature
+ * element is the boarding-pass / travel-document stub: a perforated card
+ * with a mono "code", used for partner types, process steps and the
+ * operating-model flow. Everything else stays quiet paper-and-ink so the
+ * stub motif reads as intentional, not decorative noise.
+ *
+ * Font import removed: src/app/[locale]/layout.tsx already loads "Prompt"
+ * via next/font/google as --font-prompt for the whole site (body uses
+ * Tailwind's font-sans). Loading Fraunces/Public Sans/IBM Plex Mono here
+ * on top of that would mean two font requests and a visual mismatch with
+ * the rest of the site, so this page inherits --font-prompt for both
+ * display and body text instead, and falls back to the system monospace
+ * stack for the boarding-pass "code" accents (no mono font was loaded
+ * elsewhere, so that fallback doesn't collide with anything).
+ */
+
+.wos-partner {
+  --wos-paper: #edf1ea;
+  --wos-paper-deep: #e2e8dc;
+  --wos-card: #f6f8f3;
+  --wos-ink: #1b2b22;
+  --wos-ink-soft: #4b5c50;
+  --wos-line: #c7cfc0;
+  --wos-stamp: #a73b3b;
+  --wos-seal: #c79a3e;
+  --wos-route: #1f3a5f;
+
+  --wos-font-display: var(--font-prompt), ui-sans-serif, system-ui, sans-serif;
+  --wos-font-body: var(--font-prompt), ui-sans-serif, system-ui, sans-serif;
+  --wos-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  background: var(--wos-paper);
+  color: var(--wos-ink);
+  font-family: var(--wos-font-body);
+  line-height: 1.55;
+}
+
+.wos-partner * {
+  box-sizing: border-box;
+}
+
+.wos-shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.wos-eyebrow {
+  font-family: var(--wos-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wos-route);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.wos-eyebrow::before {
+  content: "";
+  width: 18px;
+  height: 1px;
+  background: var(--wos-route);
+  display: inline-block;
+}
+
+.wos-display {
+  font-family: var(--wos-font-display);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.08;
+  color: var(--wos-ink);
+}
+
+.wos-section {
+  padding: 72px 0;
+  border-top: 1px solid var(--wos-line);
+}
+
+.wos-section:first-of-type {
+  border-top: none;
+}
+
+.wos-section-head {
+  max-width: 640px;
+  margin-bottom: 40px;
+}
+
+.wos-section-head h2 {
+  font-size: clamp(26px, 3vw, 34px);
+  margin: 10px 0 12px;
+}
+
+.wos-section-head p {
+  color: var(--wos-ink-soft);
+  font-size: 16px;
+}
+
+/* ---------- Hero: boarding pass ---------- */
+
+.wos-hero {
+  padding: 88px 0 64px;
+}
+
+.wos-hero-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 48px;
+  align-items: center;
+}
+
+.wos-hero h1 {
+  font-size: clamp(32px, 4.4vw, 52px);
+  margin: 14px 0 18px;
+}
+
+.wos-hero p {
+  font-size: 17px;
+  color: var(--wos-ink-soft);
+  max-width: 46ch;
+  margin-bottom: 28px;
+}
+
+.wos-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--wos-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 15px 26px;
+  background: var(--wos-ink);
+  color: var(--wos-paper);
+  border-radius: 3px;
+  text-decoration: none;
+  border: 1px solid var(--wos-ink);
+  cursor: pointer;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+
+.wos-btn:hover {
+  background: var(--wos-route);
+  border-color: var(--wos-route);
+  transform: translateY(-1px);
+}
+
+.wos-btn-ghost {
+  background: transparent;
+  color: var(--wos-ink);
+}
+
+.wos-btn-ghost:hover {
+  background: var(--wos-ink);
+  color: var(--wos-paper);
+}
+
+/* The boarding-pass card itself */
+.wos-pass {
+  position: relative;
+  background: var(--wos-card);
+  border: 1px solid var(--wos-line);
+  border-radius: 10px;
+  padding: 26px 24px 22px;
+  box-shadow: 0 18px 40px -22px rgba(27, 43, 34, 0.35);
+}
+
+.wos-pass::before,
+.wos-pass::after {
+  content: "";
+  position: absolute;
+  width: 22px;
+  height: 22px;
+  background: var(--wos-paper);
+  border: 1px solid var(--wos-line);
+  border-radius: 50%;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.wos-pass::before {
+  left: -11px;
+}
+
+.wos-pass::after {
+  right: -11px;
+}
+
+.wos-pass-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.wos-pass-code {
+  font-family: var(--wos-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  color: var(--wos-ink-soft);
+}
+
+.wos-pass-cut {
+  border-top: 1.5px dashed var(--wos-line);
+  margin: 18px 0;
+}
+
+.wos-pass-headline {
+  font-family: var(--wos-font-display);
+  font-size: 20px;
+  margin-bottom: 4px;
+}
+
+.wos-pass-sub {
+  font-size: 13px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-seal-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--wos-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--wos-seal);
+  border: 1px solid var(--wos-seal);
+  border-radius: 999px;
+  padding: 4px 10px;
+  text-transform: uppercase;
+}
+
+/* ---------- Reasons / Why Partner ---------- */
+
+.wos-reason-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--wos-line);
+  border: 1px solid var(--wos-line);
+}
+
+.wos-reason {
+  background: var(--wos-paper);
+  padding: 26px 20px;
+}
+
+.wos-reason .wos-pass-code {
+  margin-bottom: 14px;
+  display: block;
+}
+
+.wos-reason-icon {
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+
+.wos-reason h3 {
+  font-family: var(--wos-font-display);
+  font-size: 17px;
+  margin: 0 0 8px;
+}
+
+.wos-reason p {
+  font-size: 14px;
+  color: var(--wos-ink-soft);
+}
+
+/* ---------- Partner types: ticket stubs ---------- */
+
+.wos-stub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 20px;
+}
+
+.wos-stub {
+  background: var(--wos-card);
+  border: 1px solid var(--wos-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.wos-stub-top {
+  padding: 20px 20px 16px;
+}
+
+.wos-stub-top .wos-pass-row {
+  margin-bottom: 12px;
+}
+
+.wos-stub-icon {
+  font-size: 26px;
+}
+
+.wos-stub h3 {
+  font-family: var(--wos-font-display);
+  font-size: 19px;
+  margin: 0 0 6px;
+}
+
+.wos-stub-desc {
+  font-size: 13.5px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-stub-perf {
+  position: relative;
+  border-top: 1.5px dashed var(--wos-line);
+  margin: 0 20px;
+}
+
+.wos-stub-perf::before,
+.wos-stub-perf::after {
+  content: "";
+  position: absolute;
+  width: 16px;
+  height: 16px;
+  background: var(--wos-paper);
+  border-radius: 50%;
+  top: -8px;
+}
+
+.wos-stub-perf::before {
+  left: -28px;
+}
+
+.wos-stub-perf::after {
+  right: -28px;
+}
+
+.wos-stub-bottom {
+  padding: 16px 20px 20px;
+}
+
+.wos-tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 12px;
+}
+
+.wos-tag {
+  font-size: 11.5px;
+  font-family: var(--wos-font-mono);
+  border: 1px solid var(--wos-line);
+  border-radius: 999px;
+  padding: 3px 9px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-req-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 13px;
+  color: var(--wos-ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.wos-req-list li::before {
+  content: "— ";
+  color: var(--wos-seal);
+}
+
+/* ---------- Itinerary: How it works ---------- */
+
+.wos-itinerary {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 14px;
+}
+
+.wos-itinerary::before {
+  content: "";
+  position: absolute;
+  top: 26px;
+  left: 4%;
+  right: 4%;
+  border-top: 1.5px dashed var(--wos-route);
+  opacity: 0.4;
+  z-index: 0;
+}
+
+.wos-leg {
+  position: relative;
+  z-index: 1;
+  background: var(--wos-paper);
+  padding-top: 4px;
+}
+
+.wos-leg-num {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--wos-card);
+  border: 1px solid var(--wos-route);
+  color: var(--wos-route);
+  font-family: var(--wos-font-mono);
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 14px;
+}
+
+.wos-leg h3 {
+  font-family: var(--wos-font-display);
+  font-size: 16px;
+  margin: 0 0 6px;
+}
+
+.wos-leg p {
+  font-size: 13px;
+  color: var(--wos-ink-soft);
+  margin-bottom: 8px;
+}
+
+.wos-leg-duration {
+  font-family: var(--wos-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  color: var(--wos-stamp);
+  text-transform: uppercase;
+}
+
+/* ---------- Operating model flow strip ---------- */
+
+.wos-flow-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  border: 1px solid var(--wos-line);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.wos-flow-node {
+  flex: 1 1 120px;
+  padding: 16px 14px;
+  font-family: var(--wos-font-mono);
+  font-size: 12.5px;
+  text-align: center;
+  border-right: 1.5px dashed var(--wos-line);
+  background: var(--wos-card);
+  color: var(--wos-ink);
+}
+
+.wos-flow-node:last-child {
+  border-right: none;
+  background: var(--wos-ink);
+  color: var(--wos-paper);
+}
+
+.wos-keypoints {
+  margin-top: 24px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 24px;
+}
+
+.wos-keypoints li {
+  list-style: none;
+  font-size: 14px;
+  color: var(--wos-ink-soft);
+  padding-left: 18px;
+  position: relative;
+}
+
+.wos-keypoints li::before {
+  content: "→";
+  position: absolute;
+  left: 0;
+  color: var(--wos-route);
+}
+
+/* ---------- Benefits ---------- */
+
+.wos-benefit-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 20px;
+}
+
+.wos-benefit {
+  border: 1px solid var(--wos-line);
+  border-radius: 10px;
+  padding: 22px 20px;
+  background: var(--wos-card);
+}
+
+.wos-benefit-icon {
+  font-size: 22px;
+  margin-bottom: 10px;
+}
+
+.wos-benefit h3 {
+  font-family: var(--wos-font-display);
+  font-size: 17px;
+  margin: 0 0 6px;
+}
+
+.wos-benefit p {
+  font-size: 13.5px;
+  color: var(--wos-ink-soft);
+  margin-bottom: 12px;
+}
+
+/* ---------- Document-style cards: Commercial Terms / MOU / SLA ---------- */
+
+.wos-doc {
+  border: 1px solid var(--wos-line);
+  border-radius: 10px;
+  background: var(--wos-card);
+  padding: 28px 28px 24px;
+  position: relative;
+}
+
+.wos-doc-stamp {
+  position: absolute;
+  top: 22px;
+  right: 26px;
+  border: 1.5px solid var(--wos-stamp);
+  color: var(--wos-stamp);
+  font-family: var(--wos-font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 4px;
+  transform: rotate(4deg);
+  opacity: 0.8;
+}
+
+.wos-term-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 18px;
+  font-size: 14px;
+}
+
+.wos-term-table tr {
+  border-top: 1px solid var(--wos-line);
+}
+
+.wos-term-table tr:first-child {
+  border-top: none;
+}
+
+.wos-term-table td {
+  padding: 12px 0;
+  vertical-align: top;
+}
+
+.wos-term-table td:first-child {
+  color: var(--wos-ink-soft);
+  width: 44%;
+  padding-right: 16px;
+}
+
+.wos-term-table td:last-child {
+  font-weight: 500;
+}
+
+.wos-term-note {
+  display: block;
+  font-size: 12px;
+  color: var(--wos-ink-soft);
+  font-weight: 400;
+  margin-top: 2px;
+}
+
+.wos-disclaimer {
+  margin-top: 18px;
+  font-size: 12.5px;
+  color: var(--wos-ink-soft);
+  border-top: 1px dashed var(--wos-line);
+  padding-top: 12px;
+}
+
+.wos-doc-list {
+  list-style: none;
+  padding: 0;
+  margin: 16px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wos-doc-list li {
+  font-size: 14px;
+  padding-left: 20px;
+  position: relative;
+}
+
+.wos-doc-list li::before {
+  content: "–¢";
+  position: absolute;
+  left: 0;
+  color: var(--wos-route);
+}
+
+.wos-doc-steps {
+  list-style: decimal;
+  margin: 16px 0 0;
+  padding-left: 20px;
+  font-size: 14px;
+  color: var(--wos-ink-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wos-two-col {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* Responsibilities table */
+.wos-resp-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 16px;
+  font-size: 13.5px;
+}
+
+.wos-resp-table th {
+  font-family: var(--wos-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wos-ink-soft);
+  text-align: left;
+  padding: 0 12px 10px 0;
+  border-bottom: 1.5px solid var(--wos-ink);
+}
+
+.wos-resp-table td {
+  padding: 12px 12px 12px 0;
+  border-bottom: 1px solid var(--wos-line);
+  vertical-align: top;
+  color: var(--wos-ink-soft);
+}
+
+.wos-resp-table td:first-child {
+  color: var(--wos-ink);
+  font-weight: 500;
+}
+
+.wos-sla-grid {
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 14px;
+}
+
+.wos-sla-item {
+  border: 1px solid var(--wos-line);
+  border-radius: 8px;
+  padding: 14px 16px;
+  background: var(--wos-paper);
+}
+
+.wos-sla-target {
+  font-family: var(--wos-font-mono);
+  font-size: 18px;
+  color: var(--wos-route);
+  margin-top: 4px;
+}
+
+/* ---------- Apply form fields ---------- */
+
+.wos-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px 20px;
+  margin-top: 16px;
+}
+
+.wos-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-field-wide {
+  grid-column: 1 / -1;
+}
+
+.wos-field input,
+.wos-field select {
+  font-family: var(--wos-font-body);
+  font-size: 14px;
+  color: var(--wos-ink);
+  background: var(--wos-paper);
+  border: 1px solid var(--wos-line);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.wos-field input:focus,
+.wos-field select:focus {
+  border-color: var(--wos-route);
+}
+
+.wos-consent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.wos-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13.5px;
+  color: var(--wos-ink-soft);
+  cursor: pointer;
+}
+
+.wos-checkbox input {
+  margin-top: 3px;
+}
+
+/* ---------- CTA / boarding gate ---------- */
+
+.wos-cta {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--wos-ink);
+  color: var(--wos-paper);
+  border-radius: 12px;
+  padding: 52px 44px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 32px;
+  flex-wrap: wrap;
+}
+
+/* Handshake photo: full-bleed, duotoned to the ink/paper palette so it
+   reads as part of the travel-document system, not a stray stock photo. */
+.wos-cta-photo {
+  object-fit: cover;
+  z-index: -2;
+  filter: grayscale(1) sepia(0.15) contrast(1.05) brightness(0.75);
+}
+
+.wos-cta-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    var(--wos-ink) 20%,
+    rgba(27, 43, 34, 0.72) 50%,
+    rgba(27, 43, 34, 0.32) 100%
+  );
+}
+
+.wos-cta-content {
+  position: relative;
+}
+
+.wos-cta h2 {
+  font-family: var(--wos-font-display);
+  font-size: clamp(24px, 3vw, 32px);
+  margin: 6px 0 10px;
+}
+
+.wos-cta p {
+  color: #cfd9ce;
+  max-width: 44ch;
+  font-size: 14.5px;
+}
+
+.wos-cta .wos-eyebrow {
+  color: var(--wos-seal);
+}
+
+.wos-cta .wos-eyebrow::before {
+  background: var(--wos-seal);
+}
+
+.wos-cta .wos-btn {
+  background: var(--wos-paper);
+  color: var(--wos-ink);
+  border-color: var(--wos-paper);
+}
+
+.wos-cta .wos-btn:hover {
+  background: var(--wos-seal);
+  border-color: var(--wos-seal);
+  color: var(--wos-ink);
+}
+
+/* ---------- Responsive ---------- */
+
+@media (max-width: 860px) {
+  .wos-hero-grid {
+    grid-template-columns: 1fr;
+  }
+  .wos-reason-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .wos-itinerary {
+    grid-template-columns: 1fr 1fr;
+  }
+  .wos-itinerary::before {
+    display: none;
+  }
+  .wos-two-col {
+    grid-template-columns: 1fr;
+  }
+  .wos-keypoints {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 560px) {
+  .wos-reason-grid {
+    grid-template-columns: 1fr;
+  }
+  .wos-itinerary {
+    grid-template-columns: 1fr;
+  }
+  .wos-cta {
+    padding: 36px 24px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wos-btn {
+    transition: none;
+  }
+}
+
+/* Keyboard focus visibility */
+.wos-partner a:focus-visible,
+.wos-partner button:focus-visible,
+.wos-partner input:focus-visible,
+.wos-partner select:focus-visible,
+.wos-partner textarea:focus-visible {
+  outline: 2px solid var(--wos-route);
+  outline-offset: 2px;
+}

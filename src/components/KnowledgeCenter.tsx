@@ -52,7 +52,7 @@ export async function KnowledgeCenter() {
                   </span>
                   <h3 className="mt-3 font-bold text-slate-900">{card.title}</h3>
                   <p className="mt-1 text-sm leading-relaxed text-slate-600">{card.teaser}</p>
-                  <span className="mt-4 text-sm font-semibold text-primary">
+                  <span className="mt-4 text-sm font-semibold text-primary-dark">
                     {t('readMore')}
                   </span>
                 </div>
@@ -64,7 +64,7 @@ export async function KnowledgeCenter() {
         <div className="mt-10">
           <Link
             href="/knowledge"
-            className="inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+            className="inline-flex items-center gap-1 text-sm font-semibold text-primary-dark hover:underline"
           >
             {t('viewAll')}
           </Link>
