@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@supabase/ssr": "^0.4.0",
+    "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.112.3",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.1",
@@ -17,6 +17,7 @@
     "clsx": "^2.1.1",
     "geist": "^1.7.2",
     "lucide-react": "^1.33.0",
+    "nanoid": "^3.3.18",
     "next": "14.2.35",
     "next-intl": "^3.17.2",
     "radix-ui": "^1.6.7",
