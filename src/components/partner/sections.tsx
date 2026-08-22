@@ -40,6 +40,29 @@ export function PartnerHero({ content }: { content: PartnerPageContent }) {
   );
 }
 
+export function FoundingPartner({ content }: { content: PartnerPageContent }) {
+  const { foundingPartner } = content;
+  return (
+    <section className="wos-section">
+      <div className="wos-shell">
+        <div className="wos-section-head">
+          <span className="wos-eyebrow">{foundingPartner.eyebrow}</span>
+          <h2 className="wos-display">{foundingPartner.headline}</h2>
+          <p>{foundingPartner.intro}</p>
+        </div>
+        <div className="wos-doc">
+          <span className="wos-doc-stamp">{foundingPartner.benefitsHeadline}</span>
+          <ul className="wos-doc-list">
+            {foundingPartner.benefits.map((b) => (
+              <li key={b}>{b}</li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 export function WhyPartner({ content }: { content: PartnerPageContent }) {
   return (
     <section className="wos-section">
@@ -76,6 +99,11 @@ export function PartnerTypes({ content }: { content: PartnerPageContent }) {
                 ? "ປະເພດຄູ່ຮ່ວມທຸລະກິດ"
                 : "Partner Types"}
           </h2>
+        </div>
+        <div className="wos-doc" style={{ marginBottom: 24 }}>
+          <span className="wos-doc-stamp">{content.phaseFocus.label}</span>
+          <h3 className="wos-pass-headline">{content.phaseFocus.headline}</h3>
+          <p>{content.phaseFocus.description}</p>
         </div>
         <div className="wos-stub-grid">
           {content.partnerTypes.map((type) => (
@@ -212,7 +240,7 @@ export function CommercialTermsSection({ content }: { content: PartnerPageConten
           <p>{commercialTerms.intro}</p>
         </div>
         <div className="wos-doc">
-          <span className="wos-doc-stamp">Draft</span>
+          <span className="wos-doc-stamp">{commercialTerms.docStamp}</span>
           <table className="wos-term-table">
             <tbody>
               {commercialTerms.terms.map((term) => (
@@ -315,6 +343,30 @@ export function ResponsibilitiesSlaSection({ content }: { content: PartnerPageCo
             </div>
           ))}
         </div>
+      </div>
+    </section>
+  );
+}
+
+export function PreparePartner({ content }: { content: PartnerPageContent }) {
+  const { prepare } = content;
+  return (
+    <section className="wos-section">
+      <div className="wos-shell">
+        <div className="wos-section-head">
+          <span className="wos-eyebrow">{prepare.eyebrow}</span>
+          <h2 className="wos-display">{prepare.headline}</h2>
+        </div>
+        <div className="wos-tag-list" style={{ marginBottom: 32 }}>
+          {prepare.items.map((item) => (
+            <span className="wos-tag" key={item}>
+              {item}
+            </span>
+          ))}
+        </div>
+        <Link href={prepare.ctaLink} className="wos-btn">
+          {prepare.ctaText}
+        </Link>
       </div>
     </section>
   );

@@ -52,6 +52,13 @@ function stripLocale(pathname: string): { locale: string | null; rest: string } 
 // สาธารณะทุกหน้า) ดังนั้นแยกไม่ได้จาก "ไม่มี locale prefix" อีกต่อไป — ต้องแยกจาก
 // "rest" (path หลังตัด locale ออก) เทียบกับหน้าสาธารณะที่รู้จักแทน
 // ถ้า rest ไม่ตรงกับหน้าสาธารณะกลุ่มใดเลย = เป็นหน้าใน (partner-portal)/ โดยอัตโนมัติ
+//
+// 2026-08: ผลลัพธ์ของฟังก์ชันนี้ตอนนี้ถูก re-use เป็น single source of
+// truth สำหรับอีกเรื่องด้วย — บอก [locale]/layout.tsx ว่าไม่ต้องเรนเดอร์
+// Header/Footer/WhatsAppButton/JourneyCartBar ของเว็บสาธารณะซ้อนทับ
+// PartnerHeader/PartnerSidebar ของตัวเอง (เดิมทั้งสองชุดเรนเดอร์ซ้อนกัน
+// เพราะ (partner-portal) อยู่ใต้ [locale]/layout.tsx ซึ่งครอบทุกหน้า)
+// ดู PARTNER_PORTAL_HEADER_FIX.md
 function isPartnerPortalRest(rest: string): boolean {
   if (rest === '/') return false;
   return !PUBLIC_LOCALE_ROUTE_SEGMENTS.some(
@@ -80,8 +87,16 @@ export async function middleware(request: NextRequest) {
     return intlMiddleware(request);
   }
 
+  const partnerPortal = isPartnerPortalRest(rest);
+
+  // 2026-08: inject request header ให้ [locale]/layout.tsx อ่านได้ผ่าน
+  // headers() — ต้องทำก่อนเรียก intlMiddleware(request) เพื่อให้ header
+  // นี้ติดไปกับ request เดียวกันที่ next-intl ใช้สร้าง response สุดท้าย
+  // (ทั้ง redirect/rewrite/next case ของ next-intl เอง)
+  request.headers.set('x-partner-portal', partnerPortal ? '1' : '0');
+
   // 3. มี locale prefix แล้ว และ rest ไม่ตรงกับหน้าสาธารณะ = partner portal route
-  if (isPartnerPortalRest(rest)) {
+  if (partnerPortal) {
     const supabase = createServerClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

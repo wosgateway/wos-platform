@@ -64,23 +64,13 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 
-  console.log("VERIFY PAYMENT", {
-  paymentId,
-  adminId: auth.user.id,
-});
-
-const { data, error } = await supabase.rpc(
-  'admin_verify_payment',
-  {
-    p_payment_id: paymentId,
-    p_admin_id: auth.user.id,
-  }
-);
-
-console.log("RPC RESULT", {
-  data,
-  error,
-});
+  const { data, error } = await supabase.rpc(
+    'admin_verify_payment',
+    {
+      p_payment_id: paymentId,
+      p_admin_id: auth.user.id,
+    }
+  );
 
   if (error) {
     if (error.message.includes('payment_not_claimable')) {

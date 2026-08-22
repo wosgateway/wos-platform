@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { headers } from 'next/headers';
 import { NextIntlClientProvider } from 'next-intl';
 import { getMessages } from 'next-intl/server';
 import { notFound } from 'next/navigation';
@@ -26,15 +27,31 @@ export default async function LocaleLayout({
   }
   const messages = await getMessages();
 
+  // 2026-08: (partner-portal) sits under this SAME [locale] segment
+  // (see middleware.ts's isPartnerPortalRest comment for why it
+  // can't be told apart from public routes by locale-prefix alone).
+  // That means partner-portal pages were rendering inside BOTH this
+  // layout's public Header/Footer AND their own
+  // PartnerHeader/PartnerSidebar — two navigation chromes stacked on
+  // one screen. middleware.ts sets x-partner-portal on every request
+  // using the exact same isPartnerPortalRest() check the auth guard
+  // already relies on, so this stays in sync with that logic by
+  // construction instead of re-deriving it here from the pathname.
+  const isPartnerPortal = headers().get('x-partner-portal') === '1';
+
   return (
     <NextIntlClientProvider messages={messages}>
       <LangSetter locale={locale} />
       <JourneyProvider>
-        <Header />
+        {!isPartnerPortal && <Header />}
         {children}
-        <Footer />
-        <WhatsAppButton />
-        <JourneyCartBar />
+        {!isPartnerPortal && (
+          <>
+            <Footer />
+            <WhatsAppButton />
+            <JourneyCartBar />
+          </>
+        )}
       </JourneyProvider>
     </NextIntlClientProvider>
   );

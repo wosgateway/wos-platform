@@ -6,20 +6,36 @@ export const th: PartnerPageContent = {
   hero: {
     eyebrow: "WOS PARTNER NETWORK",
     boardingLabel: "PARTNER PASS",
-    headline: "เชื่อมตลาดสุขภาพและ Wellness ไทย–ลาว สู่โอกาสใหม่ทางธุรกิจ",
+    headline: "เข้าถึงลูกค้าสุขภาพและ Wellness จากลาว ผ่าน WOS",
     subheadline:
-      "WOS แพลตฟอร์มที่เชื่อมผู้ป่วยและลูกค้าระดับพรีเมียมจากลาว ตรงสู่โรงพยาบาล คลินิก โรงแรม และบริการเดินทางในไทยแบบครบวงจร คว้าโอกาสเติบโตก่อนใคร ร่วมเป็น Partner กับ WOS วันนี้",
+      "WOS ช่วยเชื่อมโรงพยาบาล คลินิก Wellness และบริการที่เกี่ยวข้องในประเทศไทยกับลูกค้าจากลาว พร้อมช่วยจัดการ Journey ตั้งแต่การค้นหาบริการ การจอง ไปจนถึงการประสานงานก่อนและหลังรับบริการ",
     ctaText: "ร่วมเป็นพาร์ทเนอร์กับ WOS",
     ctaLink: "/partner/apply",
+  },
+  foundingPartner: {
+    eyebrow: "WOS FOUNDING PARTNER PROGRAM",
+    headline: "เป็นหนึ่งใน WOS Founding Partners",
+    intro:
+      "WOS กำลังเปิดรับ Partner รุ่นแรกเพื่อร่วมสร้างเครือข่าย Healthcare & Wellness ระหว่างประเทศไทยและลาว Partner รุ่นแรกจะได้รับการ Onboarding และช่วยจัดทำ Cross-border Service Packages ร่วมกับทีม WOS",
+    benefitsHeadline: "สิทธิประโยชน์",
+    benefits: [
+      "ไม่มีค่า Setup ในช่วง Pilot",
+      "ไม่มี Monthly Platform Fee ในช่วง Pilot",
+      "Priority Onboarding",
+      "ช่วยจัดทำ Service Packages สำหรับลูกค้าลาว",
+      "Partner Profile บน WOS",
+      "โอกาสรับ Cross-border Leads",
+      "เข้าร่วมเครือข่าย WOS",
+    ],
   },
   whyPartner: {
     headline: "เพราะความร่วมมือกับ WOS เปิดโอกาสทางธุรกิจที่มากกว่า",
     reasons: [
       {
         code: "ACC",
-        title: "เข้าถึงนักท่องเที่ยวเชิงการแพทย์คุณภาพสูง",
+        title: "เข้าถึงตลาดลูกค้าจากลาว",
         description:
-          "ฐานข้อมูลผู้ใช้ที่ผ่านการคัดกรองความพร้อมและความสนใจ ระบบจองและนัดหมายอัจฉริยะที่ลดอัตราการยกเลิก",
+          "WOS กำลังสร้างเครือข่าย Partner สำหรับลูกค้าที่ต้องการเดินทางมารับบริการสุขภาพและ Wellness ในประเทศไทย",
         icon: "🎯",
       },
       {
@@ -92,35 +108,41 @@ export const th: PartnerPageContent = {
       requirements: ["มีใบอนุญาตประกอบกิจการสปา/นวด", "พนักงานผ่านการอบรมมาตรฐาน", "สถานที่สะอาดถูกสุขลักษณะ"],
     },
   ],
+  phaseFocus: {
+    label: "WOS Founding Partner Focus",
+    headline: "Phase 1: Clinic & Wellness",
+    description:
+      "WOS กำลังให้ความสำคัญกับ Clinic, Wellness และ Healthcare Providers ที่มีศักยภาพในการให้บริการลูกค้าจากลาว",
+  },
   howItWorks: [
     {
       stepNumber: 1,
-      title: "ลงทะเบียน",
-      description: "กรอกข้อมูลเบื้องต้นผ่านเว็บไซต์ ทีมงาน WOS ติดต่อกลับภายใน 48 ชั่วโมง",
+      title: "Apply",
+      description: "ส่งข้อมูลธุรกิจและบริการของท่านให้ทีม WOS",
       duration: "48 ชั่วโมง",
     },
     {
       stepNumber: 2,
-      title: "ตรวจสอบคุณสมบัติ",
-      description: "ตรวจสอบใบอนุญาตและเอกสารที่เกี่ยวข้อง นัดหมายพูดคุยเพื่อทำความเข้าใจรูปแบบธุรกิจ",
+      title: "Partner Review",
+      description: "WOS ตรวจสอบคุณสมบัติและพูดคุยรูปแบบธุรกิจร่วมกัน",
       duration: "3-5 วัน",
     },
     {
       stepNumber: 3,
-      title: "ลงนามความร่วมมือ (MOU)",
-      description: "ตกลงเงื่อนไขทางธุรกิจและ SLA กำหนดสิทธิและหน้าที่ของทั้งสองฝ่าย",
-      duration: "1-2 วัน",
+      title: "Package Setup",
+      description: "ร่วมกันจัดทำ Service / Package สำหรับลูกค้าจากลาว",
+      duration: "3-5 วัน",
     },
     {
       stepNumber: 4,
-      title: "เปิดใช้งานระบบ",
-      description: "รับ Username/Password สำหรับ Partner Dashboard อบรมการใช้งานระบบ (Online/On-site)",
-      duration: "1 วัน",
+      title: "Pilot Agreement",
+      description: "ตกลง Commercial Terms และ SLA ร่วมกัน",
+      duration: "1-2 วัน",
     },
     {
       stepNumber: 5,
-      title: "เริ่มให้บริการ",
-      description: "รับการจองผ่านระบบ WOS เริ่มสร้างรายได้และขยายฐานลูกค้า",
+      title: "Go Live",
+      description: "เปิดบริการบน WOS และเริ่มรับ Lead / Booking",
       duration: "ทันที",
     },
   ],
@@ -138,8 +160,8 @@ export const th: PartnerPageContent = {
     ],
     keyPoints: [
       "WOS ทำหน้าที่เป็นตัวกลางที่เชื่อถือได้ (Trusted Intermediary)",
-      "รับประกันคุณภาพบริการจากพันธมิตรทุกท่าน",
-      "ระบบ Payment Escrow เพื่อความปลอดภัยทางการเงิน",
+      "WOS มีขั้นตอนตรวจสอบข้อมูลและคุณสมบัติของ Partner ก่อนเข้าร่วมเครือข่าย และติดตาม Feedback จากลูกค้า",
+      "ประสานการชำระเงินตามรอบบิลที่ตกลงร่วมกัน",
       "เก็บข้อมูลและ Feedback เพื่อพัฒนาคุณภาพอย่างต่อเนื่อง",
     ],
   },
@@ -157,16 +179,16 @@ export const th: PartnerPageContent = {
       features: ["Partner Directory", "โปรโมทผ่าน Social Media", "ขึ้น Newsletter", "ตรา WOS Trusted Partner"],
     },
     {
-      title: "ระบบสนับสนุน",
-      description: "ทีมสนับสนุนภาษาไทย/อังกฤษ ตลอด 24/7 ฝ่ายพัฒนาธุรกิจช่วยเพิ่มยอดขาย",
+      title: "WOS Partner Support",
+      description: "ทีม WOS ช่วยประสานงานด้านการจองและการให้บริการตามขอบเขตที่ตกลงกับ Partner",
       icon: "💬",
-      features: ["สนับสนุน 24/7", "ไทย/อังกฤษ", "ฝ่ายพัฒนาธุรกิจ", "ทีมเทคนิคัลซัพพอร์ต"],
+      features: ["ประสานงานการจอง", "ไทย/อังกฤษ", "ติดต่อผ่าน Line / WhatsApp"],
     },
     {
-      title: "ข้อมูลเชิงลึก",
-      description: "ดูพฤติกรรมและความต้องการของลูกค้า รายงานยอดขายและแนวโน้มแบบ Real-time",
+      title: "รายงานธุรกิจและข้อมูลการจอง",
+      description: "ดูพฤติกรรมและความต้องการของลูกค้า พร้อมรายงานยอดขายและแนวโน้มการจอง",
       icon: "📊",
-      features: ["ข้อมูลพฤติกรรมลูกค้า", "รายงานยอดขาย", "วิเคราะห์แนวโน้ม", "แดชบอร์ด Real-time"],
+      features: ["ข้อมูลพฤติกรรมลูกค้า", "รายงานยอดขาย", "วิเคราะห์แนวโน้ม"],
     },
     {
       title: "การต่อยอดทางธุรกิจ",
@@ -175,21 +197,25 @@ export const th: PartnerPageContent = {
       features: ["โครงการร่วมพันธมิตร", "อีเวนต์ระดับภูมิภาค", "Networking", "จับคู่ทางธุรกิจ"],
     },
   ],
-  // NOTE: figures below are placeholders pending sign-off from the commercial team —
-  // replace before publishing.
   commercialTerms: {
-    headline: "เงื่อนไขทางการค้า",
+    headline: "Commercial Model",
     intro:
-      "โครงสร้างค่าธรรมเนียมและเงื่อนไขการชำระเงินของ WOS ออกแบบให้โปร่งใสและคาดการณ์ได้ รายละเอียดที่แน่นอนจะยืนยันอีกครั้งในขั้นตอนลงนาม MOU ตามประเภทพันธมิตรและปริมาณธุรกิจ",
+      "Performance-based Partnership — WOS ไม่มีค่า Setup และไม่มี Monthly Platform Fee สำหรับ Founding Partner ในช่วง Pilot WOS จะได้รับค่าบริการ/Commission เมื่อเกิดธุรกรรมตามเงื่อนไขที่ตกลงร่วมกันใน Partner Agreement",
+    docStamp: "Founding Partner Terms",
     terms: [
-      { label: "ค่าคอมมิชชั่นต่อการจอง", value: "[ระบุอัตรา % ตามประเภทพันธมิตร]", note: "แตกต่างกันตามหมวดหมู่บริการ" },
+      { label: "ค่า Setup", value: "ไม่มี", note: "สำหรับ Founding Partner ในช่วง Pilot" },
+      { label: "Monthly Platform Fee", value: "ไม่มี", note: "ในช่วง Pilot" },
+      {
+        label: "ค่าคอมมิชชั่น / ค่าบริการ",
+        value: "คิดตามธุรกรรมจริง",
+        note: "ตามเงื่อนไขที่ตกลงร่วมกันใน Partner Agreement",
+      },
       { label: "รอบการชำระเงิน", value: "รายเดือน ภายใน 30 วันหลังปิดรอบบิล" },
-      { label: "ค่าธรรมเนียมแรกเข้า", value: "[ระบุ / ไม่มี]" },
       { label: "ระยะเวลาสัญญา", value: "1 ปี ต่ออายุอัตโนมัติ เว้นแต่แจ้งยกเลิกล่วงหน้า" },
       { label: "สกุลเงินการชำระเงิน", value: "THB / USD (ตามข้อตกลง)" },
     ],
     disclaimer:
-      "ตัวเลขในหน้านี้เป็นกรอบเบื้องต้นสำหรับการพิจารณา เงื่อนไขฉบับสมบูรณ์จะระบุใน MOU ที่ลงนามร่วมกัน",
+      "รายละเอียดค่าคอมมิชชั่นและเงื่อนไขฉบับสมบูรณ์จะระบุใน Pilot Agreement / MOU ที่ลงนามร่วมกัน",
   },
   mou: {
     headline: "MOU และข้อตกลงความร่วมมือ",
@@ -228,6 +254,24 @@ export const th: PartnerPageContent = {
       { label: "แจ้งปัญหาเร่งด่วน (Urgent Case)", target: "ภายใน 1 ชั่วโมง" },
       { label: "รอบการชำระเงินพันธมิตร", target: "ภายใน 30 วันหลังปิดรอบบิล" },
     ],
+  },
+  prepare: {
+    eyebrow: "PARTNER CHECKLIST",
+    headline: "Partner ต้องเตรียมอะไร",
+    items: [
+      "ข้อมูลบริษัท / ธุรกิจ",
+      "ใบอนุญาตที่เกี่ยวข้อง",
+      "รายการบริการ",
+      "ราคา",
+      "รูปภาพบริการ / สถานที่",
+      "ตารางเวลาที่ให้บริการได้",
+      "นโยบายการยกเลิก",
+      "ผู้ติดต่อหลัก",
+      "ข้อมูลการรับชำระเงิน",
+      "Service Package สำหรับลูกค้าต่างชาติ",
+    ],
+    ctaText: "เริ่มสมัครเป็น WOS Founding Partner",
+    ctaLink: "/partner/apply",
   },
   cta: {
     headline: "พร้อมที่จะเติบโตไปด้วยกันหรือยัง?",

@@ -328,7 +328,17 @@
       "roomQuantity": "Number of rooms",
       "hv": "Adults",
       "mv": "Children",
-      "locationPerItinerary": "🗺️ As per the itinerary (no need to specify)"
+      "locationPerItinerary": "🗺️ As per the itinerary (no need to specify)",
+      "vehicleType": "🚐 Vehicle type",
+      "vehicleTypeSedan": "🚗 Sedan",
+      "vehicleTypeSuv": "🚙 SUV",
+      "vehicleTypeVipVan": "🚐 VIP Van",
+      "vehicleTypeMedicalTransport": "🚑 Medical transport",
+      "vehicleTypeOtherPlaceholder": "Enter vehicle type",
+      "passengerCount": "Number of passengers",
+      "medicalAssistance": "🚑 Medical assistance transport",
+      "filterByProvince": "Filter by province",
+      "allProvinces": "All provinces"
     },
     "summary": {
       "main": "Main program",
@@ -339,12 +349,16 @@
       "reviewDate": "Appointment date",
       "reviewContact": "Contact",
       "nightsCount": "{count} night(s)",
-      "roomsCount": "{count} room(s)"
+      "roomsCount": "{count} room(s)",
+      "teamWillQuote": "Team will provide a quote",
+      "pendingQuoteNote": "*The total above doesn't include items pending a quote"
     },
     "errorHotelDates": "Please select a valid check-in and check-out date",
     "errorPickupLocation": "Please specify the pickup location",
     "errorDropoffLocation": "Please specify the drop-off location",
-    "viewOrderStatus": "View order status / payment"
+    "viewOrderStatus": "View order status / payment",
+    "errorVehicleType": "Please select a vehicle type",
+    "errorPassengerCount": "Please specify the number of passengers"
   },
   "becomePartner": {
     "meta": {
@@ -896,6 +910,8 @@
     "returnLabel": "Return",
     "totalLabel": "Total amount",
     "depositRequiredLabel": "Deposit required",
+    "pendingAssignmentBadge": "Pending team assignment",
+    "pendingAssignmentBanner": "Some items are still awaiting partner/package assignment by our team — the total below does not yet include them. We'll follow up with the final amount.",
     "confirmedBanner": "Order confirmed — you can proceed to pay the deposit",
     "goToMyTrip": "View booking status / pay deposit",
     "confirmButton": "Confirm this order",

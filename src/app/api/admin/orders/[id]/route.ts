@@ -108,6 +108,16 @@ export async function GET(
   }
 
   // 3. Order items
+  // NOTE: this select() previously omitted quantity, room_quantity,
+  // needs_assignment, hotel_checkout_date, transport_mode,
+  // transport_return_date/time, pickup_location, dropoff_location —
+  // every field admin/orders/[orderId]/page.tsx's itemDetailLine()
+  // and the "needs assignment" badge actually render. That silently
+  // blanked out hotel/transport detail lines and the assignment
+  // warning on this page, even though the list view
+  // (/api/admin/orders) already selected them correctly. Also adding
+  // vehicle_type/passenger_count (migration 037) for parity with the
+  // rest of the app, even though the page doesn't render them yet.
   const { data: items, error: itemsError } = await supabase
   .from("order_items")
   .select(`
@@ -117,12 +127,22 @@ export async function GET(
     package_id,
     service_type,
     price,
+    room_quantity,
     deposit_required,
     deposit_paid,
     balance_remaining,
     scheduled_date,
     scheduled_time,
-    status
+    status,
+    needs_assignment,
+    hotel_checkout_date,
+    transport_mode,
+    transport_return_date,
+    transport_return_time,
+    pickup_location,
+    dropoff_location,
+    vehicle_type,
+    passenger_count
   `)
   .eq("order_id", params.id);
 

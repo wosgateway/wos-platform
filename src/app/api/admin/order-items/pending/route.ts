@@ -34,7 +34,7 @@ export async function GET() {
   const { data: items, error: itemsErr } = await supabase
     .from('order_items')
     .select(
-      'id, order_id, service_type, scheduled_date, scheduled_time, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, created_at'
+      'id, order_id, service_type, scheduled_date, scheduled_time, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, vehicle_type, passenger_count, created_at'
     )
     .eq('needs_assignment', true)
     .order('created_at', { ascending: true });

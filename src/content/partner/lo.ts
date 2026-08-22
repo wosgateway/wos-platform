@@ -14,19 +14,35 @@ export const lo: PartnerPageContent = {
   hero: {
     eyebrow: "WOS PARTNER NETWORK",
     boardingLabel: "PARTNER PASS",
-    headline: "ເປັນຄູ່ຮ່ວມທຸລະກິດກັບ WOS — ເຕີບໂຕໄປນຳກັນໃນທຸລະກິດທ່ອງທ່ຽວເຊີງການແພດ",
+    headline: "ເຂົ້າເຖິງລູກຄ້າສຸຂະພາບ ແລະ Wellness ຈາກລາວ ຜ່ານ WOS",
     subheadline:
-      "WOS ເຊື່ອມຕໍ່ນັກທ່ອງທ່ຽວເຊີງການແພດກັບເຄືອຂ່າຍຄູ່ຮ່ວມທຸລະກິດຄຸນນະພາບທົ່ວພາກພື້ນອາຊີ ຮ່ວມເປັນສ່ວນໜຶ່ງຂອງລະບົບນິເວດທີ່ໂປ່ງໃສ ປອດໄພ ແລະ ເຕີບໂຕຢ່າງຍືນຍົງ",
+      "WOS ຊ່ວຍເຊື່ອມຕໍ່ໂຮງໝໍ ຄລີນິກ Wellness ແລະ ບໍລິການທີ່ກ່ຽວຂ້ອງໃນປະເທດໄທກັບລູກຄ້າຈາກລາວ ພ້ອມຊ່ວຍຈັດການ Journey ຕັ້ງແຕ່ການຄົ້ນຫາບໍລິການ ການຈອງ ຈົນເຖິງການປະສານງານກ່ອນ ແລະ ຫຼັງຮັບບໍລິການ",
     ctaText: "ເປັນຄູ່ຮ່ວມທຸລະກິດກັບພວກເຮົາ",
     ctaLink: "/partner/apply",
+  },
+  foundingPartner: {
+    eyebrow: "WOS FOUNDING PARTNER PROGRAM",
+    headline: "ເປັນໜຶ່ງໃນ WOS Founding Partners",
+    intro:
+      "WOS ກຳລັງເປີດຮັບຄູ່ຮ່ວມທຸລະກິດຮຸ່ນທຳອິດ ເພື່ອຮ່ວມສ້າງເຄືອຂ່າຍ Healthcare & Wellness ລະຫວ່າງປະເທດໄທ ແລະ ລາວ ຄູ່ຮ່ວມທຸລະກິດຮຸ່ນທຳອິດຈະໄດ້ຮັບການ Onboarding ແລະ ຊ່ວຍຈັດທຳ Cross-border Service Packages ຮ່ວມກັບທີມ WOS",
+    benefitsHeadline: "ສິດທິປະໂຫຍດ",
+    benefits: [
+      "ບໍ່ມີຄ່າ Setup ໃນຊ່ວງ Pilot",
+      "ບໍ່ມີ Monthly Platform Fee ໃນຊ່ວງ Pilot",
+      "Priority Onboarding",
+      "ຊ່ວຍຈັດທຳ Service Packages ສຳລັບລູກຄ້າລາວ",
+      "Partner Profile ຢູ່ໃນ WOS",
+      "ໂອກາດຮັບ Cross-border Leads",
+      "ເຂົ້າຮ່ວມເຄືອຂ່າຍ WOS",
+    ],
   },
   whyPartner: {
     headline: "ເປັນຫຍັງການຮ່ວມມືກັບ WOS ຈຶ່ງເປີດໂອກາດທຸລະກິດຫຼາຍກວ່າ",
     reasons: [
       {
         code: "ACC",
-        title: "ເຂົ້າເຖິງນັກທ່ອງທ່ຽວເຊີງການແພດຄຸນນະພາບສູງ",
-        description: "ຖານຂໍ້ມູນຜູ້ໃຊ້ທີ່ຜ່ານການຄັດກອງຄວາມພ້ອມ ແລະ ຄວາມສົນໃຈ ລະບົບຈອງອັດສະລິຍະທີ່ຫຼຸດອັດຕາການຍົກເລີກ",
+        title: "ເຂົ້າເຖິງຕະຫຼາດລູກຄ້າຈາກລາວ",
+        description: "WOS ກຳລັງສ້າງເຄືອຂ່າຍຄູ່ຮ່ວມທຸລະກິດສຳລັບລູກຄ້າທີ່ຕ້ອງການເດີນທາງມາຮັບບໍລິການສຸຂະພາບ ແລະ Wellness ໃນປະເທດໄທ",
         icon: "🎯",
       },
       {
@@ -99,12 +115,17 @@ export const lo: PartnerPageContent = {
       requirements: ["ມີໃບອະນຸຍາດດຳເນີນກິດຈະການສະປາ/ນວດ", "ພະນັກງານຜ່ານການຝຶກອົບຮົມມາດຕະຖານ", "ສະຖານທີ່ສະອາດຖືກສຸຂະລັກສະນະ"],
     },
   ],
+  phaseFocus: {
+    label: "WOS Founding Partner Focus",
+    headline: "Phase 1: Clinic & Wellness",
+    description: "WOS ກຳລັງໃຫ້ຄວາມສຳຄັນກັບ Clinic, Wellness ແລະ Healthcare Providers ທີ່ມີສັກກະຍະພາບໃນການໃຫ້ບໍລິການລູກຄ້າຈາກລາວ",
+  },
   howItWorks: [
-    { stepNumber: 1, title: "ລົງທະບຽນ", description: "ປ້ອນຂໍ້ມູນເບື້ອງຕົ້ນຜ່ານເວັບໄຊ ທີມງານ WOS ຈະຕິດຕໍ່ກັບພາຍໃນ 48 ຊົ່ວໂມງ", duration: "48 ຊົ່ວໂມງ" },
-    { stepNumber: 2, title: "ກວດສອບຄຸນສົມບັດ", description: "ກວດສອບໃບອະນຸຍາດ ແລະ ເອກະສານທີ່ກ່ຽວຂ້ອງ ນັດເວົ້າລົມເພື່ອເຂົ້າໃຈຮູບແບບທຸລະກິດ", duration: "3-5 ວັນ" },
-    { stepNumber: 3, title: "ລົງນາມ MOU", description: "ຕົກລົງເງື່ອນໄຂທຸລະກິດ ແລະ SLA ກຳນົດສິດ ແລະ ໜ້າທີ່ຂອງທັງສອງຝ່າຍ", duration: "1-2 ວັນ" },
-    { stepNumber: 4, title: "ເປີດໃຊ້ງານລະບົບ", description: "ຮັບ Username/Password ສຳລັບ Partner Dashboard ອົບຮົມການໃຊ້ງານລະບົບ (ອອນລາຍ/ໜ້າວຽກ)", duration: "1 ວັນ" },
-    { stepNumber: 5, title: "ເລີ່ມໃຫ້ບໍລິການ", description: "ຮັບການຈອງຜ່ານລະບົບ WOS ເລີ່ມສ້າງລາຍຮັບ ແລະ ຂະຫຍາຍຖານລູກຄ້າ", duration: "ທັນທີ" },
+    { stepNumber: 1, title: "Apply", description: "ສົ່ງຂໍ້ມູນທຸລະກິດ ແລະ ບໍລິການໃຫ້ທີມ WOS", duration: "48 ຊົ່ວໂມງ" },
+    { stepNumber: 2, title: "Partner Review", description: "WOS ກວດສອບຄຸນສົມບັດ ແລະ ເວົ້າລົມຮູບແບບທຸລະກິດຮ່ວມກັນ", duration: "3-5 ວັນ" },
+    { stepNumber: 3, title: "Package Setup", description: "ຮ່ວມກັນຈັດທຳ Service / Package ສຳລັບລູກຄ້າຈາກລາວ", duration: "3-5 ວັນ" },
+    { stepNumber: 4, title: "Pilot Agreement", description: "ຕົກລົງ Commercial Terms ແລະ SLA ຮ່ວມກັນ", duration: "1-2 ວັນ" },
+    { stepNumber: 5, title: "Go Live", description: "ເປີດບໍລິການເທິງ WOS ແລະ ເລີ່ມຮັບ Lead / Booking", duration: "ທັນທີ" },
   ],
   operatingModel: {
     headline: "WOS ເຮັດວຽກແນວໃດ",
@@ -120,31 +141,32 @@ export const lo: PartnerPageContent = {
     ],
     keyPoints: [
       "WOS ເຮັດໜ້າທີ່ເປັນຕົວກາງທີ່ເຊື່ອຖືໄດ້ (Trusted Intermediary)",
-      "ຮັບປະກັນຄຸນນະພາບບໍລິການຈາກຄູ່ຮ່ວມທຸລະກິດທຸກທ່ານ",
-      "ລະບົບ Payment Escrow ເພື່ອຄວາມປອດໄພທາງການເງິນ",
+      "WOS ມີຂັ້ນຕອນກວດສອບຂໍ້ມູນ ແລະ ຄຸນສົມບັດຂອງຄູ່ຮ່ວມທຸລະກິດກ່ອນເຂົ້າຮ່ວມເຄືອຂ່າຍ ແລະ ຕິດຕາມ Feedback ຈາກລູກຄ້າ",
+      "ປະສານການຈ່າຍເງິນຕາມຮອບບິນທີ່ຕົກລົງຮ່ວມກັນ",
       "ເກັບຂໍ້ມູນ ແລະ Feedback ເພື່ອພັດທະນາຄຸນນະພາບຢ່າງຕໍ່ເນື່ອງ",
     ],
   },
   benefits: [
     { title: "ລະບົບບໍລິຫານຈັດການຄົບວົງຈອນ", description: "Partner Dashboard ໃຊ້ງານງ່າຍ ຈັດການຕາຕະລາງເວລາ ລາຄາ ແລະ ໂປຣໂມຊັນໄດ້ເອງ", icon: "✅", features: ["ຈັດການຕາຕະລາງເວລາ", "ປັບລາຄາໄດ້ເອງ", "ສ້າງໂປຣໂມຊັນ", "ເບິ່ງປະຫວັດການຈອງ"] },
     { title: "ການຕະຫຼາດ ແລະ ໂປຣໂມດ", description: "ປາກົດຢູ່ໃນ Partner Directory ໄດ້ຮັບການໂປຣໂມດຜ່ານ Social Media ແລະ Newsletter", icon: "📢", features: ["Partner Directory", "ໂປຣໂມດຜ່ານ Social Media", "ຂຶ້ນ Newsletter", "ຕາ WOS Trusted Partner"] },
-    { title: "ລະບົບສະໜັບສະໜູນ", description: "ທີມສະໜັບສະໜູນພາສາລາວ/ໄທ/ອັງກິດ ຕະຫຼອດ 24/7 ຝ່າຍພັດທະນາທຸລະກິດຊ່ວຍເພີ່ມຍອດຂາຍ", icon: "💬", features: ["ສະໜັບສະໜູນ 24/7", "ຫຼາຍພາສາ", "ຝ່າຍພັດທະນາທຸລະກິດ", "ທີມເທັກນິກຄໍຊ່ວຍເຫຼືອ"] },
-    { title: "ຂໍ້ມູນເຊິງເລິກ", description: "ເບິ່ງພຶດຕິກຳ ແລະ ຄວາມຕ້ອງການຂອງລູກຄ້າ ລາຍງານຍອດຂາຍ ແລະ ແນວໂນ້ມແບບ Real-time", icon: "📊", features: ["ຂໍ້ມູນພຶດຕິກຳລູກຄ້າ", "ລາຍງານຍອດຂາຍ", "ວິເຄາະແນວໂນ້ມ", "ແດັຊບອດ Real-time"] },
+    { title: "WOS Partner Support", description: "ທີມ WOS ຊ່ວຍປະສານງານດ້ານການຈອງ ແລະ ການໃຫ້ບໍລິການຕາມຂອບເຂດທີ່ຕົກລົງກັບຄູ່ຮ່ວມທຸລະກິດ", icon: "💬", features: ["ປະສານງານການຈອງ", "ໄທ/ອັງກິດ", "ຕິດຕໍ່ຜ່ານ Line / WhatsApp"] },
+    { title: "ລາຍງານທຸລະກິດ ແລະ ຂໍ້ມູນການຈອງ", description: "ເບິ່ງພຶດຕິກຳ ແລະ ຄວາມຕ້ອງການຂອງລູກຄ້າ ພ້ອມລາຍງານຍອດຂາຍ ແລະ ແນວໂນ້ມການຈອງ", icon: "📊", features: ["ຂໍ້ມູນພຶດຕິກຳລູກຄ້າ", "ລາຍງານຍອດຂາຍ", "ວິເຄາະແນວໂນ້ມ"] },
     { title: "ການຕໍ່ຍອດທຸລະກິດ", description: "ໂອກາດຮ່ວມໂຄງການກັບຄູ່ຮ່ວມທຸລະກິດລາຍອື່ນ ເຂົ້າຮ່ວມກິດຈະກຳ ແລະ ເຄືອຂ່າຍລະດັບພາກພື້ນ", icon: "🤝", features: ["ໂຄງການຮ່ວມຄູ່ຮ່ວມທຸລະກິດ", "ກິດຈະກຳລະດັບພາກພື້ນ", "ສ້າງເຄືອຂ່າຍ", "ຈັບຄູ່ທຸລະກິດ"] },
   ],
-  // ໝາຍເຫດ: ຕົວເລກຂ້າງລຸ່ມນີ້ເປັນຄ່າຊົ່ວຄາວ ລໍຖ້າການອະນຸມັດຈາກທີມການເງິນ — ປ່ຽນແທນກ່ອນເຜີຍແຜ່.
   commercialTerms: {
-    headline: "ເງື່ອນໄຂທາງການຄ້າ",
+    headline: "Commercial Model",
     intro:
-      "ໂຄງສ້າງຄ່າທຳນຽມ ແລະ ເງື່ອນໄຂການຈ່າຍເງິນຂອງ WOS ຖືກອອກແບບໃຫ້ໂປ່ງໃສ ແລະ ຄາດເດົາໄດ້ ລາຍລະອຽດສຸດທ້າຍຈະຢືນຢັນອີກຄັ້ງໃນຂັ້ນຕອນລົງນາມ MOU ຕາມປະເພດຄູ່ຮ່ວມທຸລະກິດ ແລະ ປະລິມານທຸລະກິດ",
+      "Performance-based Partnership — WOS ບໍ່ມີຄ່າ Setup ແລະ ບໍ່ມີ Monthly Platform Fee ສຳລັບ Founding Partner ໃນຊ່ວງ Pilot WOS ຈະໄດ້ຮັບຄ່າບໍລິການ/Commission ເມື່ອເກີດທຸລະກຳ ຕາມເງື່ອນໄຂທີ່ຕົກລົງຮ່ວມກັນໃນ Partner Agreement",
+    docStamp: "Founding Partner Terms",
     terms: [
-      { label: "ຄ່າຄອມມິຊັນຕໍ່ການຈອງ", value: "[ລະບຸອັດຕາ % ຕາມປະເພດຄູ່ຮ່ວມທຸລະກິດ]", note: "ແຕກຕ່າງກັນຕາມໝວດໝູ່ບໍລິການ" },
+      { label: "ຄ່າ Setup", value: "ບໍ່ມີ", note: "ສຳລັບ Founding Partner ໃນຊ່ວງ Pilot" },
+      { label: "Monthly Platform Fee", value: "ບໍ່ມີ", note: "ໃນຊ່ວງ Pilot" },
+      { label: "ຄ່າຄອມມິຊັນ / ຄ່າບໍລິການ", value: "ຄິດຕາມທຸລະກຳຈິງ", note: "ຕາມເງື່ອນໄຂທີ່ຕົກລົງຮ່ວມກັນໃນ Partner Agreement" },
       { label: "ຮອບການຈ່າຍເງິນ", value: "ລາຍເດືອນ ພາຍໃນ 30 ວັນຫຼັງປິດຮອບບິນ" },
-      { label: "ຄ່າທຳນຽມເຂົ້າຮ່ວມ", value: "[ລະບຸ / ບໍ່ມີ]" },
       { label: "ໄລຍະເວລາສັນຍາ", value: "1 ປີ ຕໍ່ອາຍຸອັດຕະໂນມັດ ເວັ້ນເສຍແຕ່ແຈ້ງຍົກເລີກລ່ວງໜ້າ" },
       { label: "ສະກຸນເງິນທີ່ຈ່າຍ", value: "THB / USD (ຕາມຂໍ້ຕົກລົງ)" },
     ],
-    disclaimer: "ຕົວເລກໃນໜ້ານີ້ເປັນກອບເບື້ອງຕົ້ນສຳລັບການພິຈາລະນາ ເງື່ອນໄຂສະບັບສົມບູນຈະລະບຸໄວ້ໃນ MOU ທີ່ລົງນາມຮ່ວມກັນ",
+    disclaimer: "ລາຍລະອຽດຄ່າຄອມມິຊັນ ແລະ ເງື່ອນໄຂສະບັບສົມບູນຈະລະບຸໄວ້ໃນ Pilot Agreement / MOU ທີ່ລົງນາມຮ່ວມກັນ",
   },
   mou: {
     headline: "MOU ແລະ ຂໍ້ຕົກລົງຄວາມຮ່ວມມື",
@@ -183,6 +205,24 @@ export const lo: PartnerPageContent = {
       { label: "ແຈ້ງບັນຫາຮີບດ່ວນ (Urgent Case)", target: "ພາຍໃນ 1 ຊົ່ວໂມງ" },
       { label: "ຮອບການຈ່າຍເງິນຄູ່ຮ່ວມທຸລະກິດ", target: "ພາຍໃນ 30 ວັນຫຼັງປິດຮອບບິນ" },
     ],
+  },
+  prepare: {
+    eyebrow: "PARTNER CHECKLIST",
+    headline: "ຄູ່ຮ່ວມທຸລະກິດຕ້ອງກຽມຫຍັງແດ່",
+    items: [
+      "ຂໍ້ມູນບໍລິສັດ / ທຸລະກິດ",
+      "ໃບອະນຸຍາດທີ່ກ່ຽວຂ້ອງ",
+      "ລາຍການບໍລິການ",
+      "ລາຄາ",
+      "ຮູບພາບບໍລິການ / ສະຖານທີ່",
+      "ຕາຕະລາງເວລາທີ່ໃຫ້ບໍລິການໄດ້",
+      "ນະໂຍບາຍການຍົກເລີກ",
+      "ຜູ້ຕິດຕໍ່ຫຼັກ",
+      "ຂໍ້ມູນການຮັບຊຳລະເງິນ",
+      "Service Package ສຳລັບລູກຄ້າຕ່າງປະເທດ",
+    ],
+    ctaText: "ເລີ່ມສະໝັກເປັນ WOS Founding Partner",
+    ctaLink: "/partner/apply",
   },
   cta: {
     headline: "ພ້ອມທີ່ຈະເຕີບໂຕໄປນຳກັນແລ້ວບໍ?",

@@ -307,7 +307,17 @@
       "roomQuantity": "จำนวนห้อง",
       "hv": "ผู้ใหญ่",
       "mv": "เด็ก",
-      "locationPerItinerary": "🗺️ ตามแผนการเดินทาง (ไม่ต้องระบุจุด)"
+      "locationPerItinerary": "🗺️ ตามแผนการเดินทาง (ไม่ต้องระบุจุด)",
+      "vehicleType": "🚐 ประเภทรถ",
+      "vehicleTypeSedan": "🚗 รถเก๋ง",
+      "vehicleTypeSuv": "🚙 SUV",
+      "vehicleTypeVipVan": "🚐 VIP Van",
+      "vehicleTypeMedicalTransport": "🚑 รถพยาบาล/รถส่งต่อผู้ป่วย",
+      "vehicleTypeOtherPlaceholder": "ระบุประเภทรถ",
+      "passengerCount": "จำนวนผู้โดยสาร",
+      "medicalAssistance": "🚑 บริการช่วยเหลือทางการแพทย์",
+      "filterByProvince": "กรองตามจังหวัด",
+      "allProvinces": "ทุกจังหวัด"
     },
     "summary": {
       "main": "โปรแกรมหลัก",
@@ -318,12 +328,16 @@
       "reviewDate": "วันที่นัดหมาย",
       "reviewContact": "ผู้ติดต่อ",
       "nightsCount": "{count} คืน",
-      "roomsCount": "{count} ห้อง"
+      "roomsCount": "{count} ห้อง",
+      "teamWillQuote": "ทีมงานจะเสนอราคา",
+      "pendingQuoteNote": "*ยอดรวมด้านบนยังไม่รวมรายการที่รอทีมงานเสนอราคา"
     },
     "errorHotelDates": "กรุณาเลือกวันเช็คอินและเช็คเอาท์ให้ถูกต้อง",
     "errorPickupLocation": "กรุณาระบุจุดรับ",
     "errorDropoffLocation": "กรุณาระบุจุดส่ง",
-    "viewOrderStatus": "ดูสถานะการจอง / ชำระเงิน"
+    "viewOrderStatus": "ดูสถานะการจอง / ชำระเงิน",
+    "errorVehicleType": "กรุณาเลือกประเภทรถ",
+    "errorPassengerCount": "กรุณาระบุจำนวนผู้โดยสาร"
   },
   "becomePartner": {
     "meta": {
@@ -875,6 +889,8 @@
     "returnLabel": "ส่งกลับ",
     "totalLabel": "ยอดรวมทั้งหมด",
     "depositRequiredLabel": "มัดจำที่ต้องชำระ",
+    "pendingAssignmentBadge": "รอทีมจัดให้",
+    "pendingAssignmentBanner": "มีรายการที่ยังรอทีมจัด partner/แพ็กเกจให้ — ยอดรวมด้านล่างยังไม่รวมรายการเหล่านี้ ทีมงานจะติดต่อแจ้งยอดสุดท้ายอีกครั้ง",
     "confirmedBanner": "ยืนยันรายการแล้ว — ไปต่อที่ขั้นตอนชำระมัดจำได้เลย",
     "goToMyTrip": "ดูสถานะการจอง / ชำระมัดจำ",
     "confirmButton": "ยืนยันรายการนี้",

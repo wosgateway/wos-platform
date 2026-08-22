@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import { getPartnerContent, partnerLocales } from "@/content/partner";
 import {
   PartnerHero,
+  FoundingPartner,
   WhyPartner,
   PartnerTypes,
   HowItWorks,
@@ -11,6 +12,7 @@ import {
   CommercialTermsSection,
   MouSection,
   ResponsibilitiesSlaSection,
+  PreparePartner,
   PartnerCta,
 } from "@/components/partner/sections";
 import "./partner-theme.css";
@@ -38,6 +40,7 @@ export default function PartnerPage({ params }: PageProps) {
   return (
     <main className="wos-partner">
       <PartnerHero content={content} />
+      <FoundingPartner content={content} />
       <WhyPartner content={content} />
       <PartnerTypes content={content} />
       <HowItWorks content={content} />
@@ -46,6 +49,7 @@ export default function PartnerPage({ params }: PageProps) {
       <CommercialTermsSection content={content} />
       <MouSection content={content} />
       <ResponsibilitiesSlaSection content={content} />
+      <PreparePartner content={content} />
       <PartnerCta content={content} />
     </main>
   );

@@ -51,18 +51,43 @@ export interface Benefit {
   features: string[];
 }
 
-/** Newly authored to satisfy the /partner sitemap; figures are placeholders. */
 export interface CommercialTerm {
   label: string;
-  value: string; // placeholder text like "ระบุตามประเภทพันธมิตร" until finance signs off
+  value: string;
   note?: string;
 }
 
 export interface CommercialTerms {
   headline: string;
   intro: string;
+  docStamp: string; // small stamp label on the terms card, e.g. "Founding Partner Terms"
   terms: CommercialTerm[];
   disclaimer: string;
+}
+
+/** "WOS Founding Partner Program" callout, shown right after the hero. */
+export interface FoundingPartnerSection {
+  eyebrow: string;
+  headline: string;
+  intro: string;
+  benefitsHeadline: string;
+  benefits: string[];
+}
+
+/** Phase 1 focus note shown alongside Partner Types (sales focus, not a hard restriction). */
+export interface PhaseFocus {
+  label: string;
+  headline: string;
+  description: string;
+}
+
+/** "What partners need to prepare" checklist, shown before the closing CTA. */
+export interface PrepareSection {
+  eyebrow: string;
+  headline: string;
+  items: string[];
+  ctaText: string;
+  ctaLink: string;
 }
 
 export interface MouSection {
@@ -155,14 +180,17 @@ export interface ApplyFormContent {
 export interface PartnerPageContent {
   locale: Locale;
   hero: HeroContent;
+  foundingPartner: FoundingPartnerSection;
   whyPartner: { headline: string; reasons: Reason[] };
   partnerTypes: PartnerType[];
+  phaseFocus: PhaseFocus;
   howItWorks: Step[];
   operatingModel: OperatingModel;
   benefits: Benefit[];
   commercialTerms: CommercialTerms;
   mou: MouSection;
   responsibilitiesSla: ResponsibilitiesSla;
+  prepare: PrepareSection;
   cta: CtaSection;
   seo: Seo;
   applyForm: ApplyFormContent;

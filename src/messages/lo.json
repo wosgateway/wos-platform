@@ -328,7 +328,17 @@
       "roomQuantity": "ຈຳນວນຫ້ອງ",
       "hv": "ຜູ້ໃຫຍ່",
       "mv": "ເດັກນ້ອຍ",
-      "locationPerItinerary": "🗺️ ຕາມແຜນການເດີນທາງ (ບໍ່ຕ້ອງລະບຸຈຸດ)"
+      "locationPerItinerary": "🗺️ ຕາມແຜນການເດີນທາງ (ບໍ່ຕ້ອງລະບຸຈຸດ)",
+      "vehicleType": "🚐 ປະເພດລົດ",
+      "vehicleTypeSedan": "🚗 ລົດເກັງ",
+      "vehicleTypeSuv": "🚙 SUV",
+      "vehicleTypeVipVan": "🚐 VIP Van",
+      "vehicleTypeMedicalTransport": "🚑 ລົດພະຍາບານ/ລົດສົ່ງຕໍ່ຄົນເຈັບ",
+      "vehicleTypeOtherPlaceholder": "ລະບຸປະເພດລົດ",
+      "passengerCount": "ຈຳນວນຜູ້ໂດຍສານ",
+      "medicalAssistance": "🚑 ບໍລິການຊ່ວຍເຫຼືອທາງການແພດ",
+      "filterByProvince": "ກັ່ນຕອງຕາມແຂວງ",
+      "allProvinces": "ທຸກແຂວງ"
     },
     "summary": {
       "main": "ໂປຣແກຣມຫຼັກ",
@@ -339,12 +349,16 @@
       "reviewDate": "ວັນທີ່ນັດໝາຍ",
       "reviewContact": "ຜູ້ຕິດຕໍ່",
       "nightsCount": "{count} ຄືນ",
-      "roomsCount": "{count} ຫ້ອງ"
+      "roomsCount": "{count} ຫ້ອງ",
+      "teamWillQuote": "ທີມງານຈະສະເໜີລາຄາ",
+      "pendingQuoteNote": "*ຍອດລວມຂ້າງເທິງຍັງບໍ່ລວມລາຍການທີ່ລໍຖ້າທີມງານສະເໜີລາຄາ"
     },
     "errorHotelDates": "ກະລຸນາເລືອກວັນເຂົ້າພັກ ແລະ ວັນອອກພັກໃຫ້ຖືກຕ້ອງ",
     "errorPickupLocation": "ກະລຸນາລະບຸຈຸດຮັບ",
     "errorDropoffLocation": "ກະລຸນາລະບຸຈຸດສົ່ງ",
-    "viewOrderStatus": "ເບິ່ງສະຖານະການຈອງ / ຊຳລະເງິນ"
+    "viewOrderStatus": "ເບິ່ງສະຖານະການຈອງ / ຊຳລະເງິນ",
+    "errorVehicleType": "ກະລຸນາເລືອກປະເພດລົດ",
+    "errorPassengerCount": "ກະລຸນາລະບຸຈຳນວນຜູ້ໂດຍສານ"
   },
   "becomePartner": {
     "meta": {
@@ -896,6 +910,8 @@
     "returnLabel": "ສົ່ງກັບ",
     "totalLabel": "ຍອດລວມທັງໝົດ",
     "depositRequiredLabel": "ເງິນມັດຈຳທີ່ຕ້ອງຊຳລະ",
+    "pendingAssignmentBadge": "ລໍຖ້າທີມຈັດໃຫ້",
+    "pendingAssignmentBanner": "ມີລາຍການທີ່ຍັງລໍຖ້າທີມຈັດ partner/ແພັກເກັດໃຫ້ — ຍອດລວມລຸ່ມນີ້ຍັງບໍ່ລວມລາຍການເຫຼົ່ານີ້ ທີມງານຈະຕິດຕໍ່ແຈ້ງຍອດສຸດທ້າຍອີກຄັ້ງ",
     "confirmedBanner": "ຢືນຢັນລາຍການແລ້ວ — ໄປຂັ້ນຕອນຊຳລະເງິນມັດຈຳໄດ້ເລີຍ",
     "goToMyTrip": "ເບິ່ງສະຖານະການຈອງ / ຊຳລະເງິນມັດຈຳ",
     "confirmButton": "ຢືນຢັນລາຍການນີ້",

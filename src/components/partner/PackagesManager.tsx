@@ -15,6 +15,7 @@ interface Package {
   is_promotion: boolean;
   duration: string | null;
   status: 'pending' | 'published' | 'rejected' | 'archived';
+  is_active: boolean;
   image_url: string | null;
   created_at: string;
 }
@@ -255,9 +256,19 @@ export function PackagesManager({ partnerId }: { partnerId: string }) {
                     )}
                   </td>
                   <td className="px-4 py-3">
-                    <span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_LABEL[pkg.status].className}`}>
-                      {STATUS_LABEL[pkg.status].text}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={`rounded-full px-2 py-1 text-xs font-medium ${STATUS_LABEL[pkg.status].className}`}>
+                        {STATUS_LABEL[pkg.status].text}
+                      </span>
+                      {pkg.status === 'published' && !pkg.is_active ? (
+                        <span
+                          className="rounded-full bg-slate-200 px-2 py-1 text-xs font-medium text-slate-500"
+                          title="ทีมงาน WOS ปิดการแสดงผลชั่วคราว ติดต่อทีมงานหากต้องการเปิดกลับ"
+                        >
+                          🚫 ปิดการแสดงผลชั่วคราว
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-3 text-right">
                     <button onClick={() => openModal(pkg)} className="mr-3 text-xs text-primary-dark hover:underline">

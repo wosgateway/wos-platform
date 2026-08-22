@@ -23,6 +23,28 @@ import { createServiceClient } from '@/lib/supabase/service';
 // DashboardMetrics.tsx.
 const ALLOWED_STATUSES = ['pending', 'confirmed', 'checked_in', 'completed', 'cancelled', 'refunded'];
 
+type ItemStatus = (typeof ALLOWED_STATUSES)[number];
+
+// SECURITY: this route used to accept any ALLOWED_STATUSES value as a
+// transition from any other status — same class of gap already found
+// and fixed on the admin order-level route (see the SECURITY comment
+// in /api/admin/orders/[id]/route.ts). A partner user could bounce an
+// item straight from "completed" back to "pending", or jump to
+// "refunded" without going through the payment-verification flow.
+// This is the linear operational flow order_items actually follows;
+// "refunded" is reachable from any non-terminal state since a partner
+// may need to flag a refund at any point, but "completed" and
+// "cancelled"/"refunded" are terminal from here — reopening a
+// finished or refunded item is an admin action, not a partner one.
+const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
+  pending: ['confirmed', 'cancelled', 'refunded'],
+  confirmed: ['checked_in', 'cancelled', 'refunded'],
+  checked_in: ['completed', 'cancelled', 'refunded'],
+  completed: [],
+  cancelled: [],
+  refunded: [],
+};
+
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   const cookieCarrier = new NextResponse();
 
@@ -63,6 +85,35 @@ export async function POST(request: Request, { params }: { params: { id: string 
   }
 
   const service = createServiceClient();
+
+  // Load current status first — same reasoning as the admin route:
+  // the transition map needs to know where we're coming FROM.
+  const { data: currentItem, error: currentErr } = await service
+    .from('order_items')
+    .select('status')
+    .eq('id', params.id)
+    .eq('partner_id', partnerId)
+    .single();
+
+  if (currentErr || !currentItem) {
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Order item not found' }, { status: 404 }),
+      cookieCarrier
+    );
+  }
+
+  const fromStatus = currentItem.status as ItemStatus;
+
+  if (fromStatus !== newStatus && !ALLOWED_TRANSITIONS[fromStatus]?.includes(newStatus as ItemStatus)) {
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: `cannot move item from "${fromStatus}" to "${newStatus}"` },
+        { status: 409 },
+      ),
+      cookieCarrier
+    );
+  }
+
   const { data, error } = await service.rpc('partner_update_order_item_status', {
     p_order_item_id: params.id,
     p_partner_id: partnerId,

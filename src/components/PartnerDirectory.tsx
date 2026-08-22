@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { PartnerCard } from './PartnerCard';
 import type { Partner } from '@/lib/data';
+import { distinctProvinces, normalizeProvince } from '@/lib/province';
 
 export function PartnerDirectory({ partners }: { partners: Partner[] }) {
   const t = useTranslations('partnerDirectory');
@@ -20,10 +21,10 @@ export function PartnerDirectory({ partners }: { partners: Partner[] }) {
     return Array.from(set).sort();
   }, [partners]);
 
-  const provinces = useMemo(() => {
-    const set = new Set(partners.map((p) => p.province as string).filter(Boolean));
-    return Array.from(set).sort();
-  }, [partners]);
+  // Normalized + deduped — without this, "กรุงเทพฯ" and "กรุงเทพ" show up
+  // as two separate dropdown options for what's really one province.
+  // See src/lib/province.ts for the alias list.
+  const provinces = useMemo(() => distinctProvinces(partners), [partners]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -32,7 +33,9 @@ export function PartnerDirectory({ partners }: { partners: Partner[] }) {
       const prov = ((p.province as string) ?? '').toLowerCase();
       const matchesQuery = !q || name.includes(q) || prov.includes(q);
       const matchesCategory = category === 'all' || p.category === category;
-      const matchesProvince = province === 'all' || p.province === province;
+      // Compare normalized forms so a partner stored as "กรุงเทพ" still
+      // matches when the user picks the canonical "กรุงเทพฯ" option.
+      const matchesProvince = province === 'all' || normalizeProvince(p.province) === province;
       return matchesQuery && matchesCategory && matchesProvince;
     });
   }, [partners, search, category, province]);

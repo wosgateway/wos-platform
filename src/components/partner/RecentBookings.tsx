@@ -8,8 +8,12 @@
 // ตั้งแต่ BookingForm.tsx สาธารณะเปลี่ยนไปยิง orders/order_items)
 // getPartnerOrders() คืนค่า 1 แถวต่อ 1 order_item อยู่แล้ว เรียกตรงจาก
 // server component นี้ได้เลยโดยไม่ต้องผ่าน HTTP (เหมือน DashboardMetrics)
+//
+// 2026-08 (design pass): เปลี่ยน emoji empty-state icon เป็น lucide,
+// logic ไม่แตะเลย
 
 import Link from 'next/link';
+import { Inbox } from 'lucide-react';
 import { getPartnerOrders } from '@/lib/partner/orders';
 import { formatTHB, formatThaiDate } from '@/lib/format';
 
@@ -53,7 +57,10 @@ export async function RecentBookings({ partnerId }: { partnerId: string | null }
       </div>
 
       {bookings.length === 0 ? (
-        <div className="p-10 text-center text-sm text-slate-400">📭 ยังไม่มีรายการจอง</div>
+        <div className="flex flex-col items-center gap-2 p-10 text-center text-sm text-slate-400">
+          <Inbox className="h-8 w-8 text-slate-300" strokeWidth={1.5} />
+          ยังไม่มีรายการจอง
+        </div>
       ) : (
         <ul className="divide-y divide-slate-50">
           {bookings.map((booking) => (

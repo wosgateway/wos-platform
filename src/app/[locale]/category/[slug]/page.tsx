@@ -24,8 +24,8 @@ export default async function CategoryPage({
 
       <section className="pb-6 pt-4">
         <div className="mx-auto flex max-w-6xl items-center gap-4 px-4 sm:px-6">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-3xl text-primary-dark">
-            {category.icon}
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary-light text-primary-dark">
+            <category.icon className="h-7 w-7" strokeWidth={1.75} aria-hidden />
           </div>
           <div>
             <h1 className="text-2xl font-bold text-slate-900 sm:text-3xl">{label}</h1>

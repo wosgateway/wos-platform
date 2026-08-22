@@ -116,12 +116,13 @@ export async function GET() {
   // NOTE: this list previously never selected pickup_location /
   // dropoff_location (migration 024/025 added the columns but this
   // route wasn't updated — admin UI silently showed undefined for
-  // both) — and now also needs room_quantity (migration 028). All
-  // three fixed here together.
+  // both) — and now also needs room_quantity (migration 028), and
+  // vehicle_type/passenger_count (migration 037). All fixed here
+  // together.
   const { data: items, error: itemsErr } = await supabase
   .from('order_items')
   .select(
-    'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity'
+    'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, vehicle_type, passenger_count'
   )
   .in('order_id', orderIds)
 

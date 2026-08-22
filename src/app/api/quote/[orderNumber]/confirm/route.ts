@@ -45,14 +45,27 @@ export async function POST(
     );
   }
 
-  const { error: updateErr } = await supabase
+  // Atomic transition: the WHERE clause re-checks status='draft' at the
+  // database level so two concurrent requests can't both pass the earlier
+  // in-app check and both apply the update. Only the request that actually
+  // flips the row (data.length === 1) succeeds; the other gets 409.
+  const { data: updated, error: updateErr } = await supabase
     .from('orders')
     .update({ status: 'pending_deposit' })
-    .eq('id', order!.id);
+    .eq('id', order!.id)
+    .eq('status', 'draft')
+    .select('id');
 
   if (updateErr) {
     console.error('confirm order failed:', updateErr);
     return NextResponse.json({ error: 'ยืนยันไม่สำเร็จ กรุณาลองใหม่' }, { status: 500 });
+  }
+
+  if (!updated || updated.length === 0) {
+    return NextResponse.json(
+      { error: 'รายการนี้ยืนยันไปแล้ว หรือไม่สามารถยืนยันได้อีก' },
+      { status: 409 }
+    );
   }
 
   return NextResponse.json({ success: true });

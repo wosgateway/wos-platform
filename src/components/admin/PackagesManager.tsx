@@ -1,10 +1,11 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 import type { Package, Partner } from '@/lib/data';
+import { distinctProvinces, normalizeProvince } from '@/lib/province';
 
 interface PackageFormState {
   id: string | null;
@@ -50,8 +51,18 @@ export function PackagesManager() {
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [visibilityFilter, setVisibilityFilter] = useState<'all' | 'active' | 'hidden'>('all');
   const [searchQuery, setSearchQuery] = useState('');
   const [partnerFilter, setPartnerFilter] = useState<string>('all');
+  // Category filter narrows by partner.category (Hotel/Transport/Clinic/...).
+  // Derived from `partners` (not hardcoded) so a new category added later
+  // shows up automatically without a code change.
+  const [categoryFilter, setCategoryFilter] = useState<string>('all');
+  // Province filter — same "derived from real data, not hardcoded"
+  // reasoning as categoryFilter above. Values are normalized (see
+  // src/lib/province.ts) so "กรุงเทพฯ" and "กรุงเทพ" collapse into one
+  // option instead of showing as two.
+  const [provinceFilter, setProvinceFilter] = useState<string>('all');
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState<PackageFormState>(emptyForm);
   const [formError, setFormError] = useState<string | null>(null);
@@ -188,14 +199,63 @@ export function PackagesManager() {
     loadAll();
   }
 
-  // Status filter (existing) is applied first, then name search and
-  // partner filter narrow it further — all three combine with AND.
+  // เปิด/ปิดการแสดงผลบนหน้าเว็บ — แยกจากสถานะอนุมัติ (status) โดยสิ้นเชิง
+  // ใช้ระงับแพ็กเกจที่อนุมัติแล้วชั่วคราว (เช่น พาร์ทเนอร์แจ้งของหมด/ปิดปรับปรุง)
+  // โดยไม่ต้องปฏิเสธหรือเก็บถาวร กดเปิดกลับมาแสดงได้ทันทีทีหลัง
+  async function handleToggleActive(pkg: Package) {
+    const nextActive = !pkg.is_active;
+    const { error } = await supabase.from('packages').update({ is_active: nextActive }).eq('id', pkg.id);
+    if (error) {
+      alert('ดำเนินการไม่สำเร็จ: ' + error.message);
+      return;
+    }
+    loadAll();
+  }
+
+  // Distinct partner categories, derived from the loaded partners list
+  // rather than hardcoded — a new category (added by inserting a partner
+  // with that category) shows up here automatically.
+  const categories = useMemo(
+    () => Array.from(new Set(partners.map((p) => p.category).filter(Boolean))).sort(),
+    [partners]
+  );
+
+  // Distinct provinces, normalized so alias spellings (e.g. "กรุงเทพฯ"
+  // vs "กรุงเทพ") collapse into one option — see src/lib/province.ts.
+  const provinces = useMemo(() => distinctProvinces(partners), [partners]);
+
+  // partners the categoryFilter/provinceFilter narrow the partner dropdown
+  // to — used so picking "Hotel" + "กรุงเทพฯ" first only shows matching
+  // partners in the partner select, instead of every partner.
+  const partnersInCategory = useMemo(
+    () =>
+      partners
+        .filter((p) => (categoryFilter === 'all' ? true : p.category === categoryFilter))
+        .filter((p) => (provinceFilter === 'all' ? true : normalizeProvince(p.province) === provinceFilter)),
+    [partners, categoryFilter, provinceFilter]
+  );
+
+  // Status filter (existing) is applied first, then category, province,
+  // name search, and partner filter narrow it further — all combine with AND.
   const filtered = packages
     .filter((p) => (statusFilter === 'all' ? true : p.status === statusFilter))
+    .filter((p) => {
+      if (categoryFilter === 'all') return true;
+      const partner = partners.find((pt) => pt.id === p.partner_id);
+      return partner?.category === categoryFilter;
+    })
+    .filter((p) => {
+      if (provinceFilter === 'all') return true;
+      const partner = partners.find((pt) => pt.id === p.partner_id);
+      return normalizeProvince(partner?.province) === provinceFilter;
+    })
     .filter((p) =>
       searchQuery.trim() ? (p.title as string)?.toLowerCase().includes(searchQuery.trim().toLowerCase()) : true
     )
-    .filter((p) => (partnerFilter === 'all' ? true : p.partner_id === partnerFilter));
+    .filter((p) => (partnerFilter === 'all' ? true : p.partner_id === partnerFilter))
+    .filter((p) =>
+      visibilityFilter === 'all' ? true : visibilityFilter === 'active' ? p.is_active : !p.is_active
+    );
   const pendingCount = packages.filter((p) => p.status === 'pending').length;
 
   return (
@@ -241,7 +301,26 @@ export function PackagesManager() {
         ))}
       </div>
 
-      {/* ===== ค้นหา + กรองพาร์ทเนอร์ ===== */}
+      {/* ===== Filter การแสดงผล ===== */}
+      <div className="flex flex-wrap gap-2">
+        {([
+          { key: 'all', label: 'ทั้งหมด' },
+          { key: 'active', label: '✅ แสดงอยู่' },
+          { key: 'hidden', label: '🚫 ปิดการแสดงผล' },
+        ] as const).map((v) => (
+          <button
+            key={v.key}
+            onClick={() => setVisibilityFilter(v.key)}
+            className={`rounded-full px-3 py-1.5 text-xs font-semibold transition-colors ${
+              visibilityFilter === v.key ? 'bg-primary text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+            }`}
+          >
+            {v.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ===== ค้นหา + กรองประเภทพาร์ทเนอร์ + กรองพาร์ทเนอร์ ===== */}
       <div className="flex flex-wrap gap-2">
         <input
           type="text"
@@ -251,22 +330,74 @@ export function PackagesManager() {
           className="form-input max-w-xs flex-1"
         />
         <select
+          value={categoryFilter}
+          onChange={(e) => {
+            const nextCategory = e.target.value;
+            setCategoryFilter(nextCategory);
+            // If the currently-selected partner isn't in the newly chosen
+            // category, reset partnerFilter — otherwise the list silently
+            // stays empty (category + partner filters AND together) with
+            // no visible reason why.
+            if (nextCategory !== 'all') {
+              const current = partners.find((p) => p.id === partnerFilter);
+              if (current && current.category !== nextCategory) {
+                setPartnerFilter('all');
+              }
+            }
+          }}
+          className="form-input w-auto"
+        >
+          <option value="all">ทุกประเภท</option>
+          {categories.map((c) => (
+            <option key={c} value={c}>
+              {c}
+            </option>
+          ))}
+        </select>
+        <select
+          value={provinceFilter}
+          onChange={(e) => {
+            const nextProvince = e.target.value;
+            setProvinceFilter(nextProvince);
+            // Same reset reasoning as categoryFilter above — if the
+            // selected partner isn't in the newly chosen province, drop
+            // partnerFilter back to "all" instead of silently emptying
+            // the list.
+            if (nextProvince !== 'all') {
+              const current = partners.find((p) => p.id === partnerFilter);
+              if (current && normalizeProvince(current.province) !== nextProvince) {
+                setPartnerFilter('all');
+              }
+            }
+          }}
+          className="form-input w-auto"
+        >
+          <option value="all">ทุกจังหวัด</option>
+          {provinces.map((prov) => (
+            <option key={prov} value={prov}>
+              {prov}
+            </option>
+          ))}
+        </select>
+        <select
           value={partnerFilter}
           onChange={(e) => setPartnerFilter(e.target.value)}
           className="form-input w-auto"
         >
           <option value="all">ทุกพาร์ทเนอร์</option>
-          {partners.map((p) => (
+          {partnersInCategory.map((p) => (
             <option key={p.id} value={p.id}>
               {p.name}
             </option>
           ))}
         </select>
-        {searchQuery || partnerFilter !== 'all' ? (
+        {searchQuery || partnerFilter !== 'all' || categoryFilter !== 'all' || provinceFilter !== 'all' ? (
           <button
             onClick={() => {
               setSearchQuery('');
               setPartnerFilter('all');
+              setCategoryFilter('all');
+              setProvinceFilter('all');
             }}
             className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm text-slate-500"
           >
@@ -323,9 +454,16 @@ export function PackagesManager() {
                     )}
                   </td>
                   <td className="px-4 py-2">
-                    <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[pkg.status].className}`}>
-                      {STATUS_LABEL[pkg.status].text}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_LABEL[pkg.status].className}`}>
+                        {STATUS_LABEL[pkg.status].text}
+                      </span>
+                      {!pkg.is_active ? (
+                        <span className="rounded-full bg-slate-200 px-2 py-0.5 text-xs font-medium text-slate-500">
+                          🚫 ปิดการแสดงผล
+                        </span>
+                      ) : null}
+                    </div>
                   </td>
                   <td className="px-4 py-2 text-right">
                     {pkg.status === 'pending' ? (
@@ -340,6 +478,14 @@ export function PackagesManager() {
                           ปฏิเสธ
                         </button>
                       </>
+                    ) : null}
+                    {pkg.status === 'published' ? (
+                      <button
+                        onClick={() => handleToggleActive(pkg)}
+                        className={`mr-3 hover:underline ${pkg.is_active ? 'text-amber-600' : 'text-emerald-600'}`}
+                      >
+                        {pkg.is_active ? 'ปิดการแสดงผล' : 'เปิดการแสดงผล'}
+                      </button>
                     ) : null}
                     <button onClick={() => openModal(pkg)} className="mr-3 text-primary-dark hover:underline">
                       แก้ไข

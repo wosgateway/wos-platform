@@ -50,6 +50,11 @@ interface QuoteItem {
   id: string;
   service_type: ServiceType;
   price: number | null;
+  // true while this item still awaits admin assignment of a
+  // partner/package (migrations 013/014/036/037) — price is NULL and
+  // NOT yet reflected in the order-level totals below. Surfaced so the
+  // customer isn't shown a total that silently excludes this item.
+  needs_assignment: boolean | null;
   quantity: number | null;
   room_quantity: number | null;
   scheduled_date: string | null;
@@ -257,7 +262,14 @@ export default function QuotePage() {
           {quote.items.map((item) => (
             <div key={item.id} className="flex items-center justify-between p-5 print:p-2">
               <div>
-                <div className="text-xs text-slate-400">{SERVICE_TYPE_LABEL[item.service_type]}</div>
+                <div className="flex items-center gap-2 text-xs text-slate-400">
+                  <span>{SERVICE_TYPE_LABEL[item.service_type]}</span>
+                  {item.needs_assignment ? (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700 print:bg-transparent print:px-0 print:text-amber-700">
+                      ⏳ {t('pendingAssignmentBadge')}
+                    </span>
+                  ) : null}
+                </div>
                 <div className="font-medium text-slate-800">{itemLabel(item)}</div>
                 {item.scheduled_date ? (
                   <div className="text-xs text-slate-500">
@@ -299,6 +311,12 @@ export default function QuotePage() {
           ))}
         </div>
       </div>
+
+      {quote.items.some((item) => item.needs_assignment) ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 print:border print:border-amber-300">
+          ⏳ {t('pendingAssignmentBanner')}
+        </div>
+      ) : null}
 
       <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm print:rounded-none print:border print:p-2 print:shadow-none">
         <div className="flex justify-between text-sm">

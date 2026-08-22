@@ -1,18 +1,32 @@
-﻿// src/components/partner/PartnerSidebar.tsx
+// src/components/partner/PartnerSidebar.tsx
+//
+// 2026-08 (design pass): เปลี่ยน emoji nav icon เป็น lucide-react,
+// logic/route/active-state ไม่แตะเลย
 'use client';
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import {
+  LayoutDashboard,
+  LineChart,
+  ClipboardList,
+  Package,
+  Building2,
+  FileText,
+  CreditCard,
+  LogOut,
+  type LucideIcon,
+} from 'lucide-react';
 import { PartnerUser } from '@/lib/partner/auth';
 
-const NAV_ITEMS = [
-  { href: '/dashboard', label: 'ภาพรวม', icon: '📊' },
-  { href: '/analytics', label: 'สรุปข้อมูล', icon: '📈' },
-  { href: '/bookings', label: 'การจอง', icon: '📋' },
-  { href: '/packages', label: 'โปรแกรม', icon: '📦' },
-  { href: '/company', label: 'ข้อมูลบริษัท', icon: '🏢' },
-  { href: '/documents', label: 'เอกสาร', icon: '📄' },
-  { href: '/billing', label: 'บิล & ระบบสมาชิก', icon: '💳' },
+const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
+  { href: '/dashboard', label: 'ภาพรวม', icon: LayoutDashboard },
+  { href: '/analytics', label: 'สรุปข้อมูล', icon: LineChart },
+  { href: '/bookings', label: 'การจอง', icon: ClipboardList },
+  { href: '/packages', label: 'โปรแกรม', icon: Package },
+  { href: '/company', label: 'ข้อมูลบริษัท', icon: Building2 },
+  { href: '/documents', label: 'เอกสาร', icon: FileText },
+  { href: '/billing', label: 'บิล & ระบบสมาชิก', icon: CreditCard },
 ];
 
 export function PartnerSidebar({ user }: { user: PartnerUser }) {
@@ -42,6 +56,7 @@ export function PartnerSidebar({ user }: { user: PartnerUser }) {
       <nav className="flex-1 p-3 space-y-1">
         {NAV_ITEMS.map((item) => {
           const isActive = pathname === item.href || pathname.startsWith(item.href + '/');
+          const Icon = item.icon;
           return (
             <Link
               key={item.href}
@@ -54,7 +69,7 @@ export function PartnerSidebar({ user }: { user: PartnerUser }) {
                 }
               `}
             >
-              <span className="text-base">{item.icon}</span>
+              <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
               {item.label}
             </Link>
           );
@@ -72,7 +87,7 @@ export function PartnerSidebar({ user }: { user: PartnerUser }) {
           }}
           className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-slate-400 hover:text-red-500 hover:bg-red-50 w-full transition-colors"
         >
-          <span>🚪</span>
+          <LogOut className="h-[18px] w-[18px]" strokeWidth={1.75} />
           ออกจากระบบ
         </button>
       </div>

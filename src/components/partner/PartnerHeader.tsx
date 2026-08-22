@@ -1,7 +1,11 @@
 // src/components/partner/PartnerHeader.tsx
+//
+// 2026-08 (design pass): เปลี่ยน emoji logout icon เป็น lucide-react,
+// logic ไม่แตะเลย
 'use client';
 
 import { useState, ReactNode } from 'react';
+import { LogOut } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 import { PartnerUser } from '@/lib/partner/auth';
 import { MobileSidebar } from './MobileSidebar';
@@ -55,9 +59,10 @@ export function PartnerHeader({
                   await supabase.auth.signOut();
                   window.location.href = '/login';
                 }}
-                className="w-full text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
+                className="flex w-full items-center gap-2 text-left px-4 py-2 text-sm text-slate-600 hover:bg-slate-50"
               >
-                🚪 ออกจากระบบ
+                <LogOut className="h-4 w-4" strokeWidth={1.75} />
+                ออกจากระบบ
               </button>
             </div>
           )}

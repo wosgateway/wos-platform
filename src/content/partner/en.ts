@@ -6,19 +6,35 @@ export const en: PartnerPageContent = {
   hero: {
     eyebrow: "WOS PARTNER NETWORK",
     boardingLabel: "PARTNER PASS",
-    headline: "Partner with WOS — Grow Together in Medical Tourism",
+    headline: "Reach Wellness & Healthcare Customers from Laos — Through WOS",
     subheadline:
-      "WOS connects medical travelers with quality partners across Asia. Join a transparent, secure, and sustainable ecosystem.",
+      "WOS connects hospitals, clinics, wellness providers, and related services in Thailand with customers from Laos — helping manage the journey from discovery and booking through pre- and post-service coordination.",
     ctaText: "Become a Partner",
     ctaLink: "/partner/apply",
+  },
+  foundingPartner: {
+    eyebrow: "WOS FOUNDING PARTNER PROGRAM",
+    headline: "Become a WOS Founding Partner",
+    intro:
+      "WOS is opening its first cohort of partners to help build a cross-border Healthcare & Wellness network between Thailand and Laos. Founding Partners get hands-on onboarding and help shaping cross-border service packages with the WOS team.",
+    benefitsHeadline: "Benefits",
+    benefits: [
+      "No setup fee during the Pilot",
+      "No monthly platform fee during the Pilot",
+      "Priority onboarding",
+      "Help building service packages for Lao customers",
+      "Partner profile on WOS",
+      "Opportunity to receive cross-border leads",
+      "Join the WOS network",
+    ],
   },
   whyPartner: {
     headline: "Why Partner with WOS",
     reasons: [
       {
         code: "ACC",
-        title: "Access to High-Quality Medical Travelers",
-        description: "Pre-screened users with verified interest. Smart booking system reduces no-show rates.",
+        title: "Access the Lao Customer Market",
+        description: "WOS is building a partner network for customers travelling to Thailand for healthcare and wellness services.",
         icon: "🎯",
       },
       {
@@ -91,12 +107,17 @@ export const en: PartnerPageContent = {
       requirements: ["Valid Spa/Massage License", "Trained & Certified Staff", "Clean & Hygienic Facility"],
     },
   ],
+  phaseFocus: {
+    label: "WOS Founding Partner Focus",
+    headline: "Phase 1: Clinic & Wellness",
+    description: "WOS is currently focused on clinics, wellness providers, and healthcare providers well-positioned to serve customers from Laos.",
+  },
   howItWorks: [
-    { stepNumber: 1, title: "Register", description: "Submit basic info via our website. WOS team contacts you within 48 hours.", duration: "48 hours" },
-    { stepNumber: 2, title: "Verification", description: "License and document review. Discovery call to understand your business model.", duration: "3-5 days" },
-    { stepNumber: 3, title: "Sign MOU", description: "Agree on commercial terms and SLA. Define roles and responsibilities.", duration: "1-2 days" },
-    { stepNumber: 4, title: "System Activation", description: "Receive Partner Dashboard credentials. Online/on-site training provided.", duration: "1 day" },
-    { stepNumber: 5, title: "Go Live", description: "Start receiving bookings via WOS. Grow your revenue and customer base.", duration: "Immediate" },
+    { stepNumber: 1, title: "Apply", description: "Submit your business and service information to the WOS team.", duration: "48 hours" },
+    { stepNumber: 2, title: "Partner Review", description: "WOS reviews your qualifications and discusses your business model.", duration: "3-5 days" },
+    { stepNumber: 3, title: "Package Setup", description: "Work together to build service packages for Lao customers.", duration: "3-5 days" },
+    { stepNumber: 4, title: "Pilot Agreement", description: "Agree on commercial terms and SLA together.", duration: "1-2 days" },
+    { stepNumber: 5, title: "Go Live", description: "Launch on WOS and start receiving leads / bookings.", duration: "Immediate" },
   ],
   operatingModel: {
     headline: "How WOS Works",
@@ -112,31 +133,32 @@ export const en: PartnerPageContent = {
     ],
     keyPoints: [
       "WOS acts as a trusted intermediary",
-      "Quality guarantee on all partner services",
-      "Payment escrow for financial security",
+      "WOS verifies partner information and qualifications before onboarding, and tracks customer feedback",
+      "Payments are coordinated on the agreed settlement cycle",
       "Continuous quality improvement through data & feedback",
     ],
   },
   benefits: [
     { title: "Comprehensive Management System", description: "Easy-to-use Partner Dashboard. Self-manage schedules, pricing & promotions.", icon: "✅", features: ["Schedule Management", "Self Pricing", "Promotions", "Booking History"] },
     { title: "Marketing & Promotion", description: "Featured in Partner Directory. Promoted via Social Media & Newsletter.", icon: "📢", features: ["Partner Directory", "Social Media Promotion", "Newsletter Feature", "WOS Trusted Partner Badge"] },
-    { title: "24/7 Support", description: "Thai/English support team. Business development assistance.", icon: "💬", features: ["24/7 Support", "Thai/English", "Business Development", "Technical Support"] },
-    { title: "Data & Insights", description: "Customer behavior and demand trends. Real-time sales & performance reports.", icon: "📊", features: ["Customer Insights", "Sales Reports", "Trend Analysis", "Real-time Dashboard"] },
+    { title: "WOS Partner Support", description: "The WOS team coordinates bookings and service delivery within the scope agreed with each partner.", icon: "💬", features: ["Booking coordination", "Thai/English", "Line / WhatsApp contact"] },
+    { title: "Business Reporting & Booking Data", description: "See customer behavior and demand trends, plus sales and booking reports.", icon: "📊", features: ["Customer Insights", "Sales Reports", "Trend Analysis"] },
     { title: "Business Growth", description: "Cross-partner collaboration opportunities. Regional events and networking.", icon: "🤝", features: ["Cross-partner Projects", "Regional Events", "Networking", "Business Matching"] },
   ],
-  // NOTE: figures below are placeholders pending commercial sign-off — replace before publishing.
   commercialTerms: {
-    headline: "Commercial Terms",
+    headline: "Commercial Model",
     intro:
-      "WOS's fee structure and payment terms are designed to be transparent and predictable. Final figures are confirmed at MOU signing based on partner type and volume.",
+      "Performance-based Partnership — no setup fee and no monthly platform fee for Founding Partners during the pilot phase. WOS earns a service fee / commission on transactions, per the terms agreed in the Partner Agreement.",
+    docStamp: "Founding Partner Terms",
     terms: [
-      { label: "Commission per booking", value: "[Rate % — by partner category]", note: "Varies by service category" },
+      { label: "Setup fee", value: "None", note: "Founding Partners, during the Pilot" },
+      { label: "Monthly platform fee", value: "None", note: "During the Pilot" },
+      { label: "Commission / service fee", value: "Charged on actual transactions", note: "Per the terms agreed in the Partner Agreement" },
       { label: "Settlement cycle", value: "Monthly, within 30 days of billing cycle close" },
-      { label: "Onboarding fee", value: "[Specify / None]" },
       { label: "Contract term", value: "1 year, auto-renews unless cancelled in advance" },
       { label: "Settlement currency", value: "THB / USD (by agreement)" },
     ],
-    disclaimer: "Figures on this page are an initial framework for evaluation. Final terms are set out in the signed MOU.",
+    disclaimer: "Full commission and contract terms are set out in the signed Pilot Agreement / MOU.",
   },
   mou: {
     headline: "MOU & Partnership Agreement",
@@ -175,6 +197,24 @@ export const en: PartnerPageContent = {
       { label: "Urgent case escalation", target: "Within 1 hour" },
       { label: "Partner settlement cycle", target: "Within 30 days of billing cycle close" },
     ],
+  },
+  prepare: {
+    eyebrow: "PARTNER CHECKLIST",
+    headline: "What Partners Need to Prepare",
+    items: [
+      "Company / business information",
+      "Relevant licenses",
+      "Service list",
+      "Pricing",
+      "Photos of services / venue",
+      "Availability",
+      "Cancellation policy",
+      "Primary contact",
+      "Payment information",
+      "Service package for international customers",
+    ],
+    ctaText: "Start Your WOS Founding Partner Application",
+    ctaLink: "/partner/apply",
   },
   cta: {
     headline: "Ready to Grow Together?",

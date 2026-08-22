@@ -1,7 +1,12 @@
 // src/components/partner/NotificationBell.tsx
+//
+// 2026-08 (design pass): เปลี่ยน emoji empty-state icon เป็น
+// lucide-react. Bell icon เดิมเป็น inline SVG อยู่แล้ว ไม่แตะ. logic
+// ไม่แตะเลย
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { Inbox } from 'lucide-react';
 import { createClient } from '@/lib/supabase/client';
 
 interface Notification {
@@ -116,8 +121,9 @@ export function NotificationBell({ organizationId }: { organizationId: string })
             </div>
 
             {notifications.length === 0 ? (
-              <div className="p-8 text-center text-sm text-slate-400">
-                📭 ไม่มีการแจ้งเตือน
+              <div className="flex flex-col items-center gap-2 p-8 text-center text-sm text-slate-400">
+                <Inbox className="h-7 w-7 text-slate-300" strokeWidth={1.5} />
+                ไม่มีการแจ้งเตือน
               </div>
             ) : (
               <div className="divide-y divide-slate-100">

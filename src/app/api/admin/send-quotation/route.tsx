@@ -57,6 +57,46 @@ export async function POST(request: NextRequest) {
     );
   }
 
+  // 3b. GUARD: block sending a quote while this order still has any
+  // order_items row with needs_assignment = true ("let team decide"
+  // hotel/transport, migrations 013/014/036/037 — price/deposit_required
+  // are still NULL on that row and NOT reflected in order.total_amount/
+  // total_deposit_required, since sync_order_totals() SUMs and SUM()
+  // skips NULLs). Sending a quote in this state shows the customer a
+  // total that silently excludes those items — see the audit that
+  // flagged this (admin_assign_order_item() end-to-end review). Fail
+  // closed: a lookup error here must also block sending, not fall
+  // through as if there were no pending items.
+  const { count: pendingCount, error: pendingErr } = await supabase
+    .from('order_items')
+    .select('id', { count: 'exact', head: true })
+    .eq('order_id', orderId)
+    .eq('needs_assignment', true);
+
+  if (pendingErr) {
+    console.error('send-quotation: pending-assignment check failed:', pendingErr);
+    return withRefreshedCookies(
+      NextResponse.json(
+        { error: 'ตรวจสอบสถานะรายการไม่สำเร็จ กรุณาลองใหม่' },
+        { status: 500 }
+      ),
+      cookieCarrier
+    );
+  }
+
+  if ((pendingCount ?? 0) > 0) {
+    return withRefreshedCookies(
+      NextResponse.json(
+        {
+          error: `ยังส่งใบเสนอราคาไม่ได้: มี ${pendingCount} รายการที่ยังรอทีมจัด partner/แพ็กเกจอยู่ กรุณา assign ให้ครบก่อน (ยอดรวมปัจจุบันยังไม่รวมรายการเหล่านี้)`,
+          pendingCount,
+        },
+        { status: 409 }
+      ),
+      cookieCarrier
+    );
+  }
+
   // 4. สร้างลิงก์ใบเสนอราคา
   const quoteUrl = `${APP_URL}/th/quote/${order.order_number}?token=${encodeURIComponent(
     order.payment_access_token

@@ -8,6 +8,11 @@ export interface Partner {
   rating: number | null;
   review_count: number | null;
   cover_image_url: string | null;
+  // Free-text, nullable — not every partner row has this filled in yet.
+  // Known data quirk: "กรุงเทพฯ" vs "กรุงเทพ" are both in use for the
+  // same province — normalize with src/lib/province.ts before using
+  // this to build a filter dropdown or derive a distinct list.
+  province: string | null;
   [key: string]: unknown;
 }
 
@@ -21,6 +26,9 @@ export interface Package {
   // 'pending' = พาร์ทเนอร์ส่งมาจาก portal รอแอดมินอนุมัติ, 'published' = ขึ้นเว็บจริง,
   // 'rejected' = แอดมินปฏิเสธ, 'archived' = เคยเผยแพร่แล้วถอดออก
   status: 'pending' | 'published' | 'rejected' | 'archived';
+  // สวิตช์เปิด/ปิดการแสดงผลของแอดมิน — แยกจาก status เพื่อให้แอดมินระงับ
+  // การแสดงบนหน้าเว็บชั่วคราวได้โดยไม่ต้องรีเซ็ตสถานะอนุมัติ (ดู migration_add_package_is_active.sql)
+  is_active: boolean;
   submitted_by: string | null;
   created_at: string;
   // ข้อมูลแนะนำที่พักตอนเบราส์ดูโปรแกรม — ไม่ใช่ราคาผูกมัด
@@ -60,7 +68,8 @@ export async function fetchPackagesByPartner(
     .from('packages')
     .select('*')
     .eq('partner_id', partnerId)
-    .eq('status', 'published');
+    .eq('status', 'published')
+    .eq('is_active', true);
   if (promotionsOnly) query = query.eq('is_promotion', true);
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;
@@ -74,6 +83,7 @@ export async function fetchPackageById(id: string): Promise<Package> {
     .select('*, partners(*)')
     .eq('id', id)
     .eq('status', 'published')
+    .eq('is_active', true)
     .single();
   if (error) throw error;
   return data;
@@ -88,6 +98,7 @@ export async function fetchFeaturedPackages(limit = 8): Promise<Package[]> {
     .select('*, partners!inner(id, name, category, status)')
     .eq('is_promotion', true)
     .eq('status', 'published')
+    .eq('is_active', true)
     .eq('partners.status', 'active')
     .order('created_at', { ascending: false })
     .limit(limit);
@@ -99,10 +110,13 @@ export async function fetchPackagesByCategory(dbCategories: string[]): Promise<P
   const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
-    .select('*, partners!inner(id, name, category, status)')
+    // province included so the hotel-step province filter (BookingForm /
+    // JourneyBookingForm) has something to filter on — see src/lib/province.ts
+    .select('*, partners!inner(id, name, category, status, province)')
     .in('partners.category', dbCategories)
     .eq('partners.status', 'active')
     .eq('status', 'published')
+    .eq('is_active', true)
     .order('title', { ascending: true });
   if (error) throw error;
   return data ?? [];

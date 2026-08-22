@@ -17,11 +17,11 @@ export function CategoryCard({ category, label }: { category: Category; label: s
           sizes="(max-width: 768px) 100vw, 33vw"
         />
       </div>
-      <div className="flex items-center gap-3 p-4">
-        <span className="text-2xl" aria-hidden>
-          {category.icon}
+      <div className="flex items-center gap-3 p-5">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-medicalBlue/10 text-medicalBlue">
+          <category.icon className="h-5 w-5" strokeWidth={1.75} aria-hidden />
         </span>
-        <span className="font-semibold text-slate-900">{label}</span>
+        <span className="text-lg font-bold text-slate-900">{label}</span>
       </div>
     </Link>
   );

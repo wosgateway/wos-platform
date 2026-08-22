@@ -28,6 +28,24 @@
 // it shows the customer after a successful booking — see its
 // "done" screen.
 //
+// UPDATED (with migration 036): create_order_with_items() now takes
+// p_client_request_id and returns order_number/total_amount/
+// total_deposit_required/currency/payment_access_token directly —
+// no more separate SELECT after the RPC call. That SELECT used to
+// be a real failure window: if it failed after the order had
+// already been created, the customer was told to "refresh to
+// retry", which created a SECOND order for the same booking. See
+// migration 036's header for the full idempotency design.
+//
+// client_request_id is REQUIRED (not just accepted) as of this
+// version — see validate() below. It was optional during the
+// transition while BookingForm.tsx / JourneyBookingForm.tsx were
+// being updated to generate one; both do now (see clientRequestIdRef
+// in each), so an order created without one would have zero
+// duplicate-booking protection (the DB partial unique index only
+// applies WHERE client_request_id IS NOT NULL) — not something to
+// allow silently on a public endpoint.
+//
 // SECURITY: rate-limited by IP and by phone (see simpleRateLimit
 // calls in POST below) — same in-memory limiter already used by
 // quote/[orderNumber]/payments/route.ts. IP alone isn't enough on a
@@ -81,7 +99,7 @@ interface OrderItemInput {
   room_quantity?: number;
   hotel_checkout_date?: string;
   // Transport-only:
-  transport_mode?: 'one_way' | 'round_trip' | 'daily';
+  transport_mode?: 'one_way' | 'round_trip' | 'daily' | 'medical_assistance';
   transport_return_date?: string;
   transport_return_time?: string;
   // Free text, already resolved client-side from the pickup/dropoff
@@ -92,6 +110,13 @@ interface OrderItemInput {
   // never-trust-the-client treatment as package_id/price.
   transport_pickup_location?: string;
   transport_dropoff_location?: string;
+  // Transport-only (migration 037). vehicle_type is free text
+  // (intentionally not a fixed enum here — see the migration's
+  // comment); passenger_count is validated as a positive integer
+  // below. Both are rejected server-side (in create_order_with_items())
+  // if sent on a non-transport item.
+  vehicle_type?: string;
+  passenger_count?: number;
 }
 
 interface CreateOrderBody {
@@ -99,7 +124,32 @@ interface CreateOrderBody {
   items: OrderItemInput[];
   notes?: string;
   attachment_url?: string;
+  // UUID the browser generates once per booking attempt and re-sends
+  // unchanged on any retry of that SAME attempt (network timeout,
+  // double-tap, etc). See migration 036 — the DB treats a repeated
+  // value as "same request, already handled" instead of creating a
+  // second order. REQUIRED — validate() rejects any request missing
+  // this, since an order created without one has no idempotency
+  // protection at all (the DB unique index only applies WHERE
+  // client_request_id IS NOT NULL). BookingForm.tsx /
+  // JourneyBookingForm.tsx always send one; kept as `string` (not
+  // optional) here because the type should reflect the enforced
+  // contract, not the historical transition period.
+  client_request_id: string;
 }
+
+// Ceiling on items per order — not a real business limit (no booking
+// realistically needs more), just a cheap reject-early guard so a
+// malformed/abusive payload (thousands of empty item objects) doesn't
+// burn JSON-parse/validation/RPC-mapping work before the DB would
+// reject it anyway. Bump if a legitimate multi-item booking ever
+// needs more.
+const MAX_ITEMS = 20;
+
+// Same reasoning as MAX_ITEMS: a booking with more than this many
+// nights/rooms/units in a single item is far more likely to be
+// malformed or abusive input than a real booking.
+const MAX_QUANTITY = 100;
 
 function validate(body: Partial<CreateOrderBody>): string | null {
   if (!body.customer || typeof body.customer !== 'object') {
@@ -114,6 +164,9 @@ function validate(body: Partial<CreateOrderBody>): string | null {
   if (!Array.isArray(body.items) || body.items.length === 0) {
     return 'items must be a non-empty array';
   }
+  if (body.items.length > MAX_ITEMS) {
+    return `items must contain no more than ${MAX_ITEMS} items`;
+  }
   for (const [i, item] of body.items.entries()) {
     const hasPackage = typeof item.package_id === 'string' && item.package_id.length > 0;
     const hasServiceType = typeof item.service_type === 'string' && item.service_type.length > 0;
@@ -127,16 +180,26 @@ function validate(body: Partial<CreateOrderBody>): string | null {
     if (hasServiceType && item.service_type !== 'hotel' && item.service_type !== 'transport') {
       return `item[${i}]: service_type (let-team-decide) only supports 'hotel' or 'transport'`;
     }
-    if (item.quantity !== undefined && (typeof item.quantity !== 'number' || item.quantity <= 0)) {
-      return `item[${i}]: quantity must be a positive number`;
+    // Integer + capped, same treatment as room_quantity below — this
+    // represents a count of nights/units, never a fractional amount
+    // (previously any positive number, e.g. 0.5, was accepted).
+    if (
+      item.quantity !== undefined &&
+      (typeof item.quantity !== 'number' ||
+        !Number.isInteger(item.quantity) ||
+        item.quantity <= 0 ||
+        item.quantity > MAX_QUANTITY)
+    ) {
+      return `item[${i}]: quantity must be a whole number between 1 and ${MAX_QUANTITY}`;
     }
     if (
       item.room_quantity !== undefined &&
       (typeof item.room_quantity !== 'number' ||
         !Number.isInteger(item.room_quantity) ||
-        item.room_quantity <= 0)
+        item.room_quantity <= 0 ||
+        item.room_quantity > MAX_QUANTITY)
     ) {
-      return `item[${i}]: room_quantity must be a positive integer`;
+      return `item[${i}]: room_quantity must be a whole number between 1 and ${MAX_QUANTITY}`;
     }
     // Only enforceable here for the "let team decide" shape, where
     // service_type is given directly. A package_id item's real
@@ -154,10 +217,64 @@ function validate(body: Partial<CreateOrderBody>): string | null {
     }
     if (
       item.transport_mode !== undefined &&
-      !['one_way', 'round_trip', 'daily'].includes(item.transport_mode)
+      !['one_way', 'round_trip', 'daily', 'medical_assistance'].includes(item.transport_mode)
     ) {
-      return `item[${i}]: transport_mode must be one_way, round_trip, or daily`;
+      return `item[${i}]: transport_mode must be one_way, round_trip, daily, or medical_assistance`;
     }
+    if (
+      item.passenger_count !== undefined &&
+      (typeof item.passenger_count !== 'number' ||
+        !Number.isInteger(item.passenger_count) ||
+        item.passenger_count <= 0)
+    ) {
+      return `item[${i}]: passenger_count must be a positive whole number`;
+    }
+  }
+  if (body.attachment_url != null) {
+    // Loose (!=) check on purpose: BookingForm.tsx/JourneyBookingForm.tsx
+    // send `attachment_url: null` (not omitted) when there's no file, and
+    // null !== undefined, so a strict check here rejected every
+    // no-attachment booking. Treat null the same as "not provided".
+    if (typeof body.attachment_url !== 'string' || !body.attachment_url) {
+      return 'attachment_url must be a non-empty string';
+    }
+    // Must point at THIS project's own Supabase Storage — never trust
+    // an arbitrary client-supplied URL. This is only stored/displayed
+    // today (low risk), but if it's ever fetched/downloaded/processed
+    // server-side later, an unrestricted URL here would be an SSRF
+    // vector. Compare against the same env var the service client
+    // itself is built from, so this can't drift out of sync with it.
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    // BookingForm.tsx / JourneyBookingForm.tsx always upload to the
+    // 'booking-attachments' bucket and send back getPublicUrl()'s
+    // result — anything else is not a URL our own upload step could
+    // have produced.
+    const expectedPrefix = supabaseUrl
+      ? `${supabaseUrl}/storage/v1/object/public/booking-attachments/`
+      : null;
+    if (!expectedPrefix || !body.attachment_url.startsWith(expectedPrefix)) {
+      return 'attachment_url must be a Supabase Storage URL from this project';
+    }
+  }
+  if (body.client_request_id !== undefined) {
+    const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    if (typeof body.client_request_id !== 'string' || !uuidPattern.test(body.client_request_id)) {
+      return 'client_request_id must be a valid UUID';
+    }
+  } else {
+    // client_request_id used to be optional here for backward
+    // compatibility while BookingForm.tsx / JourneyBookingForm.tsx
+    // were being updated to always send one (migration 036). Both
+    // now do — see clientRequestIdRef in each — so this is no longer
+    // "trust the client to send it"; it's "reject the request if it
+    // didn't". Without this, a caller (a stale client build, a
+    // third-party integration, a manual curl) could silently create
+    // NON-idempotent orders — no duplicate-booking protection at
+    // all, not even the DB-level partial unique index, since that
+    // index only applies WHERE client_request_id IS NOT NULL. Fail
+    // loudly here instead of letting that gap exist quietly in
+    // production.
+    return 'client_request_id is required';
   }
   return null;
 }
@@ -175,7 +292,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: validationError }, { status: 400 });
   }
 
-  const { customer, items, notes, attachment_url } = body as CreateOrderBody;
+  const { customer, items, notes, attachment_url, client_request_id } = body as CreateOrderBody;
   // Canonicalize once, here, before it's used as an identity key
   // anywhere (rate-limit key, find_or_create_customer's lock/lookup
   // key) — see lib/phone.ts header for why this has to be the server,
@@ -201,7 +318,6 @@ export async function POST(req: NextRequest) {
   if (!phoneLimit.allowed) {
     return NextResponse.json({ error: 'too many requests, please try again later' }, { status: 429 });
   }
-
   const supabase = createServiceClient();
 
   // --- Resolve customer: find by phone, create if none exists. ---
@@ -224,9 +340,21 @@ export async function POST(req: NextRequest) {
   });
 
   if (customerErr || !customerId) {
-    console.error('find_or_create_customer RPC failed:', customerErr);
-    return NextResponse.json({ error: 'failed to resolve customer' }, { status: 500 });
-  }
+  console.error('find_or_create_customer RPC failed:', {
+    customerErr,
+    customerId,
+    phone,
+    customer
+  });
+
+  return NextResponse.json(
+    {
+      error: 'failed to resolve customer',
+      detail: customerErr?.message ?? 'no customer id returned'
+    },
+    { status: 500 }
+  );
+}
 
   // --- Create the order atomically via the DB function. ---
   // Only package_id/quantity/schedule are forwarded — price,
@@ -244,6 +372,8 @@ export async function POST(req: NextRequest) {
       transport_return_time: item.transport_return_time ?? null,
       transport_pickup_location: item.transport_pickup_location ?? null,
       transport_dropoff_location: item.transport_dropoff_location ?? null,
+      vehicle_type: item.vehicle_type ?? null,
+      passenger_count: item.passenger_count ?? null,
     };
     // Only one of these keys should be present — the DB function
     // branches on whether "package_id" exists in the JSON at all,
@@ -261,6 +391,7 @@ export async function POST(req: NextRequest) {
     p_items: rpcItems,
     p_notes: notes ?? null,
     p_attachment_url: attachment_url ?? null,
+    p_client_request_id: client_request_id,
   });
 
   if (error) {
@@ -278,27 +409,28 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  // payment_access_token: added by migration 021, generated
-  // automatically via column default — every order has one from the
-  // moment it's created, this is just reading it back.
-  const { data: order, error: fetchErr } = await supabase
-    .from('orders')
-    .select('order_number, total_amount, total_deposit_required, currency, payment_access_token')
-    .eq('id', data.order_id)
-    .single();
-
-  if (fetchErr || !order) {
-    console.error('order created but totals fetch failed:', fetchErr);
-    // Order (and customer) did get created — don't claim total
-    // failure, but we can't hand back deposit amounts (or the
-    // payment token) for the payment screen.
-    return NextResponse.json(
-      { order_number: data.order_number, error: 'order created, failed to load totals — refresh to retry' },
-      { status: 207 }
-    );
+  // order_number/total_amount/total_deposit_required/currency/
+  // payment_access_token all come back directly from the RPC now
+  // (migration 036) — no separate SELECT round trip after this,
+  // which is what used to leave a window where the order existed
+  // but its totals failed to load, prompting a "refresh to retry"
+  // that could create a second order. idempotent_replay=true means
+  // this exact client_request_id already succeeded before; this is
+  // that same order being handed back, not a new one.
+  if (data.idempotent_replay) {
+    console.log('create_order_with_items: idempotent replay', {
+      orderId: data.order_id,
+      orderNumber: data.order_number,
+      clientRequestId: client_request_id,
+    });
   }
 
   // --- Fire the instant Admin notification (LINE/Telegram/webhook). ---
+  // Skip entirely on a replay — the admin was already notified when
+  // this order was first created; re-sending would just be noise (or
+  // worse, look like a second real booking) for what's actually the
+  // same request retried.
+  //
   // Best-effort and non-blocking to the *customer* (they already have
   // their order_number either way), but we do await it here rather
   // than truly fire-and-forget — on serverless (Vercel) an un-awaited
@@ -306,52 +438,54 @@ export async function POST(req: NextRequest) {
   // response, so an un-awaited call here would silently never fire.
   // notifyNewOrder() itself never throws, so this can't turn into a
   // 500 for the customer even if every channel is down.
-  try {
-    // order_items has no admin-readable RLS policy (see
-    // BookingsManager.tsx comment) — must read via the service-role
-    // client, which we already have in scope here.
-    const { data: orderItems, error: itemsErr } = await supabase
-      .from('order_items')
-      .select('service_type, scheduled_date, needs_assignment, package:packages(title), partner:partners(name)')
-      .eq('order_id', data.order_id);
+  if (!data.idempotent_replay) {
+    try {
+      // order_items has no admin-readable RLS policy (see
+      // BookingsManager.tsx comment) — must read via the service-role
+      // client, which we already have in scope here.
+      const { data: orderItems, error: itemsErr } = await supabase
+        .from('order_items')
+        .select('service_type, scheduled_date, needs_assignment, package:packages(title), partner:partners(name)')
+        .eq('order_id', data.order_id);
 
-    if (itemsErr) {
-      console.error('failed to load order_items for notification:', itemsErr);
+      if (itemsErr) {
+        console.error('failed to load order_items for notification:', itemsErr);
+      }
+
+      const notifyItems = (orderItems ?? []).map((item) => {
+        const packageTitle = item.package?.[0]?.title as string | undefined;
+        const partnerName = item.partner?.[0]?.name as string | undefined;
+        const label = item.needs_assignment
+          ? `${item.service_type === 'hotel' ? '🏨' : '🚗'} ${item.service_type} (ให้ทีมงานจัด)`
+          : [packageTitle, partnerName].filter(Boolean).join(' — ') || item.service_type;
+        return { label, scheduledDate: item.scheduled_date as string | null };
+      });
+
+      await notifyNewOrder({
+        orderId: data.order_id,
+        orderNumber: data.order_number,
+        customerName: customer.full_name.trim(),
+        customerPhone: phone,
+        totalAmount: data.total_amount,
+        totalDepositRequired: data.total_deposit_required,
+        currency: data.currency,
+        items: notifyItems,
+      });
+    } catch (notifyErr) {
+      // Belt-and-suspenders — notifyNewOrder() already swallows its own
+      // per-channel errors, but never let ANY notification issue affect
+      // the customer-facing response.
+      console.error('order notification dispatch failed:', notifyErr);
     }
-
-    const notifyItems = (orderItems ?? []).map((item) => {
-      const packageTitle = item.package?.[0]?.title as string | undefined;
-      const partnerName = item.partner?.[0]?.name as string | undefined;
-      const label = item.needs_assignment
-        ? `${item.service_type === 'hotel' ? '🏨' : '🚗'} ${item.service_type} (ให้ทีมงานจัด)`
-        : [packageTitle, partnerName].filter(Boolean).join(' — ') || item.service_type;
-      return { label, scheduledDate: item.scheduled_date as string | null };
-    });
-
-    await notifyNewOrder({
-      orderId: data.order_id,
-      orderNumber: order.order_number,
-      customerName: customer.full_name.trim(),
-      customerPhone: phone,
-      totalAmount: order.total_amount,
-      totalDepositRequired: order.total_deposit_required,
-      currency: order.currency,
-      items: notifyItems,
-    });
-  } catch (notifyErr) {
-    // Belt-and-suspenders — notifyNewOrder() already swallows its own
-    // per-channel errors, but never let ANY notification issue affect
-    // the customer-facing response.
-    console.error('order notification dispatch failed:', notifyErr);
   }
 
   return NextResponse.json(
     {
-      order_number: order.order_number,
-      total_amount: order.total_amount,
-      total_deposit_required: order.total_deposit_required,
-      currency: order.currency,
-      payment_access_token: order.payment_access_token,
+      order_number: data.order_number,
+      total_amount: data.total_amount,
+      total_deposit_required: data.total_deposit_required,
+      currency: data.currency,
+      payment_access_token: data.payment_access_token,
     },
     { status: 201 }
   );

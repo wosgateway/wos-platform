@@ -15,7 +15,7 @@
 // arbitrary-length items[] array (see its validate() function), so
 // no backend change was needed for this feature.
 
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
@@ -25,9 +25,17 @@ import { DatePicker } from '@/components/ui/DatePicker';
 import { TimePicker } from '@/components/ui/TimePicker';
 import { Link } from '@/i18n/navigation';
 import { useJourney } from '@/lib/journey/context';
+import { distinctProvinces, normalizeProvince } from '@/lib/province';
 import Image from 'next/image';
 
-type TransportMode = 'one_way' | 'round_trip' | 'daily';
+type TransportMode = 'one_way' | 'round_trip' | 'daily' | 'medical_assistance';
+
+// Vehicle type: free-text on the DB side (migration 037 — no CHECK
+// constraint, since Partner fleet composition varies) but the UI
+// still offers a fixed dropdown as the source of truth for valid
+// values, same reasoning as the pickup/dropoff LocationType below.
+// Kept identical to BookingForm.tsx's version.
+type VehicleType = '' | 'sedan' | 'suv' | 'vip_van' | 'medical_transport' | 'other';
 
 // Pickup/dropoff location: dropdown of the common Laos↔Thailand
 // corridor points WOS actually sees, plus 'hotel' and 'other' which
@@ -53,6 +61,9 @@ interface FormState {
   needHotel: boolean;
   transportPartnerId: string;
   transportMode: TransportMode;
+  transportVehicleType: VehicleType;
+  transportVehicleTypeDetail: string;
+  transportPassengerCount: number;
   transportPickupDate: string;
   transportPickupTime: string;
   transportPickupLocationType: LocationType;
@@ -80,6 +91,9 @@ const initialState: FormState = {
   needHotel: false,
   transportPartnerId: '',
   transportMode: 'one_way',
+  transportVehicleType: '',
+  transportVehicleTypeDetail: '',
+  transportPassengerCount: 1,
   transportPickupDate: '',
   transportPickupTime: '',
   transportPickupLocationType: '',
@@ -131,6 +145,32 @@ function resolveLocationLabel(
   }
 }
 
+// Resolves the vehicle type dropdown into the free-text value stored
+// in order_items.vehicle_type. Identical to BookingForm.tsx's helper.
+function resolveVehicleType(type: VehicleType, detail: string): string | null {
+  if (type === 'other') return detail.trim() || null;
+  if (type === '') return null;
+  return type;
+}
+
+// Display label for the review step. Identical to BookingForm.tsx's helper.
+function vehicleTypeLabel(type: VehicleType, detail: string, t: (key: string) => string): string {
+  switch (type) {
+    case 'sedan':
+      return t('fields.vehicleTypeSedan');
+    case 'suv':
+      return t('fields.vehicleTypeSuv');
+    case 'vip_van':
+      return t('fields.vehicleTypeVipVan');
+    case 'medical_transport':
+      return t('fields.vehicleTypeMedicalTransport');
+    case 'other':
+      return detail.trim() || t('fields.locationOther');
+    default:
+      return '';
+  }
+}
+
 function formatDisplayDate(iso: string): string {
   if (!iso) return '';
   const [y, m, d] = iso.split('-');
@@ -165,6 +205,13 @@ export function JourneyBookingForm({
 
   const [step, setStep] = useState(1);
   const [form, setForm] = useState<FormState>(initialState);
+  // Client-side province filter for the hotel step — filters
+  // hotelOptions in the browser rather than re-querying, since the
+  // hotel list here is still small (see src/lib/province.ts for the
+  // "กรุงเทพฯ" vs "กรุงเทพ" normalization this relies on). Revisit with
+  // a server-side province param on fetchPackagesByCategory if the
+  // partner count grows into the hundreds.
+  const [hotelProvinceFilter, setHotelProvinceFilter] = useState<string>('all');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
@@ -174,6 +221,12 @@ export function JourneyBookingForm({
     currency: string;
     payment_access_token?: string;
   } | null>(null);
+  // Same reasoning as BookingForm.tsx — stable id across retries of
+  // one booking attempt, see route.ts / migration 036.
+  const clientRequestIdRef = useRef<string | null>(null);
+  if (clientRequestIdRef.current === null) {
+    clientRequestIdRef.current = crypto.randomUUID();
+  }
 
   // Same step-splitting as BookingForm.tsx — see comment there.
   type StepKey = 'schedule' | 'transport' | 'hotel' | 'contact' | 'review';
@@ -190,6 +243,37 @@ export function JourneyBookingForm({
 
   const selectedHotel = hotelOptions.find((p) => p.id === form.hotelPartnerId);
   const selectedTransport = transportOptions.find((p) => p.id === form.transportPartnerId);
+
+  // Distinct hotel provinces, derived from hotelOptions' joined partner
+  // row (see fetchPackagesByCategory's province select) and normalized
+  // so alias spellings collapse into one dropdown option.
+  const hotelProvinces = useMemo(
+    () => distinctProvinces(hotelOptions.map((pkg) => (pkg.partners as { province?: string | null } | undefined) ?? {})),
+    [hotelOptions]
+  );
+
+  // hotelOptions narrowed by the province filter above — feeds hotelGroups
+  // below, same "filter first, then group" order as the admin panel.
+  const hotelOptionsInProvince = useMemo(() => {
+    if (hotelProvinceFilter === 'all') return hotelOptions;
+    return hotelOptions.filter(
+      (pkg) => normalizeProvince((pkg.partners as { province?: string | null } | undefined)?.province) === hotelProvinceFilter
+    );
+  }, [hotelOptions, hotelProvinceFilter]);
+
+  // Group hotel room packages by their hotel (partner) — same approach as
+  // BookingForm.tsx, keep both in sync if this grouping logic changes.
+  const hotelGroups = useMemo(() => {
+    const groups = new Map<string, { label: string; options: Package[] }>();
+    for (const pkg of hotelOptionsInProvince) {
+      const partnerName = (pkg.partners as { name?: string } | undefined)?.name;
+      const key = partnerName || pkg.partner_id;
+      const label = partnerName || 'โรงแรม';
+      if (!groups.has(key)) groups.set(key, { label, options: [] });
+      groups.get(key)!.options.push(pkg);
+    }
+    return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label, 'th'));
+  }, [hotelOptionsInProvince]);
 
   const hotelNights = useMemo(
     () => calcNights(form.hotelCheckinDate, form.hotelCheckoutDate),
@@ -238,6 +322,14 @@ export function JourneyBookingForm({
       return true;
     }
     if (key === 'transport') {
+      if (!form.transportVehicleType || (form.transportVehicleType === 'other' && !form.transportVehicleTypeDetail.trim())) {
+        setError(t('errorVehicleType'));
+        return false;
+      }
+      if (!form.transportPassengerCount || form.transportPassengerCount <= 0) {
+        setError(t('errorPassengerCount'));
+        return false;
+      }
       const pickupNeedsDetail =
         form.transportPickupLocationType === 'hotel' || form.transportPickupLocationType === 'other';
       if (!form.transportPickupLocationType || (pickupNeedsDetail && !form.transportPickupLocationDetail.trim())) {
@@ -338,6 +430,8 @@ export function JourneyBookingForm({
           scheduled_date: form.transportPickupDate || null,
           scheduled_time: form.transportPickupTime || null,
           transport_mode: form.transportMode,
+          vehicle_type: resolveVehicleType(form.transportVehicleType, form.transportVehicleTypeDetail),
+          passenger_count: form.transportPassengerCount || null,
           transport_return_date:
             form.transportMode === 'round_trip' ? form.transportReturnDate || null : null,
           transport_return_time:
@@ -364,6 +458,7 @@ export function JourneyBookingForm({
         },
         items,
         attachment_url: attachmentUrl,
+        client_request_id: clientRequestIdRef.current,
       };
 
       const res = await fetch('/api/orders', {
@@ -549,6 +644,44 @@ export function JourneyBookingForm({
       {/* Step: transport details — only reachable when needTransport is on */}
       {currentStepKey === 'transport' ? (
         <div className="space-y-4">
+          {/* Vehicle type + passenger count asked up front, independent
+              of which Partner ends up fulfilling the trip — see
+              migration 037. Kept identical to BookingForm.tsx. */}
+          <div>
+            <label className="form-label">{t('fields.vehicleType')} *</label>
+            <select
+              className="form-input"
+              value={form.transportVehicleType}
+              onChange={(e) => update('transportVehicleType', e.target.value as VehicleType)}
+            >
+              <option value="">{t('fields.select')}</option>
+              <option value="sedan">{t('fields.vehicleTypeSedan')}</option>
+              <option value="suv">{t('fields.vehicleTypeSuv')}</option>
+              <option value="vip_van">{t('fields.vehicleTypeVipVan')}</option>
+              <option value="medical_transport">{t('fields.vehicleTypeMedicalTransport')}</option>
+              <option value="other">{t('fields.locationOther')}</option>
+            </select>
+            {form.transportVehicleType === 'other' ? (
+              <input
+                type="text"
+                className="form-input mt-2"
+                placeholder={t('fields.vehicleTypeOtherPlaceholder')}
+                value={form.transportVehicleTypeDetail}
+                onChange={(e) => update('transportVehicleTypeDetail', e.target.value)}
+              />
+            ) : null}
+          </div>
+          <div>
+            <label className="form-label">{t('fields.passengerCount')} *</label>
+            <input
+              type="number"
+              min={1}
+              className="form-input"
+              value={form.transportPassengerCount}
+              onChange={(e) => update('transportPassengerCount', parseInt(e.target.value, 10) || 1)}
+            />
+          </div>
+
           <select
             className="form-input"
             value={form.transportPartnerId}
@@ -569,6 +702,7 @@ export function JourneyBookingForm({
             <option value="one_way">{t('fields.oneWay')}</option>
             <option value="round_trip">{t('fields.roundTrip')}</option>
             <option value="daily">{t('fields.daily')}</option>
+            <option value="medical_assistance">{t('fields.medicalAssistance')}</option>
           </select>
 
           <div className="space-y-3 rounded-lg border border-primary/20 bg-white p-3">
@@ -689,16 +823,52 @@ export function JourneyBookingForm({
       {/* Step: hotel details — only reachable when needHotel is on */}
       {currentStepKey === 'hotel' ? (
         <div className="space-y-4">
+          {hotelProvinces.length > 1 ? (
+            <select
+              className="form-input"
+              aria-label={t('fields.filterByProvince')}
+              value={hotelProvinceFilter}
+              onChange={(e) => {
+                const nextProvince = e.target.value;
+                setHotelProvinceFilter(nextProvince);
+                // If the currently-picked hotel package falls outside the
+                // newly chosen province, clear it — otherwise the review
+                // step could show a hotel that no longer matches the
+                // visible dropdown options.
+                if (nextProvince !== 'all' && form.hotelPartnerId) {
+                  const current = hotelOptions.find((p) => p.id === form.hotelPartnerId);
+                  const currentProvince = normalizeProvince(
+                    (current?.partners as { province?: string | null } | undefined)?.province
+                  );
+                  if (currentProvince !== nextProvince) {
+                    update('hotelPartnerId', '');
+                  }
+                }
+              }}
+            >
+              <option value="all">{t('fields.allProvinces')}</option>
+              {hotelProvinces.map((prov) => (
+                <option key={prov} value={prov}>
+                  {prov}
+                </option>
+              ))}
+            </select>
+          ) : null}
+
           <select
             className="form-input"
             value={form.hotelPartnerId}
             onChange={(e) => update('hotelPartnerId', e.target.value)}
           >
             <option value="">{t('fields.letTeamDecide')}</option>
-            {hotelOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title as string}
-              </option>
+            {hotelGroups.map((group) => (
+              <optgroup key={group.label} label={group.label}>
+                {group.options.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    {p.title as string} · {formatTHB(packagePrice(p))}
+                  </option>
+                ))}
+              </optgroup>
             ))}
           </select>
 
@@ -854,6 +1024,12 @@ export function JourneyBookingForm({
             </p>
             {form.needTransport ? (
               <>
+                <p>
+                  {t('fields.vehicleType')}:{' '}
+                  {vehicleTypeLabel(form.transportVehicleType, form.transportVehicleTypeDetail, t)}
+                  {' · '}
+                  {t('fields.passengerCount')}: {form.transportPassengerCount}
+                </p>
                 <p>
                   {t('fields.pickupLocation')}:{' '}
                   {resolveLocationLabel(form.transportPickupLocationType, form.transportPickupLocationDetail, t)}
