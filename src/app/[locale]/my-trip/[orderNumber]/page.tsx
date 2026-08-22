@@ -173,6 +173,7 @@ export default function MyTripPage() {
 
   const [order, setOrder] = useState<OrderData | null>(null);
   const [payments, setPayments] = useState<PaymentRow[]>([]);
+  const [paymentsError, setPaymentsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -191,6 +192,14 @@ export default function MyTripPage() {
       if (paymentsRes.ok) {
         const paymentsResult = await paymentsRes.json();
         setPayments(paymentsResult.payments ?? []);
+        setPaymentsError(null);
+      } else {
+        // Previously silent: payments stayed [] with no indication anything
+        // went wrong, which looked identical to "no payments submitted yet"
+        // (see admin/orders/[orderId]/page.tsx for the pattern this now
+        // matches — always tell the customer apart from a real empty state).
+        const paymentsResult = await paymentsRes.json().catch(() => null);
+        setPaymentsError(paymentsResult?.error ?? 'โหลดประวัติการชำระเงินไม่สำเร็จ');
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'unknown error');
@@ -328,7 +337,11 @@ export default function MyTripPage() {
       ) : null}
 
       {/* Payment history */}
-      {payments.length > 0 ? (
+      {paymentsError ? (
+        <div className="rounded-2xl border border-red-100 bg-red-50 p-5 text-sm text-red-600">
+          {paymentsError} — <button onClick={() => load()} className="underline">ลองอีกครั้ง</button>
+        </div>
+      ) : payments.length > 0 ? (
         <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
           <h2 className="border-b border-slate-100 p-5 pb-3 text-sm font-bold text-slate-700">ประวัติการชำระเงิน</h2>
           <div className="divide-y divide-slate-50">

@@ -993,7 +993,6 @@ export function BookingsManager() {
                         className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[order.status]}`}
                       >
                         <option value="pending_deposit">{STATUS_LABEL.pending_deposit}</option>
-                        <option value="pending_verification">{STATUS_LABEL.pending_verification}</option>
                         <option value="deposit_paid">{STATUS_LABEL.deposit_paid}</option>
                         <option value="confirmed">{STATUS_LABEL.confirmed}</option>
                         <option value="checked_in">{STATUS_LABEL.checked_in}</option>
