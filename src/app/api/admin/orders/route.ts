@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
 import { createServiceClient } from '@/lib/supabase/service';
+import { attachSignedAttachmentUrls } from '@/lib/storage/signed-attachment-url';
 
 // สำคัญ: ป้องกัน Next.js cache ผลลัพธ์ของ route นี้แบบ static
 // ถ้าไม่มีบรรทัดนี้ หลังเปลี่ยนแพ็กเกจ/สถานะแล้วเรียก GET ซ้ำ
@@ -229,11 +230,20 @@ export async function GET() {
   }
 
   const enriched = orders.map((order) => ({
-    ...order,
-    customer: customerById.get(order.patient_id) ?? null,
-    items: itemsByOrder.get(order.id) ?? [],
-    payments: paymentsByOrder.get(order.id) ?? [],
-  }));
+  ...order,
+  customer: customerById.get(order.patient_id) ?? null,
+  items: itemsByOrder.get(order.id) ?? [],
+  payments: paymentsByOrder.get(order.id) ?? [],
+}));
 
-  return withRefreshedCookies(NextResponse.json({ orders: enriched }), cookieCarrier);
+// SECURITY (migration 044): booking-attachments is private.
+// Replace stored public URLs with short-lived signed URLs before
+// returning them to the admin UI.
+const enrichedWithSignedAttachments =
+  await attachSignedAttachmentUrls(enriched);
+
+return withRefreshedCookies(
+  NextResponse.json({ orders: enrichedWithSignedAttachments }),
+  cookieCarrier
+);
 }

@@ -33,6 +33,7 @@ interface QuoteItem {
   id: string;
   service_type: string;
   price: number | null;
+  needs_assignment: boolean;
   quantity: number | null;
   room_quantity: number | null;
   scheduled_date: string | null;
@@ -246,6 +247,20 @@ export default function MyTripPage() {
   }
 
   const meta = STATUS_META[order.status];
+  // Orders with a "let team decide" hotel/transport item (no package
+  // chosen at booking time) get inserted with price=NULL and
+  // needs_assignment=true (036_order_idempotency_and_atomic_totals.sql),
+  // but order.status still flips straight to 'pending_deposit' — so
+  // total_amount can be understated (missing the not-yet-priced item)
+  // while the default copy tells the customer to pay now. Only
+  // override the copy for that specific case; every other status, and
+  // pending_deposit orders where everything's already priced, keep
+  // the original wording as-is.
+  const hasUnassignedItems = order.items.some((item) => item.needs_assignment);
+  const statusDesc =
+    order.status === 'pending_deposit' && hasUnassignedItems
+      ? 'ยืนยันรายการแล้ว กรุณารอทีมงานนำเสนอราคาส่วนที่เหลือก่อนชำระมัดจำ'
+      : meta.desc;
   const balanceRemaining = order.total_balance_remaining ?? Math.max(
     (order.total_deposit_required ?? 0) - (order.total_deposit_paid ?? 0),
     0
@@ -274,7 +289,7 @@ export default function MyTripPage() {
         <span className={`mt-3 inline-block rounded-full px-3 py-1 text-xs font-semibold ${meta.color}`}>
           {meta.label}
         </span>
-        <p className="mt-2 text-sm text-slate-500">{meta.desc}</p>
+        <p className="mt-2 text-sm text-slate-500">{statusDesc}</p>
       </div>
 
       {/* Trip items */}

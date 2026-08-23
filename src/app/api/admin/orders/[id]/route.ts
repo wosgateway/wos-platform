@@ -3,6 +3,7 @@ import { requireAdmin } from '@/lib/admin/require-admin';
 import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
 import { attachSignedSlipUrls } from '@/lib/storage/signed-slip-url';
+import { signAttachmentUrl } from '@/lib/storage/signed-attachment-url';
 
 const ALLOWED_STATUSES = [
   'draft',
@@ -263,10 +264,22 @@ export async function GET(
   // there.
   const paymentsWithSignedSlips = await attachSignedSlipUrls(payments ?? []);
 
+  // SECURITY (migration 044): booking-attachments is now a private
+  // bucket, same treatment as payment-slips got in migration 033 —
+  // these are customer-uploaded medical documents/test results, not
+  // marketing images. Swap the old dead public URL for a freshly
+  // generated signed URL (10 min TTL) right before it goes out over
+  // the wire. This is the only route that renders it
+  // (admin/orders/[orderId]/page.tsx) — see also
+  // /api/admin/orders/route.ts (list view), which drops
+  // attachment_url entirely since it's never rendered there.
+  const signedAttachmentUrl = await signAttachmentUrl(order.attachment_url);
+
   return withRefreshedCookies(
     NextResponse.json({
       order: {
         ...order,
+        attachment_url: signedAttachmentUrl,
         customer: customer ?? null,
         items: enrichedItems,
         payments: paymentsWithSignedSlips,
