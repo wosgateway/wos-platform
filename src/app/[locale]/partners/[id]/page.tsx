@@ -5,6 +5,7 @@ import { CATEGORIES } from '@/lib/categories';
 import { Breadcrumb } from '@/components/Breadcrumb';
 import { PartnerGallery } from '@/components/PartnerGallery';
 import { PackagesGrid } from '@/components/PackagesGrid';
+import { PartnerLocationMap } from '@/components/PartnerLocationMap';
 
 export default async function PartnerDetailPage({
   params: { id },
@@ -32,6 +33,19 @@ export default async function PartnerDetailPage({
 
   const category = CATEGORIES.find((c) => c.dbCategories.includes(partner.category));
   const categoryLabel = category ? tCat(category.slug) : partner.category;
+
+  // Medical Logistics Map (migration 045-047, Phase 4): only ever show
+  // the map section for a partner whose location has been explicitly
+  // verified by an admin AND has a coordinate pair. A partner that
+  // hasn't gone through that review — or one whose Google Maps URL
+  // never resolved to coordinates — just doesn't get a map section at
+  // all. No "location unavailable" placeholder, no empty map: per the
+  // Phase 4 brief, an unverified/missing location fails silent on the
+  // public page rather than surfacing an error or a broken embed.
+  const showLocationMap =
+    partner.location_status === 'verified' &&
+    typeof partner.latitude === 'number' &&
+    typeof partner.longitude === 'number';
 
   return (
     <main>
@@ -73,6 +87,15 @@ export default async function PartnerDetailPage({
       <section className="section-padding !pt-10">
         <div className="mx-auto max-w-6xl px-4 sm:px-6">
           <PackagesGrid packages={packages} />
+
+          {showLocationMap ? (
+            <PartnerLocationMap
+              partnerId={partner.id}
+              latitude={partner.latitude as number}
+              longitude={partner.longitude as number}
+              name={partner.name}
+            />
+          ) : null}
 
           <div className="mt-10 text-center">
             {/* เดิมชี้ไป /services (ไม่มี route นี้จริง) — เปลี่ยนเป็น LINE OA

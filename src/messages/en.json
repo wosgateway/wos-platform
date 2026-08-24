@@ -928,5 +928,13 @@
       "loadFailed": "Failed to load data",
       "confirmFailed": "Failed to confirm"
     }
+  },
+  "partnerMap": {
+    "title": "Location & getting here",
+    "nearbyHotels": "Nearby hotels",
+    "nearbyTransit": "Border crossings / airports",
+    "loading": "Searching...",
+    "noResults": "Nothing found nearby",
+    "nearbyError": "Couldn't load nearby places — try again"
   }
 }

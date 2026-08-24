@@ -28,6 +28,19 @@ interface PartnerFormState {
   cover_image_url: string;
   logo_url: string;
   show_on_homepage: boolean;
+  // Medical Logistics Map (migration 045) — google_maps_url is the raw
+  // input the admin pastes; latitude/longitude/location_status/
+  // location_source/location_resolved_at/location_verified_at are all
+  // set server-side by the resolve-location API or the verify/reject
+  // actions below, never typed in directly.
+  address: string;
+  google_maps_url: string;
+  latitude: number | null;
+  longitude: number | null;
+  location_status: 'pending' | 'verified' | 'rejected';
+  location_source: string | null;
+  location_resolved_at: string | null;
+  location_verified_at: string | null;
 }
 
 const emptyForm: PartnerFormState = {
@@ -41,6 +54,14 @@ const emptyForm: PartnerFormState = {
   cover_image_url: '',
   logo_url: '',
   show_on_homepage: false,
+  address: '',
+  google_maps_url: '',
+  latitude: null,
+  longitude: null,
+  location_status: 'pending',
+  location_source: null,
+  location_resolved_at: null,
+  location_verified_at: null,
 };
 
 export function PartnersManager() {
@@ -55,6 +76,9 @@ export function PartnersManager() {
   const [formError, setFormError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [resolvingLocation, setResolvingLocation] = useState(false);
+  const [resolveError, setResolveError] = useState<string | null>(null);
+  const [updatingLocationStatus, setUpdatingLocationStatus] = useState(false);
 
   async function loadPartners() {
     setLoading(true);
@@ -75,7 +99,18 @@ export function PartnersManager() {
 
   function openModal(partner?: Partner) {
     setFormError(null);
+    setResolveError(null);
     if (partner) {
+      const p = partner as Partner & {
+        address?: string | null;
+        google_maps_url?: string | null;
+        latitude?: number | null;
+        longitude?: number | null;
+        location_status?: 'pending' | 'verified' | 'rejected';
+        location_source?: string | null;
+        location_resolved_at?: string | null;
+        location_verified_at?: string | null;
+      };
       setForm({
         id: partner.id,
         name: partner.name ?? '',
@@ -87,6 +122,14 @@ export function PartnersManager() {
         cover_image_url: partner.cover_image_url ?? '',
         logo_url: (partner as { logo_url?: string }).logo_url ?? '',
         show_on_homepage: !!(partner as { show_on_homepage?: boolean }).show_on_homepage,
+        address: p.address ?? '',
+        google_maps_url: p.google_maps_url ?? '',
+        latitude: p.latitude ?? null,
+        longitude: p.longitude ?? null,
+        location_status: p.location_status ?? 'pending',
+        location_source: p.location_source ?? null,
+        location_resolved_at: p.location_resolved_at ?? null,
+        location_verified_at: p.location_verified_at ?? null,
       });
     } else {
       setForm(emptyForm);
@@ -130,6 +173,78 @@ export function PartnersManager() {
     }
   }
 
+  // Calls the SSRF-safe server route (never fetches the Google Maps URL
+  // from the browser) which resolves it, extracts lat/lng, and writes
+  // them straight to the partner row. Requires the partner to already
+  // exist — resolve-location updates by id, so a brand-new partner
+  // must be saved once first.
+  async function handleResolveLocation() {
+    if (!form.id) {
+      setResolveError('บันทึกพาร์ทเนอร์ก่อน แล้วค่อย resolve ตำแหน่งได้');
+      return;
+    }
+    if (!form.google_maps_url.trim()) {
+      setResolveError('กรุณาวางลิงก์ Google Maps ก่อน');
+      return;
+    }
+    setResolvingLocation(true);
+    setResolveError(null);
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/resolve-location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ google_maps_url: form.google_maps_url.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResolveError(data.error ?? 'resolve ไม่สำเร็จ');
+        return;
+      }
+      setForm((f) => ({
+        ...f,
+        latitude: data.partner.latitude,
+        longitude: data.partner.longitude,
+        location_status: data.partner.location_status,
+        location_source: 'google_maps',
+        location_resolved_at: data.partner.location_resolved_at,
+      }));
+      loadPartners();
+    } catch (e) {
+      setResolveError(e instanceof Error ? e.message : 'resolve ไม่สำเร็จ');
+    } finally {
+      setResolvingLocation(false);
+    }
+  }
+
+  // Verify/reject don't involve an outside fetch, so this goes straight
+  // through the RLS-protected browser client like the rest of this
+  // form (logo_url, show_on_homepage, etc.) — no need for the SSRF-safe
+  // server route here.
+  async function handleSetLocationStatus(nextStatus: 'verified' | 'rejected') {
+    if (!form.id) return;
+    setUpdatingLocationStatus(true);
+    setResolveError(null);
+    const nowIso = new Date().toISOString();
+    const { error } = await supabase
+      .from('partners')
+      .update({
+        location_status: nextStatus,
+        location_verified_at: nextStatus === 'verified' ? nowIso : null,
+      })
+      .eq('id', form.id);
+    setUpdatingLocationStatus(false);
+    if (error) {
+      setResolveError('อัปเดตสถานะไม่สำเร็จ: ' + error.message);
+      return;
+    }
+    setForm((f) => ({
+      ...f,
+      location_status: nextStatus,
+      location_verified_at: nextStatus === 'verified' ? nowIso : null,
+    }));
+    loadPartners();
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -148,6 +263,7 @@ export function PartnersManager() {
       cover_image_url: form.cover_image_url.trim() || null,
       logo_url: form.logo_url.trim() || null,
       show_on_homepage: form.show_on_homepage,
+      address: form.address.trim() || null,
     };
     const { error } = form.id
       ? await supabase.from('partners').update(payload).eq('id', form.id)
@@ -256,6 +372,7 @@ export function PartnersManager() {
                 <th className="px-4 py-2">สถานะ</th>
                 <th className="px-4 py-2">คะแนน</th>
                 <th className="px-4 py-2">หน้าแรก</th>
+                <th className="px-4 py-2">ตำแหน่ง</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -280,6 +397,23 @@ export function PartnersManager() {
                     ) : (
                       <span className="text-xs text-slate-300">—</span>
                     )}
+                  </td>
+                  <td className="px-4 py-2">
+                    {(() => {
+                      const locStatus = (p as { location_status?: string }).location_status;
+                      if (!locStatus || !(p as { latitude?: number | null }).latitude) {
+                        return <span className="text-xs text-slate-300">—</span>;
+                      }
+                      const badgeClass =
+                        locStatus === 'verified'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : locStatus === 'rejected'
+                            ? 'bg-red-100 text-red-600'
+                            : 'bg-amber-100 text-amber-700';
+                      return (
+                        <span className={`rounded-full px-2 py-0.5 text-xs ${badgeClass}`}>{locStatus}</span>
+                      );
+                    })()}
                   </td>
                   <td className="px-4 py-2 text-right">
                     <button onClick={() => openModal(p)} className="mr-3 text-primary-dark hover:underline">
@@ -395,6 +529,101 @@ export function PartnersManager() {
                   className="mt-2 h-20 w-20 rounded-lg object-cover"
                   unoptimized
                 />
+              ) : null}
+            </div>
+
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-3">
+              <div>
+                <label className="form-label">ที่อยู่</label>
+                <input
+                  className="form-input"
+                  value={form.address}
+                  onChange={(e) => setForm({ ...form, address: e.target.value })}
+                  placeholder="เลขที่ ถนน ตำบล อำเภอ จังหวัด"
+                />
+              </div>
+
+              <div>
+                <label className="form-label">ลิงก์ Google Maps</label>
+                <div className="flex gap-2">
+                  <input
+                    className="form-input flex-1"
+                    value={form.google_maps_url}
+                    onChange={(e) => setForm({ ...form, google_maps_url: e.target.value })}
+                    placeholder="https://maps.app.goo.gl/... หรือ https://www.google.com/maps/place/..."
+                  />
+                  <button
+                    type="button"
+                    onClick={handleResolveLocation}
+                    disabled={resolvingLocation || !form.id}
+                    className="rounded-lg border border-slate-200 px-3 py-1.5 text-sm whitespace-nowrap disabled:opacity-50"
+                    title={!form.id ? 'บันทึกพาร์ทเนอร์ก่อน แล้วค่อย resolve ได้' : undefined}
+                  >
+                    {resolvingLocation ? 'กำลัง Resolve...' : 'Resolve'}
+                  </button>
+                </div>
+                {!form.id ? (
+                  <p className="mt-1 text-xs text-slate-400">บันทึกพาร์ทเนอร์นี้ก่อน ถึงจะ resolve ตำแหน่งได้</p>
+                ) : null}
+                {resolveError ? <p className="mt-1 text-xs text-red-500">{resolveError}</p> : null}
+              </div>
+
+              {form.latitude != null && form.longitude != null ? (
+                <div className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <p className="text-slate-700">
+                        {form.latitude.toFixed(6)}, {form.longitude.toFixed(6)}
+                      </p>
+                      <a
+                        href={`https://www.google.com/maps?q=${form.latitude},${form.longitude}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-xs text-primary-dark hover:underline"
+                      >
+                        ดูใน Google Maps →
+                      </a>
+                    </div>
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-xs ${
+                        form.location_status === 'verified'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : form.location_status === 'rejected'
+                            ? 'bg-red-100 text-red-600'
+                            : 'bg-amber-100 text-amber-700'
+                      }`}
+                    >
+                      {form.location_status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-slate-400">
+                    ที่มา: {form.location_source ?? '-'}
+                    {form.location_resolved_at
+                      ? ` · resolve เมื่อ ${new Date(form.location_resolved_at).toLocaleString('th-TH')}`
+                      : ''}
+                  </p>
+                  <div className="mt-2 flex gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleSetLocationStatus('verified')}
+                      disabled={updatingLocationStatus || form.location_status === 'verified'}
+                      className="rounded-lg bg-emerald-500 px-3 py-1 text-xs text-white disabled:opacity-50"
+                    >
+                      ✓ Verify
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleSetLocationStatus('rejected')}
+                      disabled={updatingLocationStatus || form.location_status === 'rejected'}
+                      className="rounded-lg border border-red-200 px-3 py-1 text-xs text-red-600 disabled:opacity-50"
+                    >
+                      ✕ Reject
+                    </button>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-400">
+                    ต้อง verify ก่อนเท่านั้น ถึงจะขึ้นแสดงบนแผนที่สาธารณะได้ (ดู 047 nearby_partners)
+                  </p>
+                </div>
               ) : null}
             </div>
 

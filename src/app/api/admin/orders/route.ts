@@ -1,6 +1,10 @@
 import { NextResponse } from 'next/server';
+
 import { requireAdmin } from '@/lib/admin/require-admin';
+import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
+
 import { createServiceClient } from '@/lib/supabase/service';
+
 import { attachSignedAttachmentUrls } from '@/lib/storage/signed-attachment-url';
 
 // สำคัญ: ป้องกัน Next.js cache ผลลัพธ์ของ route นี้แบบ static
@@ -26,6 +30,8 @@ interface OrderItemRow {
   pickup_location: string | null;
   dropoff_location: string | null;
   room_quantity: number;
+  vehicle_type: string | null;
+  passenger_count: number | null;
 }
 
 interface PackageRow {
@@ -69,12 +75,7 @@ interface PaymentRow {
 // (the one requireAdmin wrote into) onto the real outgoing response.
 // Every return path below goes through this so a token refresh that
 // happens mid-request is never silently dropped.
-function withRefreshedCookies(res: NextResponse, carrier: NextResponse): NextResponse {
-  carrier.cookies.getAll().forEach((cookie) => {
-    res.cookies.set(cookie);
-  });
-  return res;
-}
+
 
 export async function GET() {
   // Used only as a place for Supabase to write a refreshed access/refresh
@@ -125,9 +126,9 @@ export async function GET() {
   .select(
     'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, vehicle_type, passenger_count'
   )
-  .in('order_id', orderIds)
+  .in('order_id', orderIds);
 
-  if (itemsErr) {
+if (itemsErr) {
     console.error('fetch order_items failed:', itemsErr);
     return withRefreshedCookies(
       NextResponse.json({ error: 'failed to load order items' }, { status: 500 }),

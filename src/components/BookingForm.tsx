@@ -383,13 +383,12 @@ export function BookingForm({
     try {
       let attachmentUrl: string | null = null;
       if (form.attachment) {
-        const path = `${Date.now()}-${form.attachment.name}`;
+        const path = `${crypto.randomUUID()}-${form.attachment.name}`;
         const { error: uploadError } = await supabase.storage
           .from('booking-attachments')
           .upload(path, form.attachment);
         if (uploadError) throw uploadError;
-        const { data } = supabase.storage.from('booking-attachments').getPublicUrl(path);
-        attachmentUrl = data.publicUrl;
+        attachmentUrl = path;
       }
 
       const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
