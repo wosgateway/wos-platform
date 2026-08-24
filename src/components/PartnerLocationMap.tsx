@@ -80,6 +80,26 @@ function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)} km`;
 }
 
+// Popup content is injected as raw HTML into the Mapbox popup DOM
+// (outside React), so anything interpolated into it — partner/transit
+// names come from the database — must be escaped by hand here; React
+// doesn't do it for us on this path.
+function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// Google Maps' documented deep-link format for turn-by-turn
+// directions. No API key needed for this URL scheme, and it works the
+// same for a browser tab or a mobile Google Maps app handoff.
+function buildDirectionsUrl(latitude: number, longitude: number): string {
+  return `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}`;
+}
+
 export function PartnerLocationMap({
   partnerId,
   latitude,
@@ -153,7 +173,14 @@ export function PartnerLocationMap({
 
       originMarkerRef.current = new mapboxgl.Marker({ color: '#0f766e' })
         .setLngLat([longitude, latitude])
-        .setPopup(new mapboxgl.Popup({ offset: 24 }).setText(name))
+        .setPopup(
+          new mapboxgl.Popup({ offset: 24 }).setHTML(
+            `<div class="text-sm font-medium text-slate-800">${escapeHtml(name)}</div>` +
+              `<a href="${buildDirectionsUrl(latitude, longitude)}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-block text-xs font-semibold text-primary underline">${escapeHtml(
+                t('getDirections')
+              )}</a>`
+          )
+        )
         .addTo(map);
 
       mapboxglRef.current = mapboxgl;
@@ -164,6 +191,12 @@ export function PartnerLocationMap({
     return () => {
       cancelled = true;
     };
+    // Note: `t` is intentionally omitted below even though it's used
+    // above — this effect no-ops once mapRef.current is set (see the
+    // early return at the top), so it never re-runs on locale change
+    // anyway; adding it would just be misleading. Same reasoning the
+    // existing `name` popup text already relied on before this change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isVisible, latitude, longitude, name]);
 
   // Cleanup on unmount.
@@ -188,11 +221,19 @@ export function PartnerLocationMap({
     const bounds = new mapboxgl.LngLatBounds();
     bounds.extend([longitude, latitude]);
 
+    const directionsLabel = t('getDirections');
+
     items.forEach((item) => {
       const marker = new mapboxgl.Marker({ color: '#f97316' })
         .setLngLat([item.longitude, item.latitude])
         .setPopup(
-          new mapboxgl.Popup({ offset: 20 }).setText(`${item.icon} ${item.label} · ${formatDistance(item.distanceMeters)}`)
+          new mapboxgl.Popup({ offset: 20 }).setHTML(
+            `<div class="text-sm font-medium text-slate-800">${item.icon} ${escapeHtml(item.label)}</div>` +
+              `<div class="text-xs text-slate-500">${escapeHtml(formatDistance(item.distanceMeters))}</div>` +
+              `<a href="${buildDirectionsUrl(item.latitude, item.longitude)}" target="_blank" rel="noopener noreferrer" class="mt-1 inline-block text-xs font-semibold text-primary underline">${escapeHtml(
+                directionsLabel
+              )}</a>`
+          )
         )
         .addTo(map);
       nearbyMarkersRef.current.push(marker);
@@ -299,7 +340,17 @@ export function PartnerLocationMap({
 
   return (
     <div ref={sectionRef} className="mt-8">
-      <h2 className="mb-3 text-lg font-bold text-slate-900">{t('title')}</h2>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-lg font-bold text-slate-900">{t('title')}</h2>
+        <a
+          href={buildDirectionsUrl(latitude, longitude)}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-sm font-semibold text-primary hover:underline"
+        >
+          {t('getDirections')}
+        </a>
+      </div>
 
       <div className="mb-3 flex flex-wrap gap-2">
         <button
@@ -347,11 +398,21 @@ export function PartnerLocationMap({
       {results.length > 0 ? (
         <ul className="mt-3 divide-y divide-slate-100 rounded-xl border border-slate-100">
           {results.map((item) => (
-            <li key={item.id} className="flex items-center justify-between px-4 py-2 text-sm">
-              <span className="text-slate-700">
+            <li key={item.id} className="flex items-center justify-between gap-3 px-4 py-2 text-sm">
+              <span className="min-w-0 truncate text-slate-700">
                 {item.icon} {item.label}
               </span>
-              <span className="text-xs text-slate-400">{formatDistance(item.distanceMeters)}</span>
+              <span className="flex shrink-0 items-center gap-3">
+                <span className="text-xs text-slate-400">{formatDistance(item.distanceMeters)}</span>
+                <a
+                  href={buildDirectionsUrl(item.latitude, item.longitude)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-xs font-semibold text-primary hover:underline"
+                >
+                  {t('getDirections')}
+                </a>
+              </span>
             </li>
           ))}
         </ul>

@@ -9,7 +9,9 @@
 // link it was sent (same link that already carries order_number).
 //
 // POST — customer submits a slip after uploading it to the
-//   `payment-slips` storage bucket client-side (see migration 017).
+//   `payment-slips` storage bucket client-side (see migration 017),
+//   sending back the object path (slip_path) it just uploaded to —
+//   not a public URL, since migration 033 made the bucket private.
 //   Creates a whole-order payment (order_item_id = NULL) with status
 //   'waiting_verification'. Whole-order payments are NOT visible to
 //   partner staff — an admin verifies these via
@@ -51,41 +53,19 @@ const DEFAULT_PAYMENT_METHOD = 'bank_transfer'; // payment_method is NOT NULL; u
 interface CreatePaymentBody {
   amount: number;
   method?: PaymentMethod;
-  slip_url: string;
+  // As of migration 033 `payment-slips` is a PRIVATE bucket, so the
+  // client no longer has (or sends) a public URL — it sends the raw
+  // object path it just uploaded to
+  // (`${orderNumber}/${Date.now()}-${filename}`, see
+  // my-trip/[orderNumber]/payment/page.tsx). Host/protocol validation
+  // is unnecessary now: a private bucket has no public host to spoof,
+  // so all that's left to check is ownership (below).
+  slip_path: string;
   // currency intentionally NOT accepted from the client — see header.
 }
 
-// Storage host allowed for slip_url, derived from the same env var
-// the rest of the app uses to talk to Supabase Storage. Prevents an
-// attacker-supplied URL like https://evil.com/payment-slips/x.jpg
-// from passing a naive `.includes('/payment-slips/')` check.
-function getAllowedSlipHost(): string | null {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  if (!supabaseUrl) return null;
-  try {
-    return new URL(supabaseUrl).host;
-  } catch {
-    return null;
-  }
-}
-
-const PUBLIC_PATH_MARKER = '/storage/v1/object/public/payment-slips/';
-
-// Pulls the object path (e.g. "ORD-2026-0042/1755500000-slip.jpg") out
-// of a stored public payment-slips URL. Returns null if the URL
-// doesn't match the expected Supabase Storage shape at all.
-function extractSlipObjectPath(url: URL): string | null {
-  const idx = url.pathname.indexOf(PUBLIC_PATH_MARKER);
-  if (idx === -1) return null;
-  try {
-    return decodeURIComponent(url.pathname.slice(idx + PUBLIC_PATH_MARKER.length));
-  } catch {
-    return null;
-  }
-}
-
-// Ownership check, not just shape/host validation: the customer
-// payment page uploads to `${orderNumber}/${Date.now()}-${filename}`
+// Ownership check: the customer payment page uploads to
+// `${orderNumber}/${Date.now()}-${filename}`
 // (see my-trip/[orderNumber]/payment/page.tsx), so a slip belongs to
 // an order iff its object path is namespaced under that order's own
 // number. Without this, a valid token for Order A's link is enough to
@@ -95,38 +75,21 @@ function extractSlipObjectPath(url: URL): string | null {
 // exactly "<orderNumber>/<rest>", including attempts to fake the
 // prefix (e.g. "ORD-1/../ORD-2/x" or "ORD-10/x" matching an "ORD-1"
 // startsWith check) by requiring the literal next character be '/'.
-function slipBelongsToOrder(path: string, orderNumber: string): boolean {
+function isValidSlipPath(path: string, orderNumber: string): boolean {
   if (path.includes('..')) return false;
   const prefix = `${orderNumber}/`;
   return path.startsWith(prefix) && path.length > prefix.length;
-}
-
-function isValidSlipUrl(raw: string, orderNumber: string): boolean {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return false;
-  }
-  if (url.protocol !== 'https:') return false;
-  const allowedHost = getAllowedSlipHost();
-  if (!allowedHost || url.host !== allowedHost) return false;
-  // Supabase public storage URLs look like:
-  //   https://<project>.supabase.co/storage/v1/object/public/payment-slips/<path>
-  const path = extractSlipObjectPath(url);
-  if (!path) return false;
-  return slipBelongsToOrder(path, orderNumber);
 }
 
 function validate(body: Partial<CreatePaymentBody>, orderNumber: string): string | null {
   if (typeof body.amount !== 'number' || !(body.amount > 0)) {
     return 'amount must be a positive number';
   }
-  if (!body.slip_url || typeof body.slip_url !== 'string') {
-    return 'slip_url is required';
+  if (!body.slip_path || typeof body.slip_path !== 'string') {
+    return 'slip_path is required';
   }
-  if (!isValidSlipUrl(body.slip_url, orderNumber)) {
-    return 'slip_url must be a valid https URL in our own payment-slips storage bucket, under this order\'s own path';
+  if (!isValidSlipPath(body.slip_path, orderNumber)) {
+    return 'slip_path must belong to this order';
   }
   if (body.method && !ALLOWED_METHODS.includes(body.method)) {
     return `method must be one of: ${ALLOWED_METHODS.join(', ')}`;
@@ -209,7 +172,10 @@ export async function POST(
       // METHOD_TO_PAYMENT_METHOD comment above. Must always be a
       // non-null value from chk_payment_method's allowed list.
       payment_method: method ? METHOD_TO_PAYMENT_METHOD[method] : DEFAULT_PAYMENT_METHOD,
-      slip_url: body.slip_url,
+      // DB column is still named `slip_url` (table not migrated — see
+      // route header) but now stores a bare object path, not a public
+      // URL. attachSignedSlipUrls() below/downstream resolves it.
+      slip_url: body.slip_path,
       status: 'waiting_verification',
       submitted_at: new Date().toISOString(),
     })

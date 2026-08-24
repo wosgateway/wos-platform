@@ -8,8 +8,10 @@
 //   3. Uploads a slip image/PDF — uploaded client-side straight to the
 //      `payment-slips` Supabase Storage bucket (same pattern as
 //      BookingForm.tsx's attachment upload), same as booking-attachments.
-//   4. Submits { amount, currency, method, slip_url } to
-//      POST /api/quote/[orderNumber]/payments
+//      Bucket is private (migration 033), so no public URL is fetched.
+//   4. Submits { amount, method, slip_path } to
+//      POST /api/quote/[orderNumber]/payments — slip_path is the raw
+//      object path just uploaded to, not a URL.
 //
 // No customer login — this page is only reachable via the secure
 // order_number link, same trust model as /quote/[orderNumber].
@@ -182,7 +184,10 @@ export default function PaymentPage() {
       const path = `${orderNumber}/${Date.now()}-${file.name}`;
       const { error: uploadError } = await supabase.storage.from('payment-slips').upload(path, file);
       if (uploadError) throw uploadError;
-      const { data: publicUrlData } = supabase.storage.from('payment-slips').getPublicUrl(path);
+      // `payment-slips` is a private bucket (migration 033) — there's
+      // no public URL to fetch anymore. Send the object path itself;
+      // the server resolves it to a short-lived signed URL whenever
+      // it needs to be viewed.
 
       const res = await fetch(`/api/quote/${orderNumber}/payments?token=${encodeURIComponent(token)}`, {
         method: 'POST',
@@ -192,7 +197,7 @@ export default function PaymentPage() {
           // currency intentionally NOT sent — server always uses the
           // order's own currency now (see payments/route.ts)
           method,
-          slip_url: publicUrlData.publicUrl,
+          slip_path: path,
         }),
       });
       const result = await res.json();

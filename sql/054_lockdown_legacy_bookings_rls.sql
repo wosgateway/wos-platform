@@ -1,0 +1,84 @@
+-- ============================================================
+-- 054_lockdown_legacy_bookings_rls.sql
+--
+-- CRITICAL — cross-tenant data exposure on public.bookings.
+-- Corrects/supersedes 052_fix_bookings_cross_tenant_rls.sql, which
+-- targeted this table with an organization_id-scoped qual that
+-- doesn't apply here (see that file's updated header).
+--
+-- Confirmed live state (Aug 2026):
+--
+--   "Authenticated can view bookings"          SELECT  USING (auth.role() = 'authenticated')
+--   "Authenticated can update bookings"        UPDATE  USING (auth.role() = 'authenticated')
+--   "Authenticated can delete bookings"        DELETE  USING (auth.role() = 'authenticated')
+--   "Platform admins can manage all bookings"  ALL     USING (is_platform_admin())
+--   "Public can create a booking"              INSERT  {public}  WITH CHECK (true)
+--
+-- auth.role() = 'authenticated' only checks that the caller is
+-- logged in — it never checks any tenant/owner column. Any
+-- authenticated user, regardless of which partner/org they belong
+-- to, can currently SELECT/UPDATE/DELETE every row in this table via
+-- Supabase's auto REST API — customer_name, customer_phone,
+-- customer_line, attachment_url, etc. on every booking ever taken.
+--
+-- Unlike 042's payments bug this fails OPEN, not closed: it's a live
+-- exposure, not a dead policy.
+--
+-- WHY THIS CAN'T BE FIXED BY SCOPING (unlike a normal cross-tenant
+-- RLS fix): public.bookings has no organization_id and no partner_id
+-- column at all (confirmed against the live schema, not just the
+-- 001 migration file — 001's original organization_id NOT NULL
+-- column was never actually deployed this way, matching the pattern
+-- already documented in 010/039/042 of this table set drifting from
+-- its migration history). There is no tenant boundary column to
+-- scope a policy against.
+--
+-- What the table actually is: the pre-`orders`/`order_items` public
+-- booking-intake table from 004/008 — package_id + patient_id +
+-- flat customer_name/customer_phone/customer_line/attachment_url on
+-- the row itself. 008 moved the live booking flow onto
+-- orders/order_items specifically to get away from this shape.
+-- src/components/admin/BookingsManager.tsx confirms the admin UI
+-- already reads orders/order_items/customers, not this table (see
+-- its own header comment: "replacing the old direct `bookings`
+-- table query"). A repo-wide search of src/ for an authenticated
+-- Supabase client reading or writing `bookings` returns nothing —
+-- nothing in the current app depends on authenticated CRUD access
+-- to this table.
+--
+-- FIX: remove the three unscoped authenticated policies outright.
+-- There's no tenant column to scope them to, and nothing reads this
+-- table that way, so removal (not narrowing) is correct here.
+--
+-- Left deliberately untouched:
+--   - "Public can create a booking" (INSERT) — out of scope for
+--     this fix; re-verify separately whether it still receives live
+--     public writes before touching it.
+--   - "Platform admins can manage all bookings" — is_platform_admin()
+--     is a legitimate cross-tenant bypass for staff, not the bug.
+--
+-- Safe to re-run.
+-- ============================================================
+
+DROP POLICY IF EXISTS "Authenticated can view bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Authenticated can update bookings" ON public.bookings;
+DROP POLICY IF EXISTS "Authenticated can delete bookings" ON public.bookings;
+
+-- ============================================================
+-- VERIFY after running:
+--
+--   SELECT policyname, roles, cmd, qual, with_check
+--   FROM pg_policies
+--   WHERE tablename = 'bookings'
+--   ORDER BY cmd;
+--
+-- Expected remaining rows:
+--   "Platform admins can manage all bookings"  ALL     is_platform_admin()
+--   "Public can create a booking"               INSERT  true
+--
+-- Then re-test with an ordinary authenticated (non-admin) user's
+-- access token against GET/PATCH/DELETE /rest/v1/bookings using the
+-- anon key — confirm 0 rows / permission denied, and that the admin
+-- dashboard (which goes through orders/order_items/customers, not
+-- this table) is unaffected.
+-- ============================================================

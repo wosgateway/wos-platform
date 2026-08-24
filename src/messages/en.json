@@ -936,6 +936,7 @@
     "nearbyTransit": "Border crossings / airports",
     "loading": "Searching...",
     "noResults": "Nothing found nearby",
-    "nearbyError": "Couldn't load nearby places — try again"
+    "nearbyError": "Couldn't load nearby places — try again",
+    "getDirections": "Get directions"
   }
 }
