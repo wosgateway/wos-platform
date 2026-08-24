@@ -52,7 +52,17 @@ export async function fetchPartners(dbCategories?: string[]): Promise<Partner[]>
 
 export async function fetchPartnerById(id: string): Promise<Partner> {
   const supabase = createAnonClient();
-  const { data, error } = await supabase.from('partners').select('*').eq('id', id).single();
+  // .eq('status', 'active') — must match fetchPartners() below. Without
+  // this, a deactivated/suspended partner is still fully viewable by
+  // direct link (see migration 048: the DB-level RLS gap this also
+  // depended on is fixed there, but this app-level filter stays as its
+  // own explicit guard rather than relying on RLS alone).
+  const { data, error } = await supabase
+    .from('partners')
+    .select('*')
+    .eq('id', id)
+    .eq('status', 'active')
+    .single();
   if (error) throw error;
   return data;
 }
