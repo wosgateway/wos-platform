@@ -257,7 +257,7 @@ export function PartnersManager() {
       name: form.name.trim(),
       category: form.category,
       province: form.province.trim() || null,
-      rating: form.rating ? Number(form.rating) : null,
+      // rating: ตัดออก — ห้ามพิมพ์มือแล้ว จะคำนวณจาก reviews จริงเท่านั้น เมื่อระบบพร้อม
       status: form.status,
       description: form.description.trim() || null,
       cover_image_url: form.cover_image_url.trim() || null,
@@ -490,16 +490,10 @@ export function PartnersManager() {
                 />
               </div>
               <div>
-                <label className="form-label">คะแนน (0-5)</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  min={0}
-                  max={5}
-                  className="form-input"
-                  value={form.rating}
-                  onChange={(e) => setForm({ ...form, rating: e.target.value })}
-                />
+                <label className="form-label">คะแนน</label>
+                <div className="form-input bg-slate-100 text-slate-500">
+                  {form.rating ? `⭐ ${form.rating}` : 'ยังไม่มีรีวิว (ระบบเก็บรีวิวจริงยังไม่เปิดใช้งาน)'}
+                </div>
               </div>
             </div>
             <div>

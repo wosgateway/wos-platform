@@ -275,6 +275,7 @@
     "promotion": "Promotion",
     "viewPackagesAndBook": "View Packages & Book",
     "reviewsSuffix": "reviews",
+    "noReviewsYet": "No reviews yet",
     "searchPlaceholder": "Search partner name or province...",
     "noSearchResults": "No partners match your search",
     "verifiedPartner": "Verified Partner"

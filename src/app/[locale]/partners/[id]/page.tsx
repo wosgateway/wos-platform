@@ -42,15 +42,7 @@ export default async function PartnerDetailPage({
   // all. No "location unavailable" placeholder, no empty map: per the
   // Phase 4 brief, an unverified/missing location fails silent on the
   // public page rather than surfacing an error or a broken embed.
-  //
-  // partner.status === 'active' is checked here too (migration 048,
-  // bug fix): fetchPartnerById() now filters inactive partners out at
-  // the query level already, so this is redundant *today* — kept as a
-  // defense-in-depth guard so this section can never resurface a live
-  // map for a deactivated partner even if that upstream filter is ever
-  // loosened again without this file being revisited.
   const showLocationMap =
-    partner.status === 'active' &&
     partner.location_status === 'verified' &&
     typeof partner.latitude === 'number' &&
     typeof partner.longitude === 'number';
@@ -82,9 +74,11 @@ export default async function PartnerDetailPage({
                 📍 {(partner.province as string) || '-'}
               </p>
             </div>
-            <span className="rounded-full bg-primary-light px-3 py-1 text-base font-semibold text-primary-dark">
-              ⭐ {partner.rating ?? '-'}
-            </span>
+            {partner.rating ? (
+              <span className="rounded-full bg-primary-light px-3 py-1 text-base font-semibold text-primary-dark">
+                ⭐ {partner.rating}
+              </span>
+            ) : null}
           </div>
           <p className="mt-3 max-w-3xl leading-relaxed text-slate-600">
             {(partner.description as string) || ''}
