@@ -7,6 +7,7 @@ import { routing } from '@/i18n/routing';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { WhatsAppButton } from '@/components/WhatsAppButton';
+import { ChatWidget } from '@/components/ChatWidget';
 import { JourneyProvider } from '@/lib/journey/context';
 import { MobileJourneyBar } from '@/components/journey/MobileJourneyBar';
 import { LangSetter } from '@/components/LangSetter';
@@ -49,6 +50,7 @@ export default async function LocaleLayout({
           <>
             <Footer />
             <WhatsAppButton />
+            <ChatWidget />
             <MobileJourneyBar />
           </>
         )}
