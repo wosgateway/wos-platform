@@ -107,7 +107,7 @@ export async function POST(
   }
 
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const { allowed } = simpleRateLimit(`payment-submit:${ip}`, 10, 60 * 60 * 1000);
+  const { allowed } = await simpleRateLimit(`payment-submit:${ip}`, 10, 60 * 60 * 1000);
   if (!allowed) {
     return NextResponse.json({ error: 'too many requests' }, { status: 429 });
   }
@@ -230,7 +230,7 @@ export async function GET(
   }
 
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const { allowed } = simpleRateLimit(`payment-view:${ip}`, 60, 60 * 60 * 1000);
+  const { allowed } = await simpleRateLimit(`payment-view:${ip}`, 60, 60 * 60 * 1000);
   if (!allowed) {
     return NextResponse.json({ error: 'too many requests' }, { status: 429 });
   }

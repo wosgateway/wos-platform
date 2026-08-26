@@ -18,7 +18,13 @@
 // service category's deposit rate.
 //
 // attachment_url is uploaded client-side to Supabase Storage first
-// (see BookingForm.tsx) and only the resulting URL is sent here.
+// (see BookingForm.tsx / JourneyBookingForm.tsx) and, despite the
+// field name, is actually the storage OBJECT PATH — not a public
+// URL. 'booking-attachments' is a private bucket (migration 044),
+// so only the resulting path is sent here; admin/partner routes
+// exchange it for a short-lived signed URL on read (see
+// lib/storage/signed-attachment-url.ts). See validate() below for
+// the path-safety checks applied before it's stored.
 //
 // UPDATED (with migration 021): also returns payment_access_token —
 // order_number alone is a predictable sequence
@@ -238,22 +244,27 @@ function validate(body: Partial<CreateOrderBody>): string | null {
     if (typeof body.attachment_url !== 'string' || !body.attachment_url) {
       return 'attachment_url must be a non-empty string';
     }
-    // Must point at THIS project's own Supabase Storage — never trust
-    // an arbitrary client-supplied URL. This is only stored/displayed
-    // today (low risk), but if it's ever fetched/downloaded/processed
-    // server-side later, an unrestricted URL here would be an SSRF
-    // vector. Compare against the same env var the service client
-    // itself is built from, so this can't drift out of sync with it.
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-    // BookingForm.tsx / JourneyBookingForm.tsx always upload to the
-    // 'booking-attachments' bucket and send back getPublicUrl()'s
-    // result — anything else is not a URL our own upload step could
-    // have produced.
-    const expectedPrefix = supabaseUrl
-      ? `${supabaseUrl}/storage/v1/object/public/booking-attachments/`
-      : null;
-    if (!expectedPrefix || !body.attachment_url.startsWith(expectedPrefix)) {
-      return 'attachment_url must be a Supabase Storage URL from this project';
+    // Despite the field name, this is a Storage OBJECT PATH, not a URL —
+    // 'booking-attachments' became a private bucket in migration 044, so
+    // BookingForm.tsx / JourneyBookingForm.tsx now upload and send back
+    // the raw path (e.g. "<uuid>-<filename>"), not a public URL. Admin/
+    // partner routes exchange this path for a short-lived signed URL via
+    // signAttachmentUrl() (lib/storage/signed-attachment-url.ts) — this
+    // route never resolves or fetches it, just stores it.
+    //
+    // Still can't trust it blindly: reject anything that looks like an
+    // absolute path, a parent-directory escape, a null byte, or an
+    // embedded URL scheme, since this value is later passed straight to
+    // supabase.storage.from('booking-attachments').createSignedUrl(path).
+    const attachmentPath = body.attachment_url.trim();
+    if (
+      !attachmentPath ||
+      attachmentPath.startsWith('/') ||
+      attachmentPath.includes('..') ||
+      attachmentPath.includes('\0') ||
+      attachmentPath.includes('://')
+    ) {
+      return 'attachment_url must be a valid booking attachment path';
     }
   }
   if (body.client_request_id !== undefined) {
@@ -310,11 +321,11 @@ export async function POST(req: NextRequest) {
   // enough (attacker can vary the phone per request) — both must
   // pass. Deliberately checked before any DB write.
   const ip = req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ?? 'unknown';
-  const ipLimit = simpleRateLimit(`order-create:ip:${ip}`, 10, 60 * 60 * 1000);
+  const ipLimit = await simpleRateLimit(`order-create:ip:${ip}`, 10, 60 * 60 * 1000);
   if (!ipLimit.allowed) {
     return NextResponse.json({ error: 'too many requests, please try again later' }, { status: 429 });
   }
-  const phoneLimit = simpleRateLimit(`order-create:phone:${phone}`, 5, 60 * 60 * 1000);
+  const phoneLimit = await simpleRateLimit(`order-create:phone:${phone}`, 5, 60 * 60 * 1000);
   if (!phoneLimit.allowed) {
     return NextResponse.json({ error: 'too many requests, please try again later' }, { status: 429 });
   }

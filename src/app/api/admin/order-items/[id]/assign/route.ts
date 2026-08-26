@@ -6,20 +6,20 @@
 // admin_assign_order_item() (migration 016) using the service-role
 // client, the same division of responsibility as /api/orders.
 //
-// room_quantity (migration 028): admin_assign_order_item() has no
-// room_quantity parameter of its own — its signature is
-// (UUID, UUID, NUMERIC) and body.quantity is nights-for-hotel /
-// days-for-transport, entered by the admin on the pending-assignments
-// screen. room_quantity, however, was already fixed at booking time
-// (Branch A of create_order_with_items(), migration 028) and lives on
-// this order_items row — it must NOT be re-entered by the admin here,
-// since that would let a client-supplied value override what the
-// customer actually paid for. So: fetch it server-side from the row
-// itself, and fold it into the p_quantity sent to the RPC —
-// p_quantity = nights (from the admin) × room_quantity (from the
-// row) — rather than changing the RPC's signature. For transport
-// items room_quantity is always 1 (enforced in create_order_with_items()),
-// so this is a no-op multiply for that service_type.
+// room_quantity (migration 028, then 040/056): body.quantity is
+// nights-for-hotel / days-for-transport only, entered by the admin
+// on the pending-assignments/BookingsManager screens — it must NEVER
+// include room_quantity. room_quantity itself was already fixed at
+// booking time (Branch A of create_order_with_items(), migration 028)
+// and lives on the order_items row; admin_assign_order_item() reads
+// it server-side and multiplies it into price internally (v_price =
+// unit_price × p_quantity × room_quantity, see migration 040/056/057).
+// route.ts must pass p_quantity = nights/days as-is and NOT also
+// multiply by room_quantity here — doing so double-counts it
+// (price ends up × room_quantity² instead of × room_quantity). This
+// file used to fetch room_quantity and fold it in; migration 056
+// fixed the RPC side of this bug but the route.ts side was never
+// updated to match — fixed here.
 
 import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
@@ -66,35 +66,16 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const supabase = createServiceClient();
 
-  // Fetch room_quantity off the row itself — never trust a client-
-  // supplied value for anything that multiplies into price. See file
-  // header for why this can't just be a new RPC parameter supplied
-  // by the request body instead.
-  const { data: row, error: rowErr } = await supabase
-    .from('order_items')
-    .select('room_quantity')
-    .eq('id', id)
-    .single();
-
-  if (rowErr || !row) {
-    console.error('order_items lookup failed before assign:', rowErr);
-    return withRefreshedCookies(
-      NextResponse.json({ error: 'order item not found' }, { status: 404 }),
-      cookieCarrier
-    );
-  }
-
-  const nightsOrDays = body.quantity ?? 1;
-  const roomQuantity = row.room_quantity ?? 1;
-  const combinedQuantity = nightsOrDays * roomQuantity;
-
+  // p_quantity = nights (hotel) / days (transport) as entered by the
+  // admin, unmodified. Do NOT fold room_quantity in here — the RPC
+  // already multiplies by room_quantity internally (see file header).
   const { data, error } = await supabase.rpc('admin_assign_order_item', {
     p_order_item_id: id,
     p_package_id: body.package_id,
-    p_quantity: combinedQuantity,
+    p_quantity: body.quantity ?? 1,
   });
 
-      if (error) {
+  if (error) {
     console.error('admin_assign_order_item RPC failed:', error);
 
     const message = error.message ?? '';

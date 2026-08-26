@@ -109,7 +109,7 @@ export async function GET(
   }
 
   // 3. Order items
-  // NOTE: this select() previously omitted quantity, room_quantity,
+  // NOTE: this select() previously omitted room_quantity,
   // needs_assignment, hotel_checkout_date, transport_mode,
   // transport_return_date/time, pickup_location, dropoff_location —
   // every field admin/orders/[orderId]/page.tsx's itemDetailLine()
@@ -119,6 +119,8 @@ export async function GET(
   // (/api/admin/orders) already selected them correctly. Also adding
   // vehicle_type/passenger_count (migration 037) for parity with the
   // rest of the app, even though the page doesn't render them yet.
+  // quantity (migration 057) is now a real persisted column — added
+  // here too, same parity reasoning.
   const { data: items, error: itemsError } = await supabase
   .from("order_items")
   .select(`
@@ -129,6 +131,7 @@ export async function GET(
     service_type,
     price,
     room_quantity,
+    quantity,
     deposit_required,
     deposit_paid,
     balance_remaining,

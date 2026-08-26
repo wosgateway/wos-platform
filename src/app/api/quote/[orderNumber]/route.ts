@@ -46,7 +46,7 @@ export async function GET(
   // Loose rate limit — this is a read-only public page, but still worth
   // capping to slow down brute-force attempts against the token.
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const { allowed } = simpleRateLimit(`quote-view:${ip}`, 30, 60 * 60 * 1000);
+  const { allowed } = await simpleRateLimit(`quote-view:${ip}`, 30, 60 * 60 * 1000);
   if (!allowed) {
     return NextResponse.json({ error: 'too many requests' }, { status: 429 });
   }

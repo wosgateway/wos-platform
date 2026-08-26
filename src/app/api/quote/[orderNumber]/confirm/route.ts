@@ -27,7 +27,7 @@ export async function POST(
   }
 
   const ip = request.headers.get('x-forwarded-for') ?? 'unknown';
-  const { allowed } = simpleRateLimit(`quote-confirm:${ip}`, 10, 60 * 60 * 1000);
+  const { allowed } = await simpleRateLimit(`quote-confirm:${ip}`, 10, 60 * 60 * 1000);
   if (!allowed) {
     return NextResponse.json({ error: 'too many requests' }, { status: 429 });
   }

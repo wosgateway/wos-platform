@@ -91,7 +91,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
   // Resolving means fetching an external URL server-side — rate limit
   // per admin so a stuck client or bulk-resolve script can't hammer
   // Google or burn through the fetch timeout budget.
-  const rateLimit = simpleRateLimit(`resolve-location:${auth.user.id}`, 30, 60 * 60 * 1000);
+  const rateLimit = await simpleRateLimit(`resolve-location:${auth.user.id}`, 30, 60 * 60 * 1000);
   if (!rateLimit.allowed) {
     return withRefreshedCookies(
       NextResponse.json(

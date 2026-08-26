@@ -1,19 +1,18 @@
 // src/lib/rate-limit.ts
 //
-// Simple in-memory rate limiter. Good enough for a single-instance
-// deployment (Vercel serverless functions share memory per warm instance,
-// so this resets on cold start — acceptable for admin-triggered actions
-// like sending quotations, not meant for high-traffic public endpoints).
-// If this ever needs to survive cold starts / work across instances,
-// swap the Map for a Redis-backed store (e.g. Upstash) — the function
-// signature below wouldn't need to change.
+// Redis-backed rate limiter using Upstash Ratelimit.
+// Shared across Vercel serverless instances and survives cold starts.
+//
+// Requires:
+//   UPSTASH_REDIS_REST_URL
+//   UPSTASH_REDIS_REST_TOKEN
+//
+// NOTE: simpleRateLimit() is async because it makes a network call.
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
+import { Redis } from '@upstash/redis';
+import { Ratelimit } from '@upstash/ratelimit';
 
-const store = new Map<string, RateLimitEntry>();
+const redis = Redis.fromEnv();
 
 export interface RateLimitResult {
   allowed: boolean;
@@ -21,40 +20,25 @@ export interface RateLimitResult {
   resetAt: number;
 }
 
-/**
- * Checks and increments a rate-limit counter for `key`.
- * @param key Unique identifier for the thing being limited — e.g.
- *   `send-quotation:${ip}` or `send-quotation:${orderId}`.
- * @param limit Max allowed calls within the window. Default 5.
- * @param windowMs Window size in ms. Default 1 hour.
- */
-export function simpleRateLimit(
+export async function simpleRateLimit(
   key: string,
   limit = 5,
   windowMs = 60 * 60 * 1000
-): RateLimitResult {
-  const now = Date.now();
-  const entry = store.get(key);
+): Promise<RateLimitResult> {
+  // Convert milliseconds to the duration format expected by Upstash.
+  const windowSeconds = Math.max(1, Math.ceil(windowMs / 1000));
 
-  if (!entry || now > entry.resetAt) {
-    store.set(key, { count: 1, resetAt: now + windowMs });
-    return { allowed: true, remaining: limit - 1, resetAt: now + windowMs };
-  }
+  const ratelimit = new Ratelimit({
+    redis,
+    limiter: Ratelimit.slidingWindow(limit, `${windowSeconds} s`),
+    prefix: 'wos:ratelimit',
+  });
 
-  if (entry.count >= limit) {
-    return { allowed: false, remaining: 0, resetAt: entry.resetAt };
-  }
+  const result = await ratelimit.limit(key);
 
-  entry.count += 1;
-  return { allowed: true, remaining: limit - entry.count, resetAt: entry.resetAt };
+  return {
+    allowed: result.success,
+    remaining: result.remaining,
+    resetAt: result.reset,
+  };
 }
-
-// Periodic cleanup so the Map doesn't grow forever on a long-lived
-// warm instance. Not critical — Vercel functions recycle often — but
-// cheap insurance for local dev / long-running processes.
-setInterval(() => {
-  const now = Date.now();
-  for (const [key, entry] of store.entries()) {
-    if (now > entry.resetAt) store.delete(key);
-  }
-}, 10 * 60 * 1000).unref?.();

@@ -30,6 +30,7 @@ interface OrderItemRow {
   pickup_location: string | null;
   dropoff_location: string | null;
   room_quantity: number;
+  quantity: number;
   vehicle_type: string | null;
   passenger_count: number | null;
 }
@@ -124,7 +125,7 @@ export async function GET() {
   const { data: items, error: itemsErr } = await supabase
   .from('order_items')
   .select(
-    'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, vehicle_type, passenger_count'
+    'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, quantity, vehicle_type, passenger_count'
   )
   .in('order_id', orderIds);
 
