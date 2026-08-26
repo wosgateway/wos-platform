@@ -175,6 +175,7 @@ export interface ApplyFormContent {
   successBody: string;
   errorTitle: string;
   errorBody: string;
+  validationError: string;
 }
 
 export interface PartnerPageContent {

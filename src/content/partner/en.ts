@@ -278,5 +278,6 @@ export const en: PartnerPageContent = {
     successBody: "Thank you for your interest. The WOS team will contact you within 48 hours.",
     errorTitle: "Submission failed",
     errorBody: "Please try again, or contact our team directly if the issue persists.",
+    validationError: "Please fill in all fields marked with *.",
   },
 };

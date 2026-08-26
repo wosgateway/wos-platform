@@ -66,6 +66,7 @@ interface OrderItem {
   pickup_location: string | null;
   dropoff_location: string | null;
   room_quantity: number;
+  quantity: number;
   package: { id: string; title: string; original_price: number | null; special_price: number | null } | null;
   partner: { id: string; name: string } | null;
 }
@@ -472,6 +473,13 @@ export function BookingsManager() {
   const [transportPackages, setTransportPackages] = useState<PickerPackage[]>([]);
 
   const [savingId, setSavingId] = useState<string | null>(null);
+  // Separate from savingId (which is keyed by order.id, e.g.
+  // updateOrderStatus) because reassignItem operates on a single
+  // order_item — comparing an item id against savingId===order.id
+  // never matched, so the reassign dropdowns never actually disabled
+  // themselves while a request was in flight (an admin could fire
+  // duplicate assignment calls by clicking twice). Keyed by item.id.
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
   // Shows a temporary ✅ on the copy-link button after a successful copy.
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
@@ -606,18 +614,82 @@ export function BookingsManager() {
     }
   }
 
+  // Calculates number of nights between two YYYY-MM-DD date strings.
+  // Mirrors BookingForm.tsx's calcNights exactly, so a reassignment
+  // prices the same way the original booking would have. Returns 0
+  // if either date is missing or checkout is not after checkin — the
+  // caller must treat 0 as "unusable", never silently substitute a
+  // default (this is money; see reassignItem below).
+  function calcNights(checkin: string | null, checkout: string | null): number {
+    if (!checkin || !checkout) return 0;
+    const start = new Date(checkin);
+    const end = new Date(checkout);
+    const diffMs = end.getTime() - start.getTime();
+    if (Number.isNaN(diffMs) || diffMs <= 0) return 0;
+    return Math.round(diffMs / (1000 * 60 * 60 * 24));
+  }
+
   // Reuses the existing /api/admin/order-items/[id]/assign endpoint
   // (already shipped for the pending-assignments screen) instead of a
   // new route, since the contract — { package_id, quantity } — already
   // covers hotel/transport reassignment.
-  async function reassignItem(itemId: string, packageId: string) {
+  //
+  // quantity here MUST be nights (hotel) / days (transport), never a
+  // hardcoded 1 — the RPC prices unit_price × quantity (× room_quantity
+  // for hotel, handled server-side, see migration 040/056). This used
+  // to send quantity: 1 unconditionally, which silently repriced any
+  // multi-night hotel stay or multi-day transport charter down to a
+  // single night/day on every reassignment.
+  //
+  // As of migration 057, order_items.quantity is a real persisted
+  // column — every item now carries its own authoritative nights/days
+  // figure, set at booking time or by a prior assignment. That is the
+  // primary source here. For hotel we additionally cross-check against
+  // scheduled_date/hotel_checkout_date (the two should agree; dates
+  // win if they disagree, since they're what the admin can see/edit
+  // directly on this screen). If NEITHER a usable date range NOR a
+  // usable persisted quantity exists, we stop and tell the admin
+  // instead of guessing — financial data must never silently fall
+  // back to a made-up "1".
+  //
+  // round_trip/one_way transport never scales with quantity (always
+  // 1) — no ambiguity there. 'daily' transport relies on the
+  // persisted column; for bookings made before migration 057 shipped,
+  // that column defaults to 1 and there is no way to recover the real
+  // day-count after the fact (it was never stored anywhere). We
+  // surface the current value for confirmation rather than assume
+  // it's already correct, so an admin who knows better can fix it on
+  // the spot.
+  async function reassignItem(item: OrderItem, packageId: string) {
     if (!packageId) return;
-    setSavingId(itemId);
+
+    let quantity: number;
+    if (item.service_type === 'hotel') {
+      const nights = calcNights(item.scheduled_date, item.hotel_checkout_date);
+      quantity = nights > 0 ? nights : item.quantity;
+      if (!quantity || quantity <= 0) {
+        alert('ข้อมูลจำนวนคืนไม่ถูกต้องหรือไม่มี ไม่สามารถเปลี่ยนแพ็กเกจได้ กรุณาตรวจสอบวันเข้าพัก/เช็คเอาท์ก่อน');
+        return;
+      }
+    } else if (item.service_type === 'transport' && item.transport_mode === 'daily') {
+      const input = window.prompt(
+        'จำนวนวันของรถเช่า (daily) — ยืนยัน/แก้ไขจำนวนวันจริงที่ลูกค้าจอง:',
+        String(item.quantity || 1)
+      );
+      const parsed = input ? Number(input) : NaN;
+      if (!input || Number.isNaN(parsed) || parsed <= 0) return;
+      quantity = parsed;
+    } else {
+      // one_way / round_trip transport — never scales with quantity.
+      quantity = 1;
+    }
+
+    setSavingItemId(item.id);
     try {
-      const res = await fetch(`/api/admin/order-items/${itemId}/assign`, {
+      const res = await fetch(`/api/admin/order-items/${item.id}/assign`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ package_id: packageId, quantity: 1 }),
+        body: JSON.stringify({ package_id: packageId, quantity }),
       });
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error ?? 'assignment failed');
@@ -625,7 +697,7 @@ export function BookingsManager() {
     } catch (e) {
       alert('เปลี่ยนแพ็กเกจไม่สำเร็จ: ' + (e instanceof Error ? e.message : 'unknown error'));
     } finally {
-      setSavingId(null);
+      setSavingItemId(null);
     }
   }
 
@@ -919,9 +991,9 @@ export function BookingsManager() {
                                 </div>
                               ) : null}
                               <select
-                                disabled={busy}
+                                disabled={busy || savingItemId === transportItem.id}
                                 value=""
-                                onChange={(e) => reassignItem(transportItem.id, e.target.value)}
+                                onChange={(e) => reassignItem(transportItem, e.target.value)}
                                 className="mt-0.5 rounded border border-slate-200 px-1.5 py-1 text-xs"
                               >
                                 <option value="">-- เปลี่ยน/เลือกแพ็กเกจรถ --</option>
@@ -965,9 +1037,9 @@ export function BookingsManager() {
                                 <div className="ml-4 text-xs text-slate-400">{formatTHB(itemPrice(hotelItem))}</div>
                               ) : null}
                               <select
-                                disabled={busy}
+                                disabled={busy || savingItemId === hotelItem.id}
                                 value=""
-                                onChange={(e) => reassignItem(hotelItem.id, e.target.value)}
+                                onChange={(e) => reassignItem(hotelItem, e.target.value)}
                                 className="mt-0.5 rounded border border-slate-200 px-1.5 py-1 text-xs"
                               >
                                 <option value="">-- เปลี่ยน/เลือกแพ็กเกจโรงแรม --</option>
