@@ -1,72 +1,59 @@
 import Image from 'next/image';
-import { useTranslations } from 'next-intl';
+import { getTranslations } from 'next-intl/server';
 import { ArrowRight } from 'lucide-react';
 import { Link } from '@/i18n/navigation';
 import WOSNetworkDiagram from '@/components/WOSNetworkDiagram';
 import { TrustBar } from '@/components/TrustBar';
+import { fetchActivePartnerCount } from '@/lib/data';
 
 /**
- * HeroV2 — WOS.os rebrand hero (Step 2 of the homepage rebuild).
+ * HeroV2 — WOS.os rebrand hero.
  *
- * Parallel component: built alongside the existing <HeroSlider> + hero markup
- * in page.tsx so both can be compared side by side via /[locale]/_preview/hero-v2
- * before anything gets swapped into the real homepage. Does not replace or
- * modify HeroSlider.tsx or the current hero section in page.tsx.
+ * Background photo sits on the right-hand side (desktop only), faded into
+ * navy on its left edge so the copy panel on the left stays readable.
  *
- * Uses the Step 1 design tokens (navy / medicalBlue / gold, text-h1/h2/h3/body-lg)
- * defined in tailwind.config.ts. Copy comes from home.heroV2.* in the message
- * files (th/en/lo) — separate namespace from home.hero.* so the current hero's
- * copy is untouched.
+ * Image requirements (see also the comment on the <Image> below):
+ * - Subject should be centered horizontally (x ≈ 50%) in the source file,
+ *   and already facing/leaning LEFT (into the copy panel) — no mirror
+ *   transform is applied, so the source file is used exactly as-is.
+ * - Recommended size: same aspect ratio as hero-2-centered.webp (1900x1536,
+ *   ~1.24:1) or taller/narrower. Minimum ~1200px wide, ~1536px tall so it
+ *   still looks sharp on large desktop screens.
+ * - Format: .webp (or .jpg/.png, but .webp is smallest for this much detail).
  *
- * v3: primary CTA arrow switched from a literal "→" text glyph to the
- * lucide-react ArrowRight icon (font-fallback mojibake fix).
- *
- * v4: float-animation wrapper around <WOSNetworkDiagram /> given h-full w-full
- * so it doesn't shrink-to-fit and collapse the diagram.
- *
- * v5: Hero repositioning per the "WOS HOMEPAGE — HERO REPOSITIONING v1.0" brief.
- * Copy (eyebrow/title/subtitle/CTAs) now lives entirely in home.heroV2.* per
- * locale — no hardcoded text here. Secondary CTA changed from "Explore
- * Programs" (-> /category, which 404s — there's no /category index route,
- * only /category/[slug]) to "Become a Partner" (-> /partner/apply), matching
- * the brief's repositioned CTA pair: primary = find care, secondary = partner
- * signup. ASSUMPTION: /partner/apply is the correct destination, same as the
- * partner page's own CTA — flag if that's wrong.
- *
- * v6: <TrustBar /> re-attached under the CTAs. It used to live inside the
- * old <HeroSlider>, which never got swapped out for HeroV2 on the homepage
- * — so the stat row (patients/month, verified partners, support hours,
- * countries, count-up animation and all) silently disappeared from the
- * live site even though its copy (home.trustBar.*) was still fully wired
- * in every locale. No translation changes needed, just re-plugging it in.
- *
- * v8: secondary CTA now goes to /partner instead of /partner/apply.
- * Resolves the v5 ASSUMPTION flag above — going straight to the form
- * skipped the actual partner landing page (why-partner, partner types,
- * how-it-works, terms, etc. — see app/[locale]/partner/page.tsx), which
- * is where its own CTA already sends people to /partner/apply from.
+ * Copy (eyebrow/title/subtitle/CTAs) lives entirely in home.heroV2.* per
+ * locale (th/en/lo) — no hardcoded text in this component.
  */
-export default function HeroV2({ image }: { image: { src: string; alt: string } }) {
-  const t = useTranslations('home.heroV2');
+export default async function HeroV2({ image }: { image: { src: string; alt: string } }) {
+  const t = await getTranslations('home.heroV2');
+
+  // Live partner count for the trust bar — see TrustBar.tsx and
+  // fetchActivePartnerCount in src/lib/data.ts. Same defensive pattern as
+  // fetchFeaturedPackages in page.tsx: never let this query break the
+  // whole hero section, just fall back to no count (TrustBar renders the
+  // plain noun without a number in that case).
+  let partnerCount: number | undefined;
+  try {
+    partnerCount = await fetchActivePartnerCount();
+  } catch (err) {
+    console.error('fetchActivePartnerCount failed', err);
+  }
 
   return (
     <section className="relative overflow-hidden bg-navy">
-      {/* Background photo, right-hand side only, faded into navy so text stays readable
-          v7: hero repositioning fixes —
-          1) object-[85%_15%] anchors the crop toward the top-right of the frame — pulls the
-             subject's head up out of the crop area instead of the previous object-right,
-             which only fixed the X axis and left the default (center) Y crop. Nudge the Y
-             value down further (e.g. 20%, 25%) if the head is still tight to the top edge
-             once checked against the real image.
-          2) gradient stops narrowed further — solid navy only to 22%, fully transparent by
-             58% (was 35% / 70%) — to open up more of the photo on the right. */}
+      {/* Background photo. object-[50%_23%] keeps the subject's head centered
+          horizontally and anchored near the top third vertically — adjust the
+          y value if a new source photo frames the subject higher/lower.
+          Gradient: solid navy 0–22%, fading to fully transparent by 58%,
+          left-to-right, so the photo reads clearly on the right while the
+          copy panel on the left stays legible. */}
       <div className="absolute inset-y-0 right-0 hidden w-[55%] lg:block">
         <Image
           src={image.src}
           alt={image.alt}
           fill
           priority
-          className="object-cover object-[85%_15%]"
+          className="object-cover object-[78%_18%]"
           sizes="55vw"
         />
         <div
@@ -111,17 +98,15 @@ export default function HeroV2({ image }: { image: { src: string; alt: string } 
             </Link>
           </div>
 
-          <TrustBar align="left" />
+          <TrustBar align="left" partnerCount={partnerCount} />
         </div>
 
-        {/* ===== Right: WOS network diagram (Step 4) =====
-            STEP 11: gentle float on the whole diagram — motion-safe: only
-            (skipped automatically under prefers-reduced-motion), on top of
-            the diagram's own internal pulse/line-flow motion.
-            v7: since the photo now anchors the subject's head near the TOP of the frame
-            (object-[85%_15%] above), shifted this block down (mt-10) so the diagram's
-            circle sits lower, clear of the head, and tightened the float amplitude
-            (-14px -> -8px) so it doesn't drift back up into that area on each cycle. */}
+        {/* ===== Right: WOS network diagram =====
+            Gentle float on the whole diagram — motion-safe only (skipped
+            automatically under prefers-reduced-motion) — layered on top of
+            the diagram's own internal pulse/line-flow motion. Positioned
+            (mt-10) so it sits clear of the subject's head in the photo
+            behind it. */}
         <div
           data-network-slot
           className="relative mx-auto mt-10 hidden w-full max-w-md items-center justify-center lg:flex"

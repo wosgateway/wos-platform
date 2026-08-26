@@ -18,10 +18,13 @@ import { useTranslations } from 'next-intl';
 
 function parseValue(raw: string): { target: number | null; prefix: string; suffix: string } {
   const match = raw.match(/^(\D*)([\d,]+)(.*)$/);
-  if (!match) return { target: null, prefix: '', suffix: raw };
+  // No leading number: `display` already holds the full raw string (see
+  // CountUpValue's useState init below), so suffix must be empty here —
+  // otherwise it renders as prefix + raw + raw, duplicating the text.
+  if (!match) return { target: null, prefix: '', suffix: '' };
   const [, prefix, digits, suffix] = match;
   const target = Number(digits.replace(/,/g, ''));
-  if (Number.isNaN(target)) return { target: null, prefix: '', suffix: raw };
+  if (Number.isNaN(target)) return { target: null, prefix: '', suffix: '' };
   return { target, prefix, suffix };
 }
 
@@ -82,9 +85,31 @@ if (prefersReducedMotion) {
   );
 }
 
-export function TrustBar({ align = 'center' }: { align?: 'center' | 'left' }) {
+export function TrustBar({
+  align = 'center',
+  partnerCount,
+}: {
+  align?: 'center' | 'left';
+  // Live count of active partners (see fetchActivePartnerCount in
+  // src/lib/data.ts), passed down from a server component. One item's
+  // translation value carries a "{count}+ " template prefix (see
+  // th/en/lo.json home.trustBar.items) — we substitute the real number
+  // in here so CountUpValue's existing leading-number parsing/animation
+  // just works, no changes needed there. If the count couldn't be
+  // fetched (partnerCount is undefined), we strip the "{count}+ "
+  // prefix instead of rendering the literal placeholder, falling back
+  // to the plain noun that used to be hardcoded here.
+  partnerCount?: number;
+}) {
   const t = useTranslations('home.trustBar');
-  const items = t.raw('items') as { value: string; label: string }[];
+  const rawItems = t.raw('items') as { value: string; label: string }[];
+  const items = rawItems.map((item) => ({
+    ...item,
+    value:
+      typeof partnerCount === 'number'
+        ? item.value.replace('{count}', String(partnerCount))
+        : item.value.replace('{count}+ ', ''),
+  }));
   const isLeft = align === 'left';
 
   return (

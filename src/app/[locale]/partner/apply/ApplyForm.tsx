@@ -74,20 +74,59 @@ const initialState: FormState = {
   acceptSLA: false,
 };
 
-type Status = "idle" | "submitting" | "success" | "error";
+type Status = "idle" | "submitting" | "success" | "error" | "invalid";
+
+// ฟิลด์บังคับ ต้องตรงกับ `required` ที่ใส่ไว้ใน input/select ด้านล่างทุกตัว —
+// ถ้าเพิ่ม/ลด required ใน JSX ต้องแก้ list นี้ด้วย
+const REQUIRED_FIELDS: (keyof FormState)[] = [
+  "companyName",
+  "businessType",
+  "primaryName",
+  "primaryEmail",
+  "primaryPhone",
+  "address",
+  "province",
+  "acceptTerms",
+  "acceptPrivacy",
+  "acceptSLA",
+];
+
+function isFilled(value: FormState[keyof FormState]): boolean {
+  if (typeof value === "boolean") return value;
+  return value.trim().length > 0;
+}
 
 export function ApplyForm({ content }: { content: PartnerPageContent }) {
   const { fields, sections, consent, ...copy } = content.applyForm;
   const [form, setForm] = useState<FormState>(initialState);
   const [status, setStatus] = useState<Status>("idle");
+  const [invalidFields, setInvalidFields] = useState<Set<keyof FormState>>(new Set());
   const supabase = createClient();
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
+    if (invalidFields.has(key)) {
+      setInvalidFields((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+
+    const missing = REQUIRED_FIELDS.filter((key) => !isFilled(form[key]));
+    if (missing.length > 0) {
+      setInvalidFields(new Set(missing));
+      setStatus("invalid");
+      event.currentTarget
+        .querySelector(`[name="${missing[0]}"]`)
+        ?.scrollIntoView({ behavior: "smooth", block: "center" });
+      return;
+    }
+    setInvalidFields(new Set());
     setStatus("submitting");
 
     // รูปแบบ payload เดียวกับ BecomePartnerForm.tsx ทุกประการ (patient_name /
@@ -148,18 +187,20 @@ export function ApplyForm({ content }: { content: PartnerPageContent }) {
       {/* Company */}
       <h3 className="wos-pass-headline">{sections.company}</h3>
       <div className="wos-form-grid">
-        <label className="wos-field">
+        <label className={`wos-field wos-field-required ${invalidFields.has("companyName") ? "wos-field-invalid" : ""}`}>
           <span>{fields.companyName}</span>
           <input
             required
+            name="companyName"
             value={form.companyName}
             onChange={(e) => update("companyName", e.target.value)}
           />
         </label>
-        <label className="wos-field">
+        <label className={`wos-field wos-field-required ${invalidFields.has("businessType") ? "wos-field-invalid" : ""}`}>
           <span>{fields.businessType}</span>
           <select
             required
+            name="businessType"
             value={form.businessType}
             onChange={(e) => update("businessType", e.target.value)}
           >
@@ -204,27 +245,29 @@ export function ApplyForm({ content }: { content: PartnerPageContent }) {
         {sections.contact}
       </h3>
       <div className="wos-form-grid">
-        <label className="wos-field">
+        <label className={`wos-field wos-field-required ${invalidFields.has("primaryName") ? "wos-field-invalid" : ""}`}>
           <span>{fields.primaryName}</span>
-          <input required value={form.primaryName} onChange={(e) => update("primaryName", e.target.value)} />
+          <input required name="primaryName" value={form.primaryName} onChange={(e) => update("primaryName", e.target.value)} />
         </label>
         <label className="wos-field">
           <span>{fields.primaryTitle}</span>
           <input value={form.primaryTitle} onChange={(e) => update("primaryTitle", e.target.value)} />
         </label>
-        <label className="wos-field">
+        <label className={`wos-field wos-field-required ${invalidFields.has("primaryEmail") ? "wos-field-invalid" : ""}`}>
           <span>{fields.primaryEmail}</span>
           <input
             required
+            name="primaryEmail"
             type="email"
             value={form.primaryEmail}
             onChange={(e) => update("primaryEmail", e.target.value)}
           />
         </label>
-        <label className="wos-field">
+        <label className={`wos-field wos-field-required ${invalidFields.has("primaryPhone") ? "wos-field-invalid" : ""}`}>
           <span>{fields.primaryPhone}</span>
           <input
             required
+            name="primaryPhone"
             type="tel"
             value={form.primaryPhone}
             onChange={(e) => update("primaryPhone", e.target.value)}
@@ -234,17 +277,17 @@ export function ApplyForm({ content }: { content: PartnerPageContent }) {
           <span>{fields.primaryLineId}</span>
           <input value={form.primaryLineId} onChange={(e) => update("primaryLineId", e.target.value)} />
         </label>
-        <label className="wos-field wos-field-wide">
+        <label className={`wos-field wos-field-wide wos-field-required ${invalidFields.has("address") ? "wos-field-invalid" : ""}`}>
           <span>{fields.address}</span>
-          <input required value={form.address} onChange={(e) => update("address", e.target.value)} />
+          <input required name="address" value={form.address} onChange={(e) => update("address", e.target.value)} />
         </label>
         <label className="wos-field">
           <span>{fields.district}</span>
           <input value={form.district} onChange={(e) => update("district", e.target.value)} />
         </label>
-        <label className="wos-field">
+        <label className={`wos-field wos-field-required ${invalidFields.has("province") ? "wos-field-invalid" : ""}`}>
           <span>{fields.province}</span>
-          <input required value={form.province} onChange={(e) => update("province", e.target.value)} />
+          <input required name="province" value={form.province} onChange={(e) => update("province", e.target.value)} />
         </label>
         <label className="wos-field">
           <span>{fields.postalCode}</span>
@@ -284,34 +327,43 @@ export function ApplyForm({ content }: { content: PartnerPageContent }) {
         {sections.consent}
       </h3>
       <div className="wos-consent-list">
-        <label className="wos-checkbox">
+        <label className={`wos-checkbox ${invalidFields.has("acceptTerms") ? "wos-checkbox-invalid" : ""}`}>
           <input
             type="checkbox"
             required
+            name="acceptTerms"
             checked={form.acceptTerms}
             onChange={(e) => update("acceptTerms", e.target.checked)}
           />
           <span>{consent.acceptTerms}</span>
         </label>
-        <label className="wos-checkbox">
+        <label className={`wos-checkbox ${invalidFields.has("acceptPrivacy") ? "wos-checkbox-invalid" : ""}`}>
           <input
             type="checkbox"
             required
+            name="acceptPrivacy"
             checked={form.acceptPrivacy}
             onChange={(e) => update("acceptPrivacy", e.target.checked)}
           />
           <span>{consent.acceptPrivacy}</span>
         </label>
-        <label className="wos-checkbox">
+        <label className={`wos-checkbox ${invalidFields.has("acceptSLA") ? "wos-checkbox-invalid" : ""}`}>
           <input
             type="checkbox"
             required
+            name="acceptSLA"
             checked={form.acceptSLA}
             onChange={(e) => update("acceptSLA", e.target.checked)}
           />
           <span>{consent.acceptSLA}</span>
         </label>
       </div>
+
+      {status === "invalid" && (
+        <p className="wos-disclaimer" role="alert" style={{ color: "var(--wos-stamp)" }}>
+          {copy.validationError}
+        </p>
+      )}
 
       {status === "error" && (
         <p className="wos-disclaimer" role="alert" style={{ color: "var(--wos-stamp)" }}>

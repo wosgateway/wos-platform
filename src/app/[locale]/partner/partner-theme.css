@@ -713,6 +713,20 @@
   border-color: var(--wos-route);
 }
 
+.wos-field-required span::after {
+  content: " *";
+  color: var(--wos-stamp);
+}
+
+.wos-field-invalid input,
+.wos-field-invalid select {
+  border-color: var(--wos-stamp);
+}
+
+.wos-checkbox-invalid {
+  color: var(--wos-stamp);
+}
+
 .wos-consent-list {
   display: flex;
   flex-direction: column;

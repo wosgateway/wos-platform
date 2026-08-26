@@ -8,7 +8,7 @@ import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
 import { WhatsAppButton } from '@/components/WhatsAppButton';
 import { JourneyProvider } from '@/lib/journey/context';
-import { JourneyCartBar } from '@/components/journey/JourneyCartBar';
+import { MobileJourneyBar } from '@/components/journey/MobileJourneyBar';
 import { LangSetter } from '@/components/LangSetter';
 
 export function generateStaticParams() {
@@ -49,7 +49,7 @@ export default async function LocaleLayout({
           <>
             <Footer />
             <WhatsAppButton />
-            <JourneyCartBar />
+            <MobileJourneyBar />
           </>
         )}
       </JourneyProvider>

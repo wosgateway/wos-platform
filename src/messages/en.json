@@ -18,12 +18,12 @@
     "trustBar": {
       "items": [
         {
-          "value": "1,000+",
-          "label": "patients per month"
+          "value": "Coordinated",
+          "label": "patient journeys"
         },
         {
-          "value": "50+",
-          "label": "verified partners"
+          "value": "{count}+ Verified",
+          "label": "partner network"
         },
         {
           "value": "24/7",
@@ -126,7 +126,9 @@
           "label": "OPTIMIZE",
           "desc": "Longevity & Anti-aging"
         }
-      ]
+      ],
+      "filteredBy": "Filtered by: {goal}",
+      "clearFilter": "Show all categories"
     },
     "categoriesTitle": "Choose Your Health Goal",
     "categoriesSubtitle": "Whether it's prevention, recovery, or treatment, we'll connect you with the right partner",
@@ -261,7 +263,12 @@
     "home": "Home",
     "services": "Services",
     "partners": "Partners",
-    "contact": "Contact"
+    "contact": "Contact",
+    "knowledge": "Knowledge Center",
+    "myTrip": "My Trip",
+    "viewAllServices": "View all services",
+    "openMenu": "Open menu",
+    "closeMenu": "Close menu"
   },
   "common": {
     "partnersCount": "{count} partners",
@@ -450,7 +457,8 @@
     "contactPhoneLo": "Call (Laos): +856 20 9872 4718",
     "companyLine": "Royal Bridge 99 Ltd. · 211 Moo 3, Mittraphap Rd., Ban Chan, Mueang, Udon Thani 41000 · Business Registration: 0413568000586",
     "rightsReserved": "All rights reserved.",
-    "privacyPolicy": "Privacy Policy"
+    "privacyPolicy": "Privacy Policy",
+    "knowledgeCenter": "Knowledge Center"
   },
   "partnerDirectory": {
     "title": "Browse All Partners",
@@ -854,7 +862,11 @@
     "tripTime": "Preferred start time",
     "emptyTitle": "Your journey is empty",
     "emptyBody": "Pick programs or services you're interested in and tap \"+ Add to My Journey\" to bundle several bookings into one.",
-    "emptyCta": "Browse programs"
+    "emptyCta": "Browse programs",
+    "mobileCta": {
+      "findProgram": "Find a Program",
+      "talkToWos": "Talk to WOS"
+    }
   },
   "payment": {
     "title": "💳 Payment",
@@ -938,5 +950,17 @@
     "noResults": "Nothing found nearby",
     "nearbyError": "Couldn't load nearby places — try again",
     "getDirections": "Get directions"
+  },
+  "myTripLookup": {
+    "title": "Find Your Trip",
+    "description": "Enter your order number and the phone number used at booking to view your trip details.",
+    "orderNumberLabel": "Order number",
+    "placeholder": "e.g. WOS-20260826-00001",
+    "phoneLabel": "Phone number",
+    "phonePlaceholder": "08X-XXX-XXXX",
+    "submit": "View Trip",
+    "submitting": "Searching...",
+    "error": "Please enter both order number and phone number.",
+    "notFound": "Booking not found. Please check your order number and phone number and try again."
   }
 }
