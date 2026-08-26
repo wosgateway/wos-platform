@@ -69,33 +69,33 @@ export function PartnerLogos() {
   const track = logos.length > 0 ? [...logos, ...logos] : [];
 
   return (
-    <section className="border-y border-slate-100 bg-slate-50/60 py-8">
+    <section className="border-y border-slate-100 bg-slate-50/60 py-10 sm:py-14">
       <div className="mx-auto max-w-5xl px-4">
-        <p className="text-center text-xs font-semibold uppercase tracking-wider text-slate-400">
+        <p className="text-center text-sm font-semibold uppercase tracking-wider text-slate-400 sm:text-base">
           {t('label')}
         </p>
 
         {loading ? (
-          <div className="mt-6 flex justify-center gap-8">
+          <div className="mt-8 flex justify-center gap-10">
             {[...Array(5)].map((_, i) => (
-              <div key={i} className="h-16 w-36 animate-pulse rounded-lg bg-slate-100" />
+              <div key={i} className="h-20 w-44 animate-pulse rounded-lg bg-slate-100 sm:h-24 sm:w-52" />
             ))}
           </div>
         ) : (
-          <div className="wos-logo-scroller relative mt-6 overflow-hidden">
+          <div className="wos-logo-scroller relative mt-8 overflow-hidden">
             {/* Fade edges so logos don't appear to cut off abruptly */}
-            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-12 bg-gradient-to-r from-slate-50/60 to-transparent" />
-            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-12 bg-gradient-to-l from-slate-50/60 to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 left-0 z-10 w-16 bg-gradient-to-r from-slate-50/60 to-transparent" />
+            <div className="pointer-events-none absolute inset-y-0 right-0 z-10 w-16 bg-gradient-to-l from-slate-50/60 to-transparent" />
 
-            <div className="wos-logo-track flex w-max items-center gap-12">
+            <div className="wos-logo-track flex w-max items-center gap-16">
               {track.map((p, i) => (
-                <div key={`${p.id}-${i}`} className="relative h-16 w-36 flex-shrink-0">
+                <div key={`${p.id}-${i}`} className="relative h-20 w-44 flex-shrink-0 sm:h-24 sm:w-52">
                   <Image
                     src={p.logo_url}
                     alt={p.name}
                     title={p.name}
                     fill
-                    sizes="144px"
+                    sizes="(max-width: 639px) 176px, 208px"
                     className="object-contain opacity-70 transition-opacity hover:opacity-100"
                   />
                 </div>

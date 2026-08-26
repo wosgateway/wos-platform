@@ -91,19 +91,32 @@ const config: Config = {
         mono: ['JetBrains Mono', 'monospace'],
       },
       fontSize: {
-        // ===== WOS.os Typography scale (fluid via clamp — spec ranges below) =====
-        // h1: 56–72px   h2: 40–48px   h3: 24–30px   body: 16–18px
+        // ===== WOS.os Typography scale (fluid via clamp) =====
+        // Recalculated 2026-08-26: previous clamps had their MIN bound pinned
+        // to the old desktop-min value (e.g. h1 min=56px), so on real phones
+        // (320–430px) the font never scaled down — it rendered at the
+        // "desktop minimum" on every screen, causing Thai/Lao hero text to
+        // overflow / wrap one word per line on mobile (see 11.jpeg).
+        //
+        // New ranges are fit across an actual 320px (small phone) →
+        // 1280px (desktop) viewport span, landing on the ORIGINAL spec max
+        // at 1280px, so desktop/tablet look unchanged and only mobile scales
+        // down properly:
+        //   h1: 36px @320px  →  72px @1280px  (was fixed 56–72px)
+        //   h2: 28px @320px  →  48px @1280px  (was fixed 40–48px)
+        //   h3: 20px @320px  →  30px @1280px  (was fixed 24–30px)
+        //   body-lg: unchanged — 16px min is already mobile-safe
         h1: [
-          'clamp(3.5rem, 3vw + 2.5rem, 4.5rem)',
-          { lineHeight: '1.05', fontWeight: '700', letterSpacing: '-0.02em' },
+          'clamp(2.25rem, 3.75vw + 1.5rem, 4.5rem)',
+          { lineHeight: '1.1', fontWeight: '700', letterSpacing: '-0.02em' },
         ],
         h2: [
-          'clamp(2.5rem, 1.5vw + 2.1rem, 3rem)',
-          { lineHeight: '1.15', fontWeight: '700', letterSpacing: '-0.01em' },
+          'clamp(1.75rem, 2.08vw + 1.33rem, 3rem)',
+          { lineHeight: '1.2', fontWeight: '700', letterSpacing: '-0.01em' },
         ],
         h3: [
-          'clamp(1.5rem, 0.7vw + 1.3rem, 1.875rem)',
-          { lineHeight: '1.25', fontWeight: '600' },
+          'clamp(1.25rem, 1.04vw + 1.04rem, 1.875rem)',
+          { lineHeight: '1.3', fontWeight: '600' },
         ],
         'body-lg': [
           'clamp(1rem, 0.2vw + 0.95rem, 1.125rem)',

@@ -27,6 +27,10 @@ export function JourneyTimelineV2() {
   const t = useTranslations('home.journey');
   const steps = t.raw('steps') as { icon: string; title: string; desc: string }[];
 
+  // Spinning gold->medicalBlue conic-gradient ring behind each numbered
+  // node — reads as "color running around the circle" continuously.
+  // motion-safe: only, so prefers-reduced-motion gets a static ring instead.
+
   const sectionRef = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
 
@@ -58,6 +62,12 @@ export function JourneyTimelineV2() {
 
   return (
     <section ref={sectionRef} className="section-padding bg-primary-light/40">
+      <style>{`
+        @keyframes wos-node-spin {
+          from { transform: rotate(0deg); }
+          to { transform: rotate(360deg); }
+        }
+      `}</style>
       <div className="mx-auto max-w-6xl px-4">
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">{t('title')}</h2>
@@ -151,11 +161,23 @@ export function JourneyTimelineV2() {
                   }s`,
                 }}
               >
-                {/* number-forward node: big numeral, icon as a small badge */}
-                <div className="relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-full border-2 border-primary bg-white shadow-sm">
-                  <span className="text-sm font-bold text-primary">
-                    {String(i + 1).padStart(2, '0')}
-                  </span>
+                {/* number-forward node: big numeral, icon as a small badge.
+                    Ring behind the white face is a conic-gradient rotating
+                    continuously so the color visibly "runs" around the
+                    circle, instead of a static solid border. */}
+                <div className="relative z-10 h-12 w-12 shrink-0">
+                  <div
+                    className="absolute inset-0 rounded-full shadow-sm motion-safe:animate-[wos-node-spin_3s_linear_infinite]"
+                    style={{
+                      background: 'conic-gradient(from 0deg, #C9974A, #1D63A6, #C9974A)',
+                    }}
+                    aria-hidden
+                  />
+                  <div className="absolute inset-[2.5px] flex items-center justify-center rounded-full bg-white">
+                    <span className="text-sm font-bold text-primary">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                  </div>
                   <span
                     className="absolute -bottom-1.5 -right-1.5 flex h-6 w-6 items-center justify-center rounded-full bg-white text-sm shadow"
                     aria-hidden
