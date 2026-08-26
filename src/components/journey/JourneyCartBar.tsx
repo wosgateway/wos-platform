@@ -7,6 +7,7 @@ import { Link } from '@/i18n/navigation';
 import { formatTHB } from '@/lib/format';
 import { normalizeImageSrc } from '@/lib/image';
 import { useJourney } from '@/lib/journey/context';
+import { ChevronDown } from 'lucide-react';
 
 // Mounted once in [locale]/layout.tsx (same pattern as WhatsAppButton).
 // Renders nothing while the cart is empty, so it never gets in the way
@@ -47,9 +48,11 @@ export function JourneyCartBar() {
           </span>
           <span className="flex items-center gap-2 text-sm font-bold text-primary-dark">
             {formatTHB(total)}
-            <span className={`inline-block transition-transform ${open ? 'rotate-180' : ''}`} aria-hidden>
-              –²
-            </span>
+            <ChevronDown
+              className={`h-4 w-4 transition-transform duration-200 ${open ? 'rotate-180' : ''}`}
+              strokeWidth={2.25}
+              aria-hidden="true"
+            />
           </span>
         </button>
 
