@@ -38,6 +38,20 @@ const STATUS_BADGE: Record<ItemStatus, string> = {
   refunded: 'bg-slate-100 text-slate-600',
 };
 
+// Must match ALLOWED_TRANSITIONS in
+// /api/partner/order-items/[id]/status/route.ts exactly — same reasoning
+// as BookingsList.tsx's copy of this map: the API route is the real
+// enforcement point, this only keeps the <select> below from offering a
+// transition that would come back as a 409.
+const ALLOWED_TRANSITIONS: Record<ItemStatus, ItemStatus[]> = {
+  pending: ['confirmed', 'cancelled', 'refunded'],
+  confirmed: ['checked_in', 'cancelled', 'refunded'],
+  checked_in: ['completed', 'cancelled', 'refunded'],
+  completed: [],
+  cancelled: [],
+  refunded: [],
+};
+
 // Hotel room count / transport mode-days-pickup-dropoff detail line —
 // same shape as the equivalent helpers in BookingsManager.tsx and the
 // admin order-detail page, since src/lib/partner/orders.ts now
@@ -253,16 +267,25 @@ export function BookingDetailModal({ orderId, onClose, onUpdate }: BookingDetail
                       <select
                         value={item.status}
                         onChange={(e) => updateItemStatus(item.id, e.target.value as ItemStatus)}
-                        disabled={savingItemId === item.id}
+                        disabled={
+                          savingItemId === item.id ||
+                          ALLOWED_TRANSITIONS[item.status as ItemStatus]?.length === 0
+                        }
                         className={`rounded-full px-2 py-1 text-xs font-medium border-0 ${
                           STATUS_BADGE[item.status as ItemStatus] || 'bg-slate-100 text-slate-600'
                         }`}
                       >
-                        {(Object.keys(STATUS_LABEL) as ItemStatus[]).map((s) => (
-                          <option key={s} value={s}>
-                            {STATUS_LABEL[s]}
-                          </option>
-                        ))}
+                        {(Object.keys(STATUS_LABEL) as ItemStatus[])
+                          .filter(
+                            (s) =>
+                              s === item.status ||
+                              ALLOWED_TRANSITIONS[item.status as ItemStatus]?.includes(s)
+                          )
+                          .map((s) => (
+                            <option key={s} value={s}>
+                              {STATUS_LABEL[s]}
+                            </option>
+                          ))}
                       </select>
                     </div>
 

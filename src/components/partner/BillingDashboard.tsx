@@ -239,7 +239,11 @@ export function BillingDashboard({ organizationId }: { organizationId: string })
 
         <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="bg-slate-50 rounded-lg p-3 text-center">
-            <p className="text-lg font-bold text-slate-800">ˆž</p>
+            {/* Bookings has no per-tier limit — see FEATURES_BY_TIER/TIER_FEATURES
+                above, every tier's feature list says "การจองไม่จำกัด" — so this
+                shows the same fixed text instead of reading a max_bookings field
+                that doesn't exist on Subscription['features']. */}
+            <p className="text-lg font-bold text-slate-800">ไม่จำกัด</p>
             <p className="text-xs text-slate-400">การจอง</p>
           </div>
           <div className="bg-slate-50 rounded-lg p-3 text-center">

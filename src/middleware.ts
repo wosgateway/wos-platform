@@ -89,6 +89,20 @@ export async function middleware(request: NextRequest) {
 
   const partnerPortal = isPartnerPortalRest(rest);
 
+  // Partner portal is intentionally Thai-only — partners use Thai, and
+  // none of its pages/components go through next-intl (all hardcoded
+  // Thai strings, see PARTNER_PORTAL_HEADER_FIX.md history). Redirect
+  // /lo/... and /en/... portal URLs to their /th/... equivalent instead
+  // of rendering hardcoded Thai text under a lo/en URL, which looked
+  // like garbled/wrong-language text to non-Thai-locale visitors.
+  // Query string carries over automatically since we only rewrite
+  // pathname on the existing request URL.
+  if (partnerPortal && locale !== 'th') {
+    const url = new URL(request.url);
+    url.pathname = `/th${rest}`;
+    return NextResponse.redirect(url);
+  }
+
   // 2026-08: inject request header ให้ [locale]/layout.tsx อ่านได้ผ่าน
   // headers() — ต้องทำก่อนเรียก intlMiddleware(request) เพื่อให้ header
   // นี้ติดไปกับ request เดียวกันที่ next-intl ใช้สร้าง response สุดท้าย

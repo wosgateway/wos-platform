@@ -83,6 +83,21 @@ const STATUS_OPTIONS: { value: BookingStatus | 'all'; label: string }[] = [
   { value: 'refunded', label: '↩️ คืนเงินแล้ว' },
 ];
 
+// Must match ALLOWED_TRANSITIONS in
+// /api/partner/order-items/[id]/status/route.ts exactly — that route is
+// the actual enforcement point (this is only so the <select> below
+// doesn't *offer* a transition the API will reject with 409). completed/
+// cancelled/refunded are terminal: reopening one is an admin action, not
+// a partner one, so they get no forward options here either.
+const ALLOWED_TRANSITIONS: Record<BookingStatus, BookingStatus[]> = {
+  pending: ['confirmed', 'cancelled', 'refunded'],
+  confirmed: ['checked_in', 'cancelled', 'refunded'],
+  checked_in: ['completed', 'cancelled', 'refunded'],
+  completed: [],
+  cancelled: [],
+  refunded: [],
+};
+
 export function BookingsList({ partnerId }: { partnerId: string | null }) {
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -298,10 +313,15 @@ export function BookingsList({ partnerId }: { partnerId: string | null }) {
                     <select
                       value={booking.status}
                       onChange={(e) => updateStatus(booking.id, e.target.value as BookingStatus)}
-                      disabled={updatingId === booking.id}
+                      disabled={updatingId === booking.id || ALLOWED_TRANSITIONS[booking.status].length === 0}
                       className={`rounded-full px-2 py-1 text-xs font-medium border-0 ${STATUS_BADGE[booking.status]}`}
                     >
-                      {STATUS_OPTIONS.filter((o) => o.value !== 'all').map((opt) => (
+                      {STATUS_OPTIONS.filter(
+                        (o) =>
+                          o.value !== 'all' &&
+                          (o.value === booking.status ||
+                            ALLOWED_TRANSITIONS[booking.status].includes(o.value as BookingStatus))
+                      ).map((opt) => (
                         <option key={opt.value} value={opt.value}>
                           {opt.label}
                         </option>
