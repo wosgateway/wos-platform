@@ -2,17 +2,17 @@
 
 import { useState } from 'react';
 import Image from 'next/image';
+import { Link } from '@/i18n/navigation';
 import { HEALTH_GOAL_IMAGES } from '@/lib/healthGoals';
 
 /**
  * HealthGoalFinder — "Find Your Health Goal" (Step 7).
  *
  * 4 tiles (Prevent / Restore / Renew / Optimize) that expand their image on
- * hover. Per the step plan this is presentation-only for now: clicking
- * "Explore" does NOT filter the Programs section yet — that wiring is a
- * separate, later step once this layout is approved. The onExplore prop
- * is a no-op stub today; swap it for real filter logic without touching
- * the markup when that's ready.
+ * hover. "Explore" now links to `/?goal=<slug>#categories`, which the
+ * Categories section on the homepage reads to filter itself down to the
+ * matching categories (see HEALTH_GOAL_CATEGORY_MAP in lib/healthGoals.ts
+ * and the searchParams handling in app/[locale]/page.tsx).
  *
  * New translation keys used: home.healthGoals.* (eyebrow, title, subtitle,
  * viewAllCta, exploreCta, items[].label, items[].desc) — added to
@@ -93,15 +93,17 @@ export function HealthGoalFinder({
                     {item.label}
                   </p>
                   <p className="mt-1 text-sm text-white/80">{item.desc}</p>
-                  <button
-                    type="button"
-                    className={`mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold transition-all duration-300 ${
-                      isHovered ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
-                    }`}
-                  >
-                    {exploreCta}
-                    <span aria-hidden>→</span>
-                  </button>
+                  {img && (
+                    <Link
+                      href={{ pathname: '/', query: { goal: img.slug }, hash: 'categories' }}
+                      className={`mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold transition-all duration-300 focus-visible:translate-y-0 focus-visible:opacity-100 max-sm:translate-y-0 max-sm:opacity-100 ${
+                        isHovered ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
+                      }`}
+                    >
+                      {exploreCta}
+                      <span aria-hidden>→</span>
+                    </Link>
+                  )}
                 </div>
               </div>
             );

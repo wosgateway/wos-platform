@@ -387,13 +387,23 @@ export function JourneyBookingForm({
     try {
       let attachmentUrl: string | null = null;
       if (form.attachment) {
-        const path = `${Date.now()}-${form.attachment.name}`;
+        // Path, not a public URL — 'booking-attachments' is a private
+        // bucket as of migration 044. getPublicUrl() used to be called
+        // here, but its result never resolves (private bucket) and
+        // didn't match what api/orders/route.ts validates either.
+        // Admin/partner views exchange this path for a short-lived
+        // signed URL via signAttachmentUrl() (lib/storage/signed-
+        // attachment-url.ts), same as BookingForm.tsx's attachment.
+        //
+        // crypto.randomUUID() instead of Date.now(): two uploads in the
+        // same millisecond would otherwise collide and overwrite each
+        // other in storage. Matches BookingForm.tsx's naming.
+        const path = `${crypto.randomUUID()}-${form.attachment.name}`;
         const { error: uploadError } = await supabase.storage
           .from('booking-attachments')
           .upload(path, form.attachment);
         if (uploadError) throw uploadError;
-        const { data } = supabase.storage.from('booking-attachments').getPublicUrl(path);
-        attachmentUrl = data.publicUrl;
+        attachmentUrl = path;
       }
 
       const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);

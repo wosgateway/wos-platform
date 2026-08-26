@@ -116,6 +116,18 @@ export async function fetchFeaturedPackages(limit = 8): Promise<Package[]> {
   return data ?? [];
 }
 
+// ใช้สำหรับ trust bar หน้า home — จำนวนพันธมิตร active จริง แทนเลข hardcode
+// head: true ให้ Postgres นับแบบ exact โดยไม่ต้องส่งข้อมูลแถวจริงกลับมา (เร็ว/เบากว่า select('*'))
+export async function fetchActivePartnerCount(): Promise<number> {
+  const supabase = createAnonClient();
+  const { count, error } = await supabase
+    .from('partners')
+    .select('*', { count: 'exact', head: true })
+    .eq('status', 'active');
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function fetchPackagesByCategory(dbCategories: string[]): Promise<Package[]> {
   const supabase = createAnonClient();
   const { data, error } = await supabase
