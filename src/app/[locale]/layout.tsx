@@ -49,6 +49,15 @@ export default async function LocaleLayout({
         {!isPartnerPortal && (
           <>
             <Footer />
+            {/* MobileJourneyBar is position:fixed at the bottom of the
+                viewport on mobile (see MobileStickyCta / JourneyCartBar),
+                so it sits on top of whatever content is last on the page
+                instead of pushing it up. This spacer reserves that space
+                in normal flow so the bar never covers real content. */}
+            <div
+              className="h-[calc(4.5rem+env(safe-area-inset-bottom))] md:hidden"
+              aria-hidden="true"
+            />
             <WhatsAppButton />
             <ChatWidget />
             <MobileJourneyBar />
