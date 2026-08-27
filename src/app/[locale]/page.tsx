@@ -59,8 +59,28 @@ export default async function HomePage({
 
   return (
     <main>
-      {/* ===== HERO (WOS.os rebrand, network diagram slotted in) ===== */}
-      <HeroV2 image={{ src: '/images/hero/hero-1.webp', alt: 'Guest relaxing at a WOS-affiliated wellness retreat overlooking the river' }} />
+      {/* ===== HERO (WOS.os rebrand, network diagram slotted in) =====
+          Pass 2–3 images to crossfade automatically (see
+          HeroBackgroundSlideshow). All images should share the same
+          78%/18% subject framing used below. Drop hero-2.webp / hero-3.webp
+          into public/images/hero/ and list them here to add them to the
+          rotation — or trim back to a single-item array to disable it. */}
+      <HeroV2
+        images={[
+          {
+            src: '/images/hero/hero-1.webp',
+            alt: 'Guest relaxing at a WOS-affiliated wellness retreat overlooking the river',
+          },
+          {
+            src: '/images/hero/hero-2.webp',
+            alt: 'Guest relaxing at a WOS-affiliated wellness retreat overlooking the river',
+          },
+          {
+            src: '/images/hero/hero-3.webp',
+            alt: 'Guest relaxing at a WOS-affiliated wellness retreat overlooking the river',
+          },
+        ]}
+      />
 
       {/* ===== PARTNER LOGOS ===== */}
       <PartnerLogos />

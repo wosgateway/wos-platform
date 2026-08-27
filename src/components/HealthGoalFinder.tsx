@@ -70,6 +70,13 @@ export function HealthGoalFinder({
                 key={item.label}
                 onMouseEnter={() => setHovered(i)}
                 onMouseLeave={() => setHovered(null)}
+                // Touch devices never fire mouseenter/mouseleave, so the
+                // zoom effect above was permanently off on mobile — tapping
+                // the tile toggles the same `hovered` state as a fallback.
+                // Tapping the tile again (or tapping elsewhere) closes it;
+                // tapping the revealed Explore link still navigates as
+                // normal since that's a separate element.
+                onClick={() => setHovered((h) => (h === i ? null : i))}
                 className="group relative flex h-72 flex-col justify-end overflow-hidden rounded-2xl border border-navy/10"
               >
                 {img && (

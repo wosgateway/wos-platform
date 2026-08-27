@@ -46,7 +46,7 @@ import { useTranslations } from 'next-intl';
  *
  * Image priority: `StepNode` accepts an optional `priority` prop (default
  * `false`) but nothing in this file sets it — `page.tsx` renders
- * `<HeroV2 image={{ src: '/images/hero/hero-1.webp', ... }} />` first,
+ * `<HeroV2 images={[{ src: '/images/hero/hero-1.webp', ... }]} />` first,
  * then `<PartnerLogos />`, then this section. Hero's own image is already
  * the LCP candidate; marking this section's first photo `priority` too
  * would make it compete with Hero for early bandwidth rather than help
