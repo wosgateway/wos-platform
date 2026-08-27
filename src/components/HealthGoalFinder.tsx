@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
 import { Link } from '@/i18n/navigation';
 import { HEALTH_GOAL_IMAGES } from '@/lib/healthGoals';
@@ -17,6 +17,16 @@ import { HEALTH_GOAL_IMAGES } from '@/lib/healthGoals';
  * New translation keys used: home.healthGoals.* (eyebrow, title, subtitle,
  * viewAllCta, exploreCta, items[].label, items[].desc) — added to
  * th/en/lo, nothing existing was changed.
+ *
+ * Hover vs. touch, kept fully separate:
+ *  - Devices with a real mouse (`hover: hover` + `pointer: fine`) keep the
+ *    original mouseenter/mouseleave zoom, exclusive to one tile at a time.
+ *  - Everything else (touch) never fires mouseenter, and making the user
+ *    tap-and-guess which tile is "open" is easy to miss with a thumb
+ *    covering the screen. Instead each tile watches its own visibility via
+ *    IntersectionObserver and zooms itself in as it scrolls into view —
+ *    no tap required, and it un-zooms again if scrolled back out, so it
+ *    stays accurate to what's actually on screen rather than firing once.
  */
 
 interface HealthGoalItem {
@@ -39,7 +49,57 @@ export function HealthGoalFinder({
   exploreCta: string;
   items: HealthGoalItem[];
 }) {
+  // Desktop-only: which tile the mouse is currently over (exclusive).
   const [hovered, setHovered] = useState<number | null>(null);
+
+  // Touch-only: which tiles are currently scrolled into view (not
+  // exclusive — on a tall mobile grid more than one can be visible).
+  const [inView, setInView] = useState<Set<number>>(new Set());
+
+  // Decided once on mount: does this device have a real mouse? Checked via
+  // matchMedia rather than a touch/no-touch sniff, since some laptops have
+  // both a touchscreen and a mouse — `hover: hover` is the signal that
+  // actually matters (can the pointer rest over something without a tap?).
+  const [hasHover, setHasHover] = useState(true);
+
+  useEffect(() => {
+    const mql = window.matchMedia('(hover: hover) and (pointer: fine)');
+    setHasHover(mql.matches);
+    const onChange = (e: MediaQueryListEvent) => setHasHover(e.matches);
+    mql.addEventListener('change', onChange);
+    return () => mql.removeEventListener('change', onChange);
+  }, []);
+
+  const tileRefs = useRef<(HTMLDivElement | null)[]>([]);
+
+  useEffect(() => {
+    // Only needed on touch devices — desktop uses hover instead.
+    if (hasHover) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        setInView((prev) => {
+          const next = new Set(prev);
+          for (const entry of entries) {
+            const index = Number((entry.target as HTMLElement).dataset.tileIndex);
+            if (entry.isIntersecting) {
+              next.add(index);
+            } else {
+              next.delete(index);
+            }
+          }
+          return next;
+        });
+      },
+      // Trigger once a tile is roughly half-visible, so the effect reads
+      // as "this one's in focus now" rather than firing at the first
+      // sliver of a pixel entering the viewport.
+      { threshold: 0.55 }
+    );
+
+    tileRefs.current.forEach((node) => node && observer.observe(node));
+    return () => observer.disconnect();
+  }, [hasHover]);
 
   return (
     <section className="section-padding bg-white">
@@ -64,19 +124,16 @@ export function HealthGoalFinder({
         <div className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-4">
           {items.map((item, i) => {
             const img = HEALTH_GOAL_IMAGES[i];
-            const isHovered = hovered === i;
+            const isHovered = hasHover ? hovered === i : inView.has(i);
             return (
               <div
                 key={item.label}
-                onMouseEnter={() => setHovered(i)}
-                onMouseLeave={() => setHovered(null)}
-                // Touch devices never fire mouseenter/mouseleave, so the
-                // zoom effect above was permanently off on mobile — tapping
-                // the tile toggles the same `hovered` state as a fallback.
-                // Tapping the tile again (or tapping elsewhere) closes it;
-                // tapping the revealed Explore link still navigates as
-                // normal since that's a separate element.
-                onClick={() => setHovered((h) => (h === i ? null : i))}
+                ref={(node) => {
+                  tileRefs.current[i] = node;
+                }}
+                data-tile-index={i}
+                onMouseEnter={hasHover ? () => setHovered(i) : undefined}
+                onMouseLeave={hasHover ? () => setHovered(null) : undefined}
                 className="group relative flex h-72 flex-col justify-end overflow-hidden rounded-2xl border border-navy/10"
               >
                 {img && (
