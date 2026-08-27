@@ -3,7 +3,7 @@ import { CATEGORIES } from '@/lib/categories';
 import { fetchFeaturedPackages } from '@/lib/data';
 import { CategoryCard } from '@/components/CategoryCard';
 import { PartnerLogos } from '@/components/PartnerLogos';
-import { JourneyTimelineV2 } from '@/components/JourneyTimelineV2';
+import { WOSHealthJourney } from '@/components/WOSHealthJourney';
 import { WhyWosV2 } from '@/components/WhyWosV2';
 import { HealthGoalFinder } from '@/components/HealthGoalFinder';
 import {
@@ -66,7 +66,7 @@ export default async function HomePage({
       <PartnerLogos />
 
       {/* ===== PATIENT JOURNEY ===== */}
-      <JourneyTimelineV2 />
+      <WOSHealthJourney />
 
       {/* ===== WHY WOS ===== */}
       <WhyWosV2 title={t('why.title')} items={whyItems} />
