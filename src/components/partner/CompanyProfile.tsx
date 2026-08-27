@@ -52,10 +52,83 @@ interface FormData {
 
 const DEFAULT_COLORS = ['#5B8C6E', '#f59e0b', '#3b82f6', '#ef4444', '#8b5cf6', '#ec4899'];
 
+// จำกัดขนาดไฟล์อัปโหลด — ป้องกัน partner อัปโหลดไฟล์ต้นฉบับขนาดใหญ่ผิดปกติ
+// (เช่น PNG จากกล้อง 5-10MB) เข้ามาตรงๆ โดยไม่มีการกรองใดๆ เลย
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
+// ขนาดสูงสุดฝั่งที่ยาวที่สุดหลัง resize — พอสำหรับโชว์เต็มจอ retina
+// โดยไม่ต้องเก็บไฟล์ต้นฉบับความละเอียดกล้อง (4000px+) ไว้เต็มๆ
+const MAX_DIMENSION_PX = 1600;
+const COMPRESSED_QUALITY = 0.82;
+
+// GIF resize ผ่าน canvas จะทำให้ animation หายไป (เหลือเฟรมเดียว) จึงข้าม
+// การ resize เฉพาะไฟล์ GIF แล้วอัปโหลดไฟล์ต้นฉบับตรงๆ (ยังผ่าน MIME/size
+// check ด้านบนเหมือนเดิม จึงยังปลอดภัยอยู่)
+async function resizeImage(file: File): Promise<File> {
+  if (file.type === 'image/gif') return file;
+
+  const bitmap = await createImageBitmap(file);
+  const scale = Math.min(1, MAX_DIMENSION_PX / Math.max(bitmap.width, bitmap.height));
+
+  // ไฟล์เล็กกว่าเกณฑ์อยู่แล้ว ไม่ต้อง resize ซ้ำให้คุณภาพเสียเปล่าๆ
+  if (scale >= 1) {
+    bitmap.close();
+    return file;
+  }
+
+  const targetWidth = Math.round(bitmap.width * scale);
+  const targetHeight = Math.round(bitmap.height * scale);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = targetWidth;
+  canvas.height = targetHeight;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    bitmap.close();
+    return file;
+  }
+  ctx.drawImage(bitmap, 0, 0, targetWidth, targetHeight);
+  bitmap.close();
+
+  // PNG เก็บ format เดิมไว้ (รองรับพื้นหลังโปร่งใส เช่น โลโก้) ส่วนชนิดอื่น
+  // แปลงเป็น JPEG เพื่อให้ได้ไฟล์เล็กสุด
+  const outputType = file.type === 'image/png' ? 'image/png' : 'image/jpeg';
+
+  const blob = await new Promise<Blob | null>((resolve) =>
+    canvas.toBlob(resolve, outputType, COMPRESSED_QUALITY)
+  );
+
+  // toBlob ล้มเหลว (เบราว์เซอร์บางตัว/บางสถานการณ์) — ใช้ไฟล์เดิมแทนดีกว่าอัปโหลดไม่สำเร็จเลย
+  if (!blob) return file;
+
+  const newName = file.name.replace(/\.[^.]+$/, outputType === 'image/png' ? '.png' : '.jpg');
+  return new File([blob], newName, { type: outputType });
+}
+
+// เฉพาะคอลัมน์ที่มีอยู่จริงทั้งใน organizations และ partners (legacy
+// public directory table — ดู sql/006_legacy_directory_tables.sql)
+// เท่านั้นที่ sync ข้ามได้ตรงๆ; website_url/phone/email/address/slug/
+// settings ไม่มีคอลัมน์คู่กันฝั่ง partners จึงยังคงอยู่ใน organizations
+// อย่างเดียวเหมือนเดิม
+type PartnersSyncPayload = {
+  name: string;
+  description: string | null;
+  province: string | null;
+  logo_url: string | null;
+  cover_image_url: string | null;
+};
+
 export function CompanyProfile({
   organizationId,
+  partnerId,
 }: {
   organizationId: string;
+  // id ของแถวใน public.partners ที่ branch นี้ผูกอยู่ (branches.partner_id)
+  // เป็น null เมื่อแอดมินยังไม่ได้เชื่อม branch เข้ากับ listing สาธารณะ —
+  // ในกรณีนั้นฟอร์มนี้จะบันทึกลง organizations ได้ตามปกติ แต่จะไม่มีผล
+  // กับหน้าเว็บสาธารณะจนกว่าจะเชื่อม
+  partnerId?: string | null;
 }) {
   const supabase = createClient();
   const [org, setOrg] = useState<Organization | null>(null);
@@ -126,14 +199,40 @@ export function CompanyProfile({
   }, []);
 
   async function handleImageUpload(type: 'logo' | 'cover', file: File) {
-    setUploading(type);
     setError(null);
 
+    // เช็ค MIME type จริงจากไฟล์ (ไม่ใช่แค่ accept="image/*" ที่กรองได้แค่
+    // ฝั่ง UI — ผู้ใช้ยังเลือกไฟล์ผ่าน "All Files" หรือลาก-วางไฟล์ประเภท
+    // อื่นเข้ามาได้อยู่ดีถ้าไม่เช็คตรงนี้)
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setError('รองรับเฉพาะไฟล์รูปภาพ JPEG, PNG, WEBP หรือ GIF เท่านั้น');
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setError(`ไฟล์ใหญ่เกินไป (${(file.size / 1024 / 1024).toFixed(1)}MB) — จำกัดไม่เกิน 5MB`);
+      return;
+    }
+
+    setUploading(type);
+
     try {
-      const path = `organizations/${organizationId}/${type}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      // resize/compress ฝั่ง client ก่อนอัปโหลด — ลดขนาดไฟล์จริง (ไม่ใช่แค่
+      // จำกัดเพดานที่ 5MB) ก่อนขึ้น Storage เพื่อลด bandwidth/พื้นที่เก็บ
+      // และให้หน้าเว็บโหลดไวขึ้น; ถ้า resize ล้มเหลวไม่ว่าด้วยเหตุผลใด
+      // (เบราว์เซอร์เก่า, ไฟล์เสีย ฯลฯ) ให้ fallback ไปใช้ไฟล์ต้นฉบับที่ผ่าน
+      // การเช็ค MIME/size ด้านบนแล้วแทน ดีกว่าอัปโหลดไม่สำเร็จเลย
+      let uploadFile: File;
+      try {
+        uploadFile = await resizeImage(file);
+      } catch {
+        uploadFile = file;
+      }
+
+      const path = `organizations/${organizationId}/${type}/${Date.now()}_${uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const { error: uploadError } = await supabase.storage
         .from('partner-images')
-        .upload(path, file);
+        .upload(path, uploadFile);
 
       if (uploadError) throw uploadError;
 
@@ -194,11 +293,38 @@ export function CompanyProfile({
       .update(payload)
       .eq('id', organizationId);
 
-    setSaving(false);
-
     if (updateError) {
+      setSaving(false);
       setError('บันทึกไม่สำเร็จ: ' + updateError.message);
       return;
+    }
+
+    // Sync เข้า public.partners ด้วย — ถ้า branch นี้ถูกเชื่อมกับ listing
+    // สาธารณะแล้ว (partnerId ไม่ null) มิฉะนั้นสิ่งที่ partner แก้ในฟอร์มนี้
+    // จะไปอัปเดตแค่ organizations โดยไม่มีผลอะไรกับหน้าเว็บจริงเลย
+    // (partners มีคอลัมน์น้อยกว่า organizations — sync ได้แค่ฟิลด์ที่มีคู่กัน)
+    if (partnerId) {
+      const partnersPayload: PartnersSyncPayload = {
+        name: payload.name,
+        description: payload.description,
+        province: payload.province,
+        logo_url: payload.logo_url,
+        cover_image_url: payload.cover_image_url,
+      };
+
+      const { error: partnerSyncError } = await supabase
+        .from('partners')
+        .update(partnersPayload)
+        .eq('id', partnerId);
+
+      setSaving(false);
+
+      if (partnerSyncError) {
+        setError('บันทึกข้อมูลภายในสำเร็จ แต่ sync ไปหน้าเว็บสาธารณะไม่สำเร็จ: ' + partnerSyncError.message);
+        return;
+      }
+    } else {
+      setSaving(false);
     }
 
     setSuccess(true);
@@ -226,6 +352,12 @@ export function CompanyProfile({
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      {!partnerId && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-700">
+          บัญชีนี้ยังไม่ถูกเชื่อมกับหน้า partner บนเว็บสาธารณะ — ข้อมูลและรูปที่บันทึกด้านล่างจะยังไม่แสดงบนเว็บจริง
+          จนกว่าแอดมินจะเชื่อมสาขาของคุณเข้ากับ listing สาธารณะ
+        </div>
+      )}
       {/* Cover Image */}
       <div className="relative rounded-xl overflow-hidden bg-slate-100 h-48">
         {form.cover_image_url ? (

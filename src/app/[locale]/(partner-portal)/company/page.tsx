@@ -12,8 +12,9 @@ export default async function CompanyPage() {
         <p className="text-sm text-slate-500">แก้ไขโปรไฟล์และข้อมูลติดต่อของ {user.organization.name}</p>
       </div>
       <CompanyProfile
-  organizationId={user.organization_id}
-/>
+        organizationId={user.organization_id}
+        partnerId={user.branch?.partner_id ?? null}
+      />
     </div>
   );
 }
