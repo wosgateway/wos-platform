@@ -67,9 +67,31 @@ import { useTranslations } from 'next-intl';
  * line "run along the photos, looping." Disabled entirely under
  * prefers-reduced-motion, which instead gets the static track only.
  *
+ * Dock magnify: every node circle (step photos + the border-crossing
+ * marker) scales up smoothly based on distance from a "focus point",
+ * exactly like macOS Dock magnification — not a hard hover on/off, a
+ * continuous falloff.
+ *   - Desktop (real mouse): the focus point follows the cursor's Y
+ *     position while it's over the section, so whichever node the mouse
+ *     is nearest grows the most.
+ *   - Any device, while scrolling: the focus point is the vertical center
+ *     of the viewport, so whichever node is currently scrolling past the
+ *     middle of the screen grows — this is what gives touch devices the
+ *     same effect without a mouse at all.
+ * Mouse presence always wins over the scroll-center point while active;
+ * scroll resumes driving the effect once the mouse leaves the section.
+ * The math runs in a rAF loop and writes `transform` straight to the DOM
+ * (bypassing React state) so it stays smooth during fast scrolling.
+ * Skipped entirely under prefers-reduced-motion, same as the flow line.
+ *
  * This is a parallel component — JourneyTimeline.tsx (the original) is
  * untouched. Swap it in on the homepage only after visual approval.
  */
+
+// Dock-magnify tuning: how much bigger the closest node gets, and how
+// quickly the effect falls off with distance (px) from the focus point.
+const MAGNIFY_MAX_SCALE = 1.3;
+const MAGNIFY_FALLOFF_RADIUS = 130;
 
 // Maps a `home.journey.steps` index (0-based) to a real photo. Step 2
 // ("Confirm Booking") intentionally has no entry — see file header.
@@ -98,6 +120,16 @@ export function WOSHealthJourney() {
   const [inView, setInView] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
 
+  // Every node circle registers itself here (cleared and rebuilt on each
+  // render, populated by the ref callbacks below) so the magnify effect
+  // can loop over "all the circles" without caring how many steps there
+  // are or where the border-crossing marker falls among them.
+  const magnifyRefs = useRef<HTMLElement[]>([]);
+  magnifyRefs.current = [];
+  const registerMagnifyNode = (el: HTMLElement | null) => {
+    if (el) magnifyRefs.current.push(el);
+  };
+
   useEffect(() => {
     const node = sectionRef.current;
     if (!node) return;
@@ -123,6 +155,83 @@ export function WOSHealthJourney() {
     observer.observe(node);
     return () => observer.disconnect();
   }, []);
+
+  // Dock-style magnify: see file header. Kept out of React state on
+  // purpose — writing `transform` directly to each node's DOM element
+  // every animation frame is what keeps this smooth while scrolling fast,
+  // where a setState-per-frame approach would visibly lag.
+  useEffect(() => {
+    if (reducedMotion) return;
+    const section = sectionRef.current;
+    if (!section) return;
+
+    const hoverQuery = window.matchMedia('(hover: hover) and (pointer: fine)');
+    let hasHoverDevice = hoverQuery.matches;
+    const onHoverChange = (e: MediaQueryListEvent) => {
+      hasHoverDevice = e.matches;
+    };
+    hoverQuery.addEventListener('change', onHoverChange);
+
+    let focusY: number | null = null;
+    let mouseActive = false;
+    let rafId: number | null = null;
+
+    const applyMagnify = () => {
+      rafId = null;
+      for (const node of magnifyRefs.current) {
+        if (focusY == null) {
+          node.style.transform = 'scale(1)';
+          continue;
+        }
+        const rect = node.getBoundingClientRect();
+        const center = rect.top + rect.height / 2;
+        const distance = Math.abs(center - focusY);
+        const scale =
+          1 +
+          (MAGNIFY_MAX_SCALE - 1) *
+            Math.exp(-(distance * distance) / (2 * MAGNIFY_FALLOFF_RADIUS * MAGNIFY_FALLOFF_RADIUS));
+        node.style.transform = `scale(${scale.toFixed(3)})`;
+      }
+    };
+
+    const scheduleUpdate = () => {
+      if (rafId == null) rafId = requestAnimationFrame(applyMagnify);
+    };
+
+    const onMouseMove = (e: MouseEvent) => {
+      if (!hasHoverDevice) return;
+      mouseActive = true;
+      focusY = e.clientY;
+      scheduleUpdate();
+    };
+
+    const onMouseLeave = () => {
+      mouseActive = false;
+      // Hand focus back to whatever the current scroll position implies,
+      // rather than snapping straight to "nothing magnified".
+      focusY = window.innerHeight / 2;
+      scheduleUpdate();
+    };
+
+    const onScroll = () => {
+      if (mouseActive) return; // the cursor takes priority while it's active
+      focusY = window.innerHeight / 2;
+      scheduleUpdate();
+    };
+
+    section.addEventListener('mousemove', onMouseMove);
+    section.addEventListener('mouseleave', onMouseLeave);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll(); // set an initial state immediately, don't wait for the first scroll/move
+
+    return () => {
+      hoverQuery.removeEventListener('change', onHoverChange);
+      section.removeEventListener('mousemove', onMouseMove);
+      section.removeEventListener('mouseleave', onMouseLeave);
+      window.removeEventListener('scroll', onScroll);
+      if (rafId != null) cancelAnimationFrame(rafId);
+    };
+  }, [reducedMotion]);
 
   return (
     <section ref={sectionRef} className="section-padding bg-primary-light/40">
@@ -187,7 +296,8 @@ export function WOSHealthJourney() {
               {i === BORDER_CROSSING_BEFORE_INDEX && (
                 <li className="relative flex flex-col items-center gap-2 py-1 text-center">
                   <span
-                    className="relative z-10 flex h-11 w-11 items-center justify-center rounded-full border-2 border-primary/30 bg-white text-lg shadow-sm"
+                    ref={registerMagnifyNode}
+                    className="relative z-10 flex h-11 w-11 items-center justify-center rounded-full border-2 border-primary/30 bg-white text-lg shadow-sm transition-transform duration-150 ease-out will-change-transform"
                     aria-hidden
                   >
                     ✈️
@@ -221,7 +331,10 @@ export function WOSHealthJourney() {
                 </div>
 
                 {/* Node — always the center column, both breakpoints */}
-                <div className="relative z-10 order-2 col-start-2 mx-auto shrink-0">
+                <div
+                  ref={registerMagnifyNode}
+                  className="relative z-10 order-2 col-start-2 mx-auto shrink-0 transition-transform duration-150 ease-out will-change-transform"
+                >
                   <StepNode
                     step={step}
                     index={i}

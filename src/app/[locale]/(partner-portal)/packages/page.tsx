@@ -34,7 +34,7 @@ export default async function PackagesPage() {
           ถึงจะแสดงบนเว็บไซต์จริง
         </p>
       </div>
-      <PackagesManager partnerId={user.branch.partner_id} />
+      <PackagesManager partnerId={user.branch.partner_id} organizationId={user.organization_id} />
     </div>
   );
 }

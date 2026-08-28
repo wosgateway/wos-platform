@@ -6,6 +6,15 @@ import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import { formatTHB } from '@/lib/format';
 
+// เดิมไฟล์นี้ไม่มีการเช็คขนาด/ชนิดไฟล์ก่อนอัปโหลดเลย ต่างจาก
+// CompanyProfile.tsx (โลโก้/รูปปก) ที่มีเช็คครบ — ใช้ค่าเดียวกันเพื่อให้
+// กฎ "รูปไม่เกิน 5MB" เป็นมาตรฐานเดียวกันทั้งสองจุดที่อัปโหลดเข้า
+// bucket 'partner-images'. เพดานจริงตอนนี้ยังถูกบังคับซ้ำอีกชั้นที่ระดับ
+// Storage bucket เองด้วย (ดู sql/059_partner_images_bucket_limits_and_path_fix.sql)
+// จุดนี้เป็นแค่ด่านแรกที่ให้ error message ที่เป็นมิตรกับผู้ใช้ก่อนยิง request จริง
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024; // 5MB
+const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif'];
+
 interface Package {
   id: string;
   title: string;
@@ -53,7 +62,22 @@ const STATUS_LABEL: Record<Package['status'], { text: string; className: string 
 // packages/page.tsx) แทน organizationId เดิม เพราะตารางที่เขียนจริงตอนนี้
 // คือ `packages` (public schema ที่เว็บสาธารณะอ่าน) ซึ่งผูกด้วย partner_id
 // ไม่ใช่ `partner_packages` (ตารางเก่าที่ไม่เชื่อมกับเว็บสาธารณะเลย)
-export function PackagesManager({ partnerId }: { partnerId: string }) {
+//
+// organizationId เป็น prop ใหม่ — ใช้เฉพาะตอนสร้าง path อัปโหลดรูปเข้า
+// bucket 'partner-images' เท่านั้น (handleImageUpload ด้านล่าง) เพราะ RLS
+// policy ของ bucket นี้ (sql/003_storage_bucket_partner_images.sql) เช็ค
+// segment ที่ 2 ของ path เทียบกับ organization_id ของ user เสมอ — ของเดิม
+// ใช้ partnerId ตรงนี้ผิด (คนละ id space กับ organization_id) ทำให้ RLS
+// ปฏิเสธการอัปโหลดแทบทุกครั้ง ดู sql/059_partner_images_bucket_limits_and_path_fix.sql
+// สำหรับรายละเอียดเต็ม — ส่วน partnerId ยังใช้เหมือนเดิมสำหรับ query/insert
+// ตาราง `packages` ทุกจุด ไม่ได้แตะ
+export function PackagesManager({
+  partnerId,
+  organizationId,
+}: {
+  partnerId: string;
+  organizationId: string;
+}) {
   const supabase = createClient();
   const [packages, setPackages] = useState<Package[]>([]);
   const [loading, setLoading] = useState(true);
@@ -109,10 +133,25 @@ export function PackagesManager({ partnerId }: { partnerId: string }) {
   }
 
   async function handleImageUpload(file: File) {
-    setUploading(true);
     setFormError(null);
+
+    // เช็ค MIME type จริงจากไฟล์ + ขนาด ก่อนอัปโหลด — เหมือน
+    // CompanyProfile.tsx เป๊ะๆ (ดูคอมเมนต์ค่าคงที่ด้านบนไฟล์)
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setFormError('รองรับเฉพาะไฟล์รูปภาพ JPEG, PNG, WEBP หรือ GIF เท่านั้น');
+      return;
+    }
+
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setFormError(`ไฟล์ใหญ่เกินไป (${(file.size / 1024 / 1024).toFixed(1)}MB) — จำกัดไม่เกิน 5MB`);
+      return;
+    }
+
+    setUploading(true);
     try {
-      const path = `packages/${partnerId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      // path ใช้ organizationId (ไม่ใช่ partnerId) ให้ตรงกับ RLS policy —
+      // ดูคอมเมนต์ที่ props ด้านบนไฟล์สำหรับเหตุผลเต็ม
+      const path = `packages/${organizationId}/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
       const { error: uploadError } = await supabase.storage
         .from('partner-images')
         .upload(path, file);
