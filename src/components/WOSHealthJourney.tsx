@@ -86,6 +86,24 @@ import { useTranslations } from 'next-intl';
  *
  * This is a parallel component — JourneyTimeline.tsx (the original) is
  * untouched. Swap it in on the homepage only after visual approval.
+ *
+ * Journey video (added): a click-to-play card sits above the timeline,
+ * under the title/subtitle. Poster image shown until the user taps play
+ * (no autoplay, no loop) — the clip has a narrative beat (phone → lobby →
+ * WOSA logo), not an ambient loop, so autoplaying it as a background would
+ * "reset" visibly every 10s. Click-to-play also avoids costing mobile
+ * users on the Laos-Thailand corridor any data until they actively want it.
+ * Expects files at:
+ *   public/videos/wos-journey.mp4
+ *   public/videos/wos-journey.webm
+ *   public/images/journey/journey-poster.jpg
+ * IMPORTANT: the source clip is AI-generated and carries a small
+ * provenance watermark (bottom-right) from the generation tool — it was
+ * intentionally left in place rather than removed, since stripping a
+ * synthetic-media watermark from a clip used to depict a patient journey
+ * would misrepresent it as real footage. `videoDisclaimer` renders as a
+ * visible caption under the card for the same reason; don't remove it
+ * without replacing the clip with real footage first.
  */
 
 // Dock-magnify tuning: how much bigger the closest node gets, and how
@@ -119,6 +137,7 @@ export function WOSHealthJourney() {
   const sectionRef = useRef<HTMLDivElement>(null);
   const [inView, setInView] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [videoPlaying, setVideoPlaying] = useState(false);
 
   // Every node circle registers itself here (cleared and rebuilt on each
   // render, populated by the ref callbacks below) so the magnify effect
@@ -248,6 +267,54 @@ export function WOSHealthJourney() {
         <div className="mx-auto max-w-2xl text-center">
           <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">{t('title')}</h2>
           <p className="mt-2 text-slate-500">{t('subtitle')}</p>
+        </div>
+
+        {/* Journey video card — click-to-play, no autoplay/loop (see file
+            header re: this being a narrative clip, not an ambient loop). */}
+        <div className="mx-auto mt-10 max-w-2xl">
+          <div className="relative aspect-video overflow-hidden rounded-3xl bg-slate-900 shadow-lg">
+            {videoPlaying ? (
+              <video
+                className="h-full w-full object-cover"
+                controls
+                autoPlay
+                playsInline
+                poster="/images/journey/journey-poster.jpg"
+              >
+                <source src="/videos/wos-journey.webm" type="video/webm" />
+                <source src="/videos/wos-journey.mp4" type="video/mp4" />
+              </video>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setVideoPlaying(true)}
+                className="group relative block h-full w-full"
+                aria-label={t('videoPlay')}
+              >
+                <Image
+                  src="/images/journey/journey-poster.jpg"
+                  alt=""
+                  fill
+                  sizes="(min-width: 768px) 672px, 100vw"
+                  className="object-cover"
+                />
+                <span className="absolute inset-0 bg-black/20 transition-colors group-hover:bg-black/30" />
+                <span className="absolute inset-0 flex items-center justify-center">
+                  <span className="flex h-16 w-16 items-center justify-center rounded-full bg-white/90 shadow-lg transition-transform group-hover:scale-105 md:h-20 md:w-20">
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="ml-1 h-7 w-7 text-primary md:h-8 md:w-8"
+                      fill="currentColor"
+                      aria-hidden
+                    >
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  </span>
+                </span>
+              </button>
+            )}
+          </div>
+          <p className="mt-2 text-center text-xs text-slate-400">{t('videoDisclaimer')}</p>
         </div>
 
         <ol className="relative mt-16 flex flex-col gap-14 md:gap-20">

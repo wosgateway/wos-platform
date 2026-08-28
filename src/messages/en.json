@@ -49,6 +49,8 @@
     "journey": {
       "title": "Your Care Journey with WOS",
       "subtitle": "From first contact to traveling home with confidence",
+      "videoPlay": "Watch the health journey video",
+      "videoDisclaimer": "Illustrative video (AI-generated) depicting the journey",
       "steps": [
         {
           "icon": "💬",
