@@ -414,6 +414,7 @@ function printOrderSummary(order: Order) {
       th { color: #64748b; font-weight: 600; }
       td.price { text-align: right; white-space: nowrap; }
       .total-row td { font-weight: 800; font-size: 16px; border-top: 2px solid #5B8C6E; border-bottom: none; }
+      .deposit-row td { font-weight: 700; font-size: 14px; color: #92400e; background: #fffbeb; border-bottom: none; }
       .status-badge { display: inline-block; padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 700; background: #e3ede6; color: #3f6b52; }
       .footer { margin-top: 32px; font-size: 11px; color: #94a3b8; text-align: center; }
       @media print { body { padding: 20px; } }
@@ -438,6 +439,11 @@ function printOrderSummary(order: Order) {
         <tbody>
           ${rows.map((r) => `<tr><td>${escapeHtml(r[0])}</td><td>${escapeHtml(r[1])}</td><td class="price">${escapeHtml(r[2])}</td></tr>`).join('')}
           <tr class="total-row"><td colspan="2">ราคารวมทั้งหมด</td><td class="price">${escapeHtml(formatTHB(order.total_amount ?? 0))}</td></tr>
+          ${
+            order.total_deposit_required
+              ? `<tr class="deposit-row"><td colspan="2">มัดจำที่ต้องชำระ</td><td class="price">${escapeHtml(formatTHB(order.total_deposit_required))}</td></tr>`
+              : ''
+          }
         </tbody>
       </table>
       <div class="footer">
