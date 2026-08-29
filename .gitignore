@@ -6,3 +6,8 @@ tsconfig.tsbuildinfo
 npm
 .vercel
 .env*
+
+# Local audit / analysis artifacts
+_API_AUDIT.txt
+sql/_FULL_SCHEMA_AUDIT.txt
+src-tree.txt
