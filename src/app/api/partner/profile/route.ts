@@ -58,6 +58,7 @@ export async function PATCH(request: Request) {
   const service = createServiceClient();
   const { data, error } = await service.rpc('partner_update_own_profile', {
     p_partner_id: partnerId,
+    p_calling_user_id: user.id,
     p_name: typeof body.name === 'string' ? body.name : '',
     p_description: body.description ?? null,
     p_province: body.province ?? null,
@@ -66,6 +67,16 @@ export async function PATCH(request: Request) {
   });
 
   if (error) {
+    if (error.message.includes('not_authorized')) {
+      // Should be unreachable in normal operation -- partnerId above
+      // is derived from this same user's session. Reaching this means
+      // the RPC's independent ownership check (070) disagrees with
+      // this route's derivation; treat as forbidden either way.
+      return withRefreshedCookies(
+        NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+        cookieCarrier
+      );
+    }
     if (error.message.includes('partner_not_found')) {
       return withRefreshedCookies(
         NextResponse.json({ error: 'Partner not found' }, { status: 404 }),
