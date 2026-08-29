@@ -69,10 +69,11 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const { data: rejected, error: updateErr } = await supabase
     .from('payments')
     .update({
-  status: 'rejected',
-  verified_at: new Date().toISOString(),
-  rejection_reason: reason,
-})
+      status: 'rejected',
+      verified_by: auth.user.id,
+      verified_at: new Date().toISOString(),
+      rejection_reason: reason,
+    })
     .in('status', ['waiting_verification', 'pending'])
     .eq('id', paymentId)
     .select('id');

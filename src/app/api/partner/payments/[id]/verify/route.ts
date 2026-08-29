@@ -51,6 +51,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 
+  // user.branch.partner_id is the real partner scope (matches
+  // order_items.partner_id / current_user_partner_id() elsewhere) —
+  // NOT user.organization_id, which is a different, legacy concept.
+  // A staff user not yet linked to a branch/partner has nothing to
+  // scope this action to.
+  const partnerId = user.branch?.partner_id;
+  if (!partnerId) {
+    return withRefreshedCookies(
+      NextResponse.json({ error: 'Your account is not linked to a partner' }, { status: 403 }),
+      cookieCarrier
+    );
+  }
+
   const paymentId = params.id;
 
   // 2. Ownership check via the RLS-enforced client, on purpose: the
@@ -107,11 +120,19 @@ export async function POST(request: Request, { params }: { params: { id: string 
   const body = await request.json().catch(() => ({}));
   const confirmOverpayment = body?.confirmOverpayment === true;
 
-  // 3. Claim + validate + write, atomically, via the RPC.
+  // 3. Claim + validate + write, atomically, via the RPC. Called
+  //    through the service-role client, so the RPC has no session of
+  //    its own to resolve partner scope from (current_user_partner_id()
+  //    reads auth.uid(), which is unset here) — partnerId resolved
+  //    above from the verified session is passed explicitly and is
+  //    checked against order_items.partner_id inside the function
+  //    (migration 060). p_verified_by_user_id is audit-only, not an
+  //    authorization scope — do not use it for that.
   const service = createServiceClient();
   const { data, error } = await service.rpc('partner_verify_payment', {
     p_payment_id: paymentId,
-    p_partner_id: user.id,
+    p_verified_by_user_id: user.id,
+    p_partner_id: partnerId,
     p_confirm_overpayment: confirmOverpayment,
   });
 
@@ -128,6 +149,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
     if (error.message.includes('order_item_not_found')) {
       return withRefreshedCookies(
         NextResponse.json({ error: 'Order item not found for this payment' }, { status: 404 }),
+        cookieCarrier
+      );
+    }
+    if (error.message.includes('not_authorized')) {
+      // Should be unreachable in normal operation — the RLS pre-check
+      // above already 404s a cross-partner payment before we get
+      // here. Reaching this means that pre-check was bypassed
+      // somehow; treat it the same as "not found" so we don't leak
+      // that the payment exists under another partner.
+      return withRefreshedCookies(
+        NextResponse.json({ error: 'Payment not found' }, { status: 404 }),
         cookieCarrier
       );
     }

@@ -1,0 +1,76 @@
+-- ============================================================
+-- MIGRATION 063: drop confirmed-dead legacy tables.
+--
+-- Security Audit STEP 1/4/5 — 4 tables confirmed 0 live references
+-- in application code (grepped src/ for every .from('<table>') call,
+-- see STEP 5 summary), all superseded by orders/order_items/customers:
+--
+--   patients            -> superseded by customers (migration 011
+--                           repointed orders.patient_id's FK target;
+--                           column name kept, target changed)
+--   bookings             -> superseded by orders/order_items
+--                           (008's booking-intake shape, replaced
+--                           when 008 moved the live flow off it — see
+--                           054's header for full detail; 054 already
+--                           stripped its unscoped authenticated
+--                           policies as a stopgap, this finishes the
+--                           job by removing the table itself)
+--   partner_bookings      -> superseded by orders/order_items
+--                           (0 rows permanently — every partner
+--                           portal component that used to read it
+--                           was migrated to order_items across
+--                           Aug 2026, see comments in
+--                           DashboardMetrics.tsx / RecentBookings.tsx
+--                           / BookingDetailModal.tsx / lib/partner/orders.ts)
+--   payment_attachments   -> never wired up; app stores attachment
+--                           references directly on orders/payments
+--                           instead (decided during this audit)
+--
+-- All four still carry RLS policies (dropped automatically with
+-- their table — no separate DROP POLICY needed) and were pure
+-- maintenance burden, not a live risk: 054 already closed the one
+-- actual exposure (`bookings`' unscoped authenticated policies).
+--
+-- FK DROP ORDER (matters — patients is still referenced by bookings
+-- and partner_bookings via ON DELETE RESTRICT, so those two must go
+-- first):
+--   1. bookings           (FKs -> patients, packages)
+--   2. partner_bookings   (FKs -> patients, packages, users)
+--   3. patients           (now has zero remaining referencing rows)
+--   4. payment_attachments (independent leaf table, FK -> payments)
+--
+-- Not a CASCADE anywhere on purpose — if any of these fails because
+-- something unexpected still references it, that's a signal to stop
+-- and re-check, not something to force through.
+--
+-- ⚠️ Run on staging first, and take a fresh pg_dump of these 4 tables'
+-- data before running on production — this migration is destructive
+-- and, unlike the others in this batch, is not reversible by re-
+-- running an "undo" migration. If Boyd wants to keep the historical
+-- rows (e.g. `patients` medical_notes / old `bookings` records) for
+-- reference, export them first; nothing in the app reads them either
+-- way going forward.
+-- ============================================================
+
+DROP TABLE IF EXISTS public.bookings;
+DROP TABLE IF EXISTS public.partner_bookings;
+DROP TABLE IF EXISTS public.patients;
+DROP TABLE IF EXISTS public.payment_attachments;
+
+-- ============================================================
+-- VERIFY after running:
+--
+--   SELECT table_name FROM information_schema.tables
+--   WHERE table_schema = 'public'
+--     AND table_name IN ('bookings', 'partner_bookings', 'patients', 'payment_attachments');
+--   -- expect 0 rows
+--
+-- Then:
+--   - npm run build on wos-nextjs — should still pass (nothing in
+--     src/ referenced these tables directly; confirmed via repo-wide
+--     grep before writing this migration).
+--   - Smoke-test the admin dashboard, partner bookings list/detail,
+--     and payment verify flow — all now read exclusively from
+--     orders/order_items/customers/payments, so behavior should be
+--     unchanged.
+-- ============================================================

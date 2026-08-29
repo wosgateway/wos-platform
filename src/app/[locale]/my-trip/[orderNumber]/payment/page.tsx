@@ -180,10 +180,29 @@ export default function PaymentPage() {
 
     setSubmitting(true);
     try {
+      // As of migration 068, `payment-slips` no longer accepts a
+      // direct client upload -- the open anon INSERT policy that used
+      // to allow that is gone. Ask the server for a signed upload slot
+      // first; it checks `token` against this order's
+      // payment_access_token before minting one, which the old
+      // storage-level policy could never do.
+      const urlRes = await fetch(
+        `/api/quote/${orderNumber}/upload-slip-url?token=${encodeURIComponent(token)}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ filename: file.name }),
+        }
+      );
+      const urlResult = await urlRes.json();
+      if (!urlRes.ok) throw new Error(urlResult?.error ?? t('errorSubmitGeneric'));
+
       const supabase = createClient();
-      const path = `${orderNumber}/${Date.now()}-${file.name}`;
-      const { error: uploadError } = await supabase.storage.from('payment-slips').upload(path, file);
+      const { error: uploadError } = await supabase.storage
+        .from('payment-slips')
+        .uploadToSignedUrl(urlResult.path, urlResult.token, file);
       if (uploadError) throw uploadError;
+      const path = urlResult.path;
       // `payment-slips` is a private bucket (migration 033) — there's
       // no public URL to fetch anymore. Send the object path itself;
       // the server resolves it to a short-lived signed URL whenever

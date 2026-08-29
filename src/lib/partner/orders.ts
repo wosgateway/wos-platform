@@ -7,10 +7,17 @@
 // only, no customer-facing auth session to key a policy off of), so
 // a regular session-bound client would always get `null` back for
 // the embedded customer. Ownership is enforced here in application
-// code instead of relying on `order_items` RLS, since that policy
-// checks organizations.partner_id (migration 010) while the portal
-// actually resolves partnerId via users.branch_id -> branches.partner_id
-// (see DashboardMetrics.tsx) — the two don't necessarily agree yet.
+// code rather than relying on `order_items` RLS. Originally this was
+// because that policy checked organizations.partner_id (migration
+// 010) while the portal resolves partnerId via users.branch_id ->
+// branches.partner_id (see DashboardMetrics.tsx) — those two didn't
+// agree. Migration 042 repointed the RLS policy at
+// current_user_partner_id() (the same branches.partner_id path the
+// portal uses), so that mismatch is fixed at the RLS layer too. This
+// function still does its own application-code filtering regardless
+// — it runs on the service-role client (see above), which bypasses
+// RLS entirely, so the DB policy was never actually in effect here
+// either way.
 //
 // The route handler (route.ts) already verifies the caller's session
 // and resolves their partnerId before calling this function, so by

@@ -14,7 +14,31 @@
 // this check.
 
 import { NextResponse } from 'next/server';
+import { timingSafeEqual } from 'crypto';
 import { createServiceClient } from '@/lib/supabase/service';
+
+// Security Audit STEP 2/4, checkpoint item #4: `!==` on two strings
+// short-circuits at the first differing byte, so comparison time
+// leaks how many leading characters of a guessed token were correct
+// — a timing side-channel against payment_access_token, the only
+// thing gating every public quote/confirm/payments/my-trip route.
+// Not the most practical attack (network jitter usually swamps a
+// single-byte timing signal), but the fix is free, so do it properly.
+//
+// If lengths differ, still run a same-cost dummy comparison before
+// returning false — an early return on length alone would itself
+// leak the token's length.
+export function tokensMatch(expected: string, provided: string): boolean {
+  const expectedBuf = Buffer.from(expected);
+  const providedBuf = Buffer.from(provided);
+
+  if (expectedBuf.length !== providedBuf.length) {
+    timingSafeEqual(expectedBuf, expectedBuf);
+    return false;
+  }
+
+  return timingSafeEqual(expectedBuf, providedBuf);
+}
 
 // Columns every caller of this helper needs today. If a route needs
 // more, select them separately after this returns — don't grow this
@@ -67,7 +91,7 @@ export async function loadAuthorizedOrder(
     };
   }
 
-  if (order.payment_access_token !== token) {
+  if (!tokensMatch(order.payment_access_token, token)) {
     return {
       order: null,
       error: NextResponse.json(

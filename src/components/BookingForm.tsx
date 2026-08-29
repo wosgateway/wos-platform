@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
-import { createClient } from '@/lib/supabase/client';
+import { uploadBookingAttachment } from '@/lib/booking/upload-attachment';
 import { formatTHB } from '@/lib/format';
 import type { Package } from '@/lib/data';
 import { DatePicker } from '@/components/ui/DatePicker';
@@ -203,6 +203,7 @@ export function BookingForm({
   const [hotelProvinceFilter, setHotelProvinceFilter] = useState<string>('all');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [attachmentWarning, setAttachmentWarning] = useState(false);
   const [done, setDone] = useState(false);
   const [orderResult, setOrderResult] = useState<{
     order_number: string;
@@ -378,19 +379,12 @@ export function BookingForm({
     }
     setSubmitting(true);
     setError(null);
-    const supabase = createClient();
+    setAttachmentWarning(false);
 
     try {
-      let attachmentUrl: string | null = null;
-      if (form.attachment) {
-        const path = `${crypto.randomUUID()}-${form.attachment.name}`;
-        const { error: uploadError } = await supabase.storage
-          .from('booking-attachments')
-          .upload(path, form.attachment);
-        if (uploadError) throw uploadError;
-        attachmentUrl = path;
-      }
-
+      // Attachment upload moved to AFTER order creation (migration 069)
+      // — booking-attachments no longer accepts direct client uploads
+      // before an order exists. See uploadBookingAttachment() below.
       const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
 
       // Main package is always a resolved, priced item.
@@ -454,7 +448,7 @@ export function BookingForm({
           country: form.country,
         },
         items,
-        attachment_url: attachmentUrl,
+        attachment_url: null,
         client_request_id: clientRequestIdRef.current,
       };
 
@@ -466,6 +460,23 @@ export function BookingForm({
       const result = await res.json();
       if (!res.ok) {
         throw new Error(result?.error ?? t('errorGeneric'));
+      }
+
+      // Order exists now — attach the file if the customer picked
+      // one. A failure here does NOT roll back or fail the booking;
+      // the order is already real. Best-effort, surfaced as a soft
+      // warning only.
+      if (form.attachment) {
+        try {
+          await uploadBookingAttachment(
+            result.order_number,
+            result.payment_access_token,
+            form.attachment
+          );
+        } catch (attachErr) {
+          console.error('attachment upload failed:', attachErr);
+          setAttachmentWarning(true);
+        }
       }
 
       setOrderResult({
@@ -492,6 +503,11 @@ export function BookingForm({
         <div className="mb-3 text-4xl">✅</div>
         <h2 className="text-lg font-bold text-slate-900">{t('successTitle')}</h2>
         <p className="mt-2 text-sm text-slate-500">{t('successBody')}</p>
+        {attachmentWarning ? (
+          <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-700">
+            {t('attachmentUploadFailedWarning')}
+          </p>
+        ) : null}
         {orderResult ? (
           <div className="mt-4 rounded-xl bg-primary-light/40 px-4 py-3 text-sm text-slate-600">
             <p className="font-medium text-slate-800">{orderResult.order_number}</p>

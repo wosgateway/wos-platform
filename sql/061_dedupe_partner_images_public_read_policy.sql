@@ -1,0 +1,54 @@
+-- ============================================================
+-- MIGRATION 061: drop the duplicate public-read policy on
+-- partner-images.
+--
+-- Security Audit STEP 1/4, checkpoint item #2.
+--
+-- Two SELECT policies on storage.objects currently do the exact same
+-- thing for the partner-images bucket:
+--
+--   "partner-images public read"        (003_storage_bucket_partner_images.sql,
+--                                         tracked, public, USING bucket_id = 'partner-images')
+--   "Allow public read on partner-images" (untracked — created outside
+--                                         any migration, via the
+--                                         Supabase Dashboard; same
+--                                         condition, same effect)
+--
+-- 044_storage_rls_hardening.sql already found and documented this
+-- pair and deliberately left it alone at the time ("harmless
+-- duplicate... not worth the risk of typo'ing a policy name on a
+-- table this size. Clean up opportunistically") while it fixed the
+-- actually-dangerous unscoped anon write policies sitting next to it.
+-- This migration is that opportunistic cleanup: purely maintenance,
+-- not a security fix — both policies are public SELECT with identical
+-- USING clauses, so removing one changes zero access.
+--
+-- Only the untracked Dashboard-created policy is dropped. The
+-- 003-tracked one stays as the single source of truth for public read
+-- access to this bucket.
+--
+-- Safe to re-run — DROP POLICY IF EXISTS is a no-op if already gone.
+-- ============================================================
+
+DROP POLICY IF EXISTS "Allow public read on partner-images" ON storage.objects;
+
+-- ============================================================
+-- VERIFY after running:
+--
+--   SELECT policyname, roles, cmd, qual
+--   FROM pg_policies
+--   WHERE schemaname = 'storage' AND tablename = 'objects'
+--     AND qual LIKE '%partner-images%'
+--   ORDER BY policyname;
+--
+-- Expected: exactly ONE public/SELECT row left
+-- ("partner-images public read"), plus the four unrelated
+-- "partner-images org-scoped {insert,update,delete}" authenticated
+-- policies from 003. No row named "Allow public read on
+-- partner-images" anymore.
+--
+-- Then test: an anon (logged-out) request for an existing
+-- partner-images public URL (e.g. a package photo's getPublicUrl()
+-- link) still loads with a 200 — confirms public read wasn't
+-- accidentally dropped entirely, just the duplicate.
+-- ============================================================

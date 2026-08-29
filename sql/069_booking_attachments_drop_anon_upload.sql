@@ -1,0 +1,57 @@
+-- ============================================================
+-- 069_booking_attachments_drop_anon_upload.sql
+--
+-- Supersedes the booking-attachments half of migration 066
+-- (which only narrowed the anon INSERT policy to a path-shape
+-- regex — a stopgap, called out explicitly in 066's own header as
+-- not the real fix, since it still couldn't tie an upload to a
+-- real order).
+--
+-- Real fix (deployed alongside this migration, same rule as 060/065/068):
+--   - Upload no longer happens client-side before the order exists.
+--     BookingForm.tsx / JourneyBookingForm.tsx now: (1) create the
+--     order first with attachment_url = null, (2) if there's a
+--     file, request a signed upload URL scoped to that real order
+--     via POST /api/orders/[orderNumber]/attachment-upload-url
+--     (validates payment_access_token, same token already returned
+--     by order creation and used by the payment page), (3) upload
+--     directly to that signed URL, (4) confirm via
+--     PATCH /api/orders/[orderNumber]/attachment, which re-validates
+--     the token and writes orders.attachment_url server-side via the
+--     service-role client.
+--   - Both new routes run under createServiceClient(), which bypasses
+--     RLS/storage policies entirely — same reason 033/068 never
+--     needed a SELECT-side storage policy for payment-slips. So the
+--     anon INSERT policy this migration drops has no legitimate
+--     caller left: nothing in the app uploads to this bucket except
+--     those two server routes.
+--
+-- Effect: anon/authenticated lose ALL direct INSERT access to
+-- storage.objects for booking-attachments. Every upload is now tied
+-- to a real order via payment_access_token, and the storage path is
+-- server-generated (`${orderNumber}/${uuid}-${filename}`) instead of
+-- a client-chosen UUID with no order linkage — closing the gap 066
+-- flagged but couldn't close on its own.
+-- ============================================================
+
+DROP POLICY IF EXISTS "anon_upload_booking_attachments" ON storage.objects;
+
+-- Belt-and-suspenders, same pattern as 064: even if a policy is
+-- carelessly re-added later, authenticated/anon shouldn't hold
+-- blanket INSERT on this bucket's objects at the table-grant level.
+-- Signed upload URLs are minted server-side by service_role and
+-- carry their own short-lived token — they don't need (and aren't
+-- affected by) an INSERT grant on the base role.
+REVOKE INSERT ON storage.objects FROM anon;
+-- NOTE: do not blanket-REVOKE INSERT from `authenticated` here —
+-- other buckets (e.g. partner-images, migration 059) intentionally
+-- allow authenticated uploads with their own scoped policies. This
+-- migration only removes the one dead booking-attachments policy;
+-- authenticated's other bucket policies are untouched.
+
+-- Sanity check after applying, expected: 0 rows
+--
+-- select policyname, roles, cmd
+-- from pg_policies
+-- where schemaname = 'storage' and tablename = 'objects'
+--   and policyname = 'anon_upload_booking_attachments';

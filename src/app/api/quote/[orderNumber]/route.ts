@@ -56,7 +56,9 @@ export async function GET(
   const token = new URL(request.url).searchParams.get('token');
   const { order, error: authError } = await loadAuthorizedOrder(supabase, orderNumber, token);
 
-if (authError || !order) {
+if (authError) return authError;
+
+if (!order) {
   return NextResponse.json(
     { error: 'order not found' },
     { status: 404 }
