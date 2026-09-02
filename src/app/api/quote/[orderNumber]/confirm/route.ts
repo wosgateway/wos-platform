@@ -16,6 +16,10 @@ import { NextResponse } from 'next/server';
 import { createServiceClient } from '@/lib/supabase/service';
 import { simpleRateLimit } from '@/lib/rate-limit';
 import { loadAuthorizedOrder } from '@/lib/orders/authorize-order';
+import {
+  getCustomerContactByOrderId,
+  notifyOrderConfirmed,
+} from '@/lib/notify/customer-whatsapp';
 
 export async function POST(
   request: Request,
@@ -67,6 +71,13 @@ export async function POST(
       { status: 409 }
     );
   }
+
+  // PHASE 4 — one-way WhatsApp notify. Deliberately NOT awaited: this
+  // is best-effort (see customer-whatsapp.ts header) and must never
+  // delay or fail a confirm the customer is actively waiting on.
+  void getCustomerContactByOrderId(supabase, order!.id).then((contact) => {
+    if (contact) void notifyOrderConfirmed(contact);
+  });
 
   return NextResponse.json({ success: true });
 }

@@ -21,6 +21,10 @@ import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
 import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  getCustomerContactByOrderId,
+  notifyPaymentVerified,
+} from '@/lib/notify/customer-whatsapp';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   // Used only as a place for Supabase to write a refreshed access/refresh
@@ -92,6 +96,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
       NextResponse.json({ error: error.message }, { status: 500 }),
       cookieCarrier
     );
+  }
+
+  // PHASE 4 — one-way WhatsApp notify. Deliberately NOT awaited — see
+  // customer-whatsapp.ts header. data.orderId comes straight back
+  // from the admin_verify_payment RPC above, so no extra lookup is
+  // needed to know which order to notify for.
+  const orderId = (data as { orderId?: string } | null)?.orderId;
+  if (orderId) {
+    void getCustomerContactByOrderId(supabase, orderId).then((contact) => {
+      if (contact) void notifyPaymentVerified(contact);
+    });
   }
 
   return withRefreshedCookies(NextResponse.json({ success: true, ...data }), cookieCarrier);

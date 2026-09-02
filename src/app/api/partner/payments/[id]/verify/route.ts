@@ -25,6 +25,10 @@ import { getPartnerSession, hasPermission } from '@/lib/partner/auth';
 import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createClient } from '@/lib/supabase/server';
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  getCustomerContactByOrderItemId,
+  notifyPaymentVerified,
+} from '@/lib/notify/customer-whatsapp';
 
 export async function POST(request: Request, { params }: { params: { id: string } }) {
   // Used only as a place for Supabase to write a refreshed access/refresh
@@ -182,6 +186,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
       cookieCarrier
     );
   }
+
+  // PHASE 4 — one-way WhatsApp notify. Deliberately NOT awaited — see
+  // customer-whatsapp.ts header. Uses the service-role client (not
+  // the RLS-scoped `supabase` above) since the lookup needs to reach
+  // orders/customers, which partner staff have no SELECT policy on.
+  void getCustomerContactByOrderItemId(service, payment.order_item_id).then((contact) => {
+    if (contact) void notifyPaymentVerified(contact);
+  });
 
   return withRefreshedCookies(NextResponse.json({ success: true, ...data }), cookieCarrier);
 }

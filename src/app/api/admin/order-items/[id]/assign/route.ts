@@ -25,6 +25,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
 import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  getCustomerContactByOrderItemId,
+  notifyPartnerAssigned,
+} from '@/lib/notify/customer-whatsapp';
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   // Used only as a place for Supabase to write a refreshed access/refresh
@@ -102,6 +106,14 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       cookieCarrier
     );
   }
+
+  // PHASE 4 — one-way WhatsApp notify ("driver assigned" in the plan's
+  // wording, generalized here since assignment applies to any
+  // needs_assignment service_type, not just transport). Deliberately
+  // NOT awaited — see customer-whatsapp.ts header.
+  void getCustomerContactByOrderItemId(supabase, id).then((contact) => {
+    if (contact) void notifyPartnerAssigned(contact);
+  });
 
   return withRefreshedCookies(NextResponse.json(data), cookieCarrier);
 }

@@ -17,6 +17,39 @@ function debugLog(...args: unknown[]) {
 // (ถ้าห่างเกิน ~30 นาที = เกิน OLLAMA_KEEP_ALIVE แปลว่าโมเดลน่าจะถูก unload ไปแล้วต้อง cold-load ใหม่)
 let lastRequestAt: number | null = null;
 
+// --- Fetch timeout guard ---
+// ถ้า LiteLLM หรือ Chatwoot ไม่ตอบเลย fetch เดิมจะแขวนไม่มีกำหนด
+// ทำให้ Chatwoot อาจ timeout ฝั่งเขาแล้ว retry ส่ง webhook ซ้ำ -> ตอบลูกค้าซ้ำสอง
+// ใส่ timeout ให้ fetch ทุกจุด fail ไว แล้วให้ error handling เดิมทำงานตามปกติ
+const FETCH_TIMEOUT_MS = 25_000;
+
+async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// --- Idempotency guard กัน webhook retry ตอบซ้ำ ---
+// Chatwoot อาจส่ง event เดิมซ้ำ (เช่น network เด้ง หรือ timeout ฝั่งเขา)
+// เก็บ message id ที่ประมวลผลไปแล้วไว้ในหน่วยความจำสั้น ๆ กันตอบซ้ำสอง
+// (reset ทุกครั้งที่ server restart เหมือน lastRequestAt - เพียงพอสำหรับกัน retry ระยะสั้น)
+const DEDUP_WINDOW_MS = 5 * 60 * 1000; // 5 นาที
+const processedMessageIds = new Map<number, number>(); // messageId -> timestamp ที่ประมวลผล
+
+function isDuplicateMessage(messageId: number): boolean {
+  const now = Date.now();
+  for (const [id, ts] of processedMessageIds) {
+    if (now - ts > DEDUP_WINDOW_MS) processedMessageIds.delete(id);
+  }
+  if (processedMessageIds.has(messageId)) return true;
+  processedMessageIds.set(messageId, now);
+  return false;
+}
+
 const SYSTEM_PROMPT = `คุณคือ "WOS AI" ผู้ช่วยของ WOS (wos.asia) แพลตฟอร์มสุขภาพข้ามแดนไทย-ลาว
 
 หน้าที่ของคุณ:
@@ -121,6 +154,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ status: 'ignored_missing_data' });
     }
 
+    // --- 6. กัน webhook retry ตอบซ้ำ (idempotency) ---
+    const messageId = payload.id;
+    if (messageId && isDuplicateMessage(messageId)) {
+      debugLog('[debug] -> ignored_duplicate_message', messageId);
+      return NextResponse.json({ status: 'ignored_duplicate' });
+    }
+
     debugLog('[debug] -> proceeding to getAIReply');
 
     const t0 = Date.now();
@@ -157,18 +197,22 @@ async function getAIReply(userMessage: string): Promise<string> {
       { role: 'user', content: userMessage },
     ];
 
-    const res = await fetch(`${LITELLM_BASE_URL}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(LITELLM_API_KEY ? { Authorization: `Bearer ${LITELLM_API_KEY}` } : {}),
+    const res = await fetchWithTimeout(
+      `${LITELLM_BASE_URL}/v1/chat/completions`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(LITELLM_API_KEY ? { Authorization: `Bearer ${LITELLM_API_KEY}` } : {}),
+        },
+        body: JSON.stringify({
+          model: 'typhoon-local',
+          max_tokens: 200,
+          messages,
+        }),
       },
-      body: JSON.stringify({
-        model: 'typhoon-local',
-        max_tokens: 200,
-        messages,
-      }),
-    });
+      FETCH_TIMEOUT_MS
+    );
 
     if (!res.ok) {
       // ยัง log ด้วย console.error เพื่อให้เห็นใน production เสมอ (ไม่ผูกกับ DEBUG_LOG)
@@ -183,7 +227,11 @@ async function getAIReply(userMessage: string): Promise<string> {
       'ขออภัยค่ะ ไม่สามารถประมวลผลคำตอบได้ในขณะนี้'
     );
   } catch (err) {
-    console.error('[litellm] fetch failed', err instanceof Error ? err.message : String(err));
+    const isTimeout = err instanceof Error && err.name === 'AbortError';
+    console.error(
+      isTimeout ? '[litellm] request timed out' : '[litellm] fetch failed',
+      err instanceof Error ? err.message : String(err)
+    );
     return 'ขออภัยค่ะ ระบบขัดข้องชั่วคราว ทีมงานจะติดต่อกลับโดยเร็วนะคะ';
   }
 }
@@ -191,18 +239,22 @@ async function getAIReply(userMessage: string): Promise<string> {
 async function sendChatwootReply(conversationId: number, content: string) {
   const url = `${CHATWOOT_BASE_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/messages`;
 
-  const res = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      api_access_token: CHATWOOT_API_ACCESS_TOKEN,
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        api_access_token: CHATWOOT_API_ACCESS_TOKEN,
+      },
+      body: JSON.stringify({
+        content,
+        message_type: 'outgoing',
+        private: false,
+      }),
     },
-    body: JSON.stringify({
-      content,
-      message_type: 'outgoing',
-      private: false,
-    }),
-  });
+    FETCH_TIMEOUT_MS
+  );
 
   if (!res.ok) {
     // ไม่ log response body เต็ม ๆ เหมือนที่แก้ฝั่ง LiteLLM ไปแล้ว เพราะอาจมีข้อมูลลูกค้าปนอยู่

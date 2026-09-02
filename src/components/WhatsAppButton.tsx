@@ -4,11 +4,11 @@ import { useTranslations } from 'next-intl';
 
 // Lao customers primarily reach out via WhatsApp, so this floating button
 // stays visible on every public page (mounted once in [locale]/layout.tsx,
-// next to Header/Footer). Number matches the Laos contact line already
-// used in Footer.tsx (+856 20 9872 4718) since that's the number Lao
-// customers are told to use — kept in sync with Footer.tsx if that number
-// ever changes.
-const WHATSAPP_NUMBER = '8562098724718';
+// next to Header/Footer). TEMPORARY: pointed at the Thai number
+// (+66 86 452 2644) because the Laos number (+856 20 9872 4718) currently
+// has no WhatsApp account. Switch back to the Laos number once WhatsApp is
+// reactivated on it — kept in sync with MobileStickyCta.tsx and Footer.tsx.
+const WHATSAPP_NUMBER = '66864522644';
 
 export function WhatsAppButton() {
   const t = useTranslations('whatsapp');
