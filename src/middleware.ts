@@ -21,6 +21,7 @@ const PUBLIC_LOCALE_ROUTE_SEGMENTS = [
   'my-trip',
   'partner',
   'partners',
+  'privacy',
   'program',
   'quote',
 ];
