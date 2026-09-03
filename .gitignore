@@ -11,3 +11,7 @@ npm
 _API_AUDIT.txt
 sql/_FULL_SCHEMA_AUDIT.txt
 src-tree.txt
+
+# temp/test files - อย่า commit
+*.zip
+test-payload.json
