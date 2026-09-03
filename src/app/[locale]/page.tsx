@@ -56,6 +56,11 @@ export default async function HomePage({
     ? HEALTH_GOAL_IMAGES.findIndex((g) => g.slug === activeGoal)
     : -1;
   const activeGoalLabel = activeGoalIndex >= 0 ? goalItems[activeGoalIndex]?.label : null;
+  // Reuse the goal's own one-line description (already shown on its tile in
+  // HealthGoalFinder, e.g. "รักษาและฟื้นฟู") as the Categories subtitle when
+  // filtered — ties the two sections together instead of repeating a
+  // generic "choose your goal" line right under a "find your goal" section.
+  const activeGoalDesc = activeGoalIndex >= 0 ? goalItems[activeGoalIndex]?.desc : null;
 
   return (
     <main>
@@ -103,20 +108,29 @@ export default async function HomePage({
         items={goalItems}
       />
 
-      {/* ===== CATEGORIES ===== */}
+      {/* ===== CATEGORIES =====
+          Title/subtitle switch when a goal filter is active (see
+          categoriesTitleFiltered + activeGoalDesc above) so this reads as
+          "here are the results for what you picked" rather than a second,
+          near-identical "choose your goal" prompt right under
+          HealthGoalFinder. */}
       <section id="categories" className="section-padding mx-auto max-w-5xl scroll-mt-16 px-4">
         <div className="mb-10 text-center">
-          <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">{t('categoriesTitle')}</h2>
-          <p className="mt-2 text-slate-500">{t('categoriesSubtitle')}</p>
-          {activeGoal && activeGoalLabel && (
-            <div className="mt-4 flex items-center justify-center gap-2 text-sm">
-              <span className="rounded-full bg-navy/5 px-4 py-1.5 font-semibold text-navy">
-                {t('healthGoals.filteredBy', { goal: activeGoalLabel })}
-              </span>
-              <Link href="/#categories" className="text-slate-500 underline hover:text-navy">
-                {t('healthGoals.clearFilter')}
-              </Link>
-            </div>
+          <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">
+            {activeGoal && activeGoalLabel
+              ? t('categoriesTitleFiltered', { goal: activeGoalLabel })
+              : t('categoriesTitle')}
+          </h2>
+          <p className="mt-2 text-slate-500">
+            {activeGoal && activeGoalDesc ? activeGoalDesc : t('categoriesSubtitle')}
+          </p>
+          {activeGoal && (
+            <Link
+              href="/#categories"
+              className="mt-3 inline-block text-sm text-slate-500 underline hover:text-navy"
+            >
+              {t('healthGoals.clearFilter')}
+            </Link>
           )}
         </div>
 

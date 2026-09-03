@@ -280,8 +280,8 @@ function buildOrderSummaryText(order: Order): string {
   lines.push(`ราคารวม: ${formatTHB(order.total_amount ?? 0)}`);
   lines.push(`สถานะ: ${statusLabel}`);
   lines.push('');
-  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/message/BVJXBWDYR2UHN1');
-  lines.push('TH 085-590-7666 · LA +856 20 9872 4718');
+  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/66864522644');
+  lines.push('TH 086-452-2644 · LA +856 20 9872 4718');
   return lines.join('\n');
 }
 
@@ -321,8 +321,8 @@ function buildPaymentLinkMessage(order: Order, link: string): string {
   lines.push('ชำระเงิน/ดูรายละเอียดการจองได้ที่ลิงก์นี้:');
   lines.push(link);
   lines.push('');
-  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/message/BVJXBWDYR2UHN1');
-  lines.push('TH 085-590-7666 · LA +856 20 9872 4718');
+  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/66864522644');
+  lines.push('TH 086-452-2644 · LA +856 20 9872 4718');
   return lines.join('\n');
 }
 
@@ -447,8 +447,8 @@ function printOrderSummary(order: Order) {
         </tbody>
       </table>
       <div class="footer">
-        WOS.os by หจก. รอยัล บริตจ์ 99 · LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1<br>
-        TH 085-590-7666 · LA +856 20 9872 4718 · hello@wos.asia
+        WOS.os by หจก. รอยัล บริตจ์ 99 · LINE @vlf9996z · WhatsApp wa.me/66864522644<br>
+        TH 086-452-2644 · LA +856 20 9872 4718 · hello@wos.asia
       </div>
     </body>
     </html>

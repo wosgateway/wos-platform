@@ -17,7 +17,10 @@ import { Link } from '@/i18n/navigation';
 // MobileNavDrawer), and "Talk to WOS" opens the same WhatsApp number/
 // message used by <WhatsAppButton /> — kept in sync with that file and
 // Footer.tsx if the number ever changes.
-const WHATSAPP_NUMBER = '8562098724718';
+// TEMPORARY: pointed at the Thai number (+66 86 452 2644) because the
+// Laos number (+856 20 9872 4718) currently has no WhatsApp account.
+// Switch back once WhatsApp is reactivated on the Laos number.
+const WHATSAPP_NUMBER = '66864522644';
 
 export function MobileStickyCta() {
   const t = useTranslations('journey.mobileCta');
