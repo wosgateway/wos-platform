@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createServiceClient } from '@/lib/supabase/service';
 
 const CHATWOOT_BASE_URL = process.env.CHATWOOT_BASE_URL!;
 const CHATWOOT_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID!;
@@ -178,6 +179,21 @@ export async function POST(req: NextRequest) {
     const t2 = Date.now();
     debugLog(`[timing] sendChatwootReply took ${t2 - t1}ms, total ${t2 - t0}ms`);
 
+    // --- 7. ถ้าลูกค้าพิมพ์เลขออเดอร์มาในข้อความ ผูกบริบทเข้ากับ conversation ---
+    // จงใจไม่ await บล็อกการตอบลูกค้า — รันแบบ fire-and-forget เพราะ:
+    // 1. ลูกค้าควรได้รับคำตอบเร็วที่สุด ไม่ควรรอ Supabase query เพิ่ม
+    // 2. ความล้มเหลวของฟีเจอร์นี้ไม่ควรทำให้ POST() ทั้งก้อน error ทั้งที่
+    //    ตอบลูกค้าสำเร็จไปแล้ว (error ถูกกันไว้ในตัวฟังก์ชันเองแล้ว)
+    const orderNumber = extractOrderNumber(content);
+    if (orderNumber) {
+      debugLog('[debug] order number detected in message:', orderNumber);
+      fetchOrderContext(orderNumber).then((ctx) => {
+        if (ctx) {
+          void updateChatwootCustomAttributes(conversationId, ctx);
+        }
+      });
+    }
+
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
     console.error('[chatwoot-webhook] error', err instanceof Error ? err.message : String(err));
@@ -263,5 +279,137 @@ async function sendChatwootReply(conversationId: number, content: string) {
     // AI ตอบสำเร็จแต่ Chatwoot รับข้อความไม่สำเร็จ (ลูกค้าจะไม่เห็นคำตอบเลย แต่ระบบไม่รู้ตัว)
     // throw ต่อให้ POST() catch แล้วตอบ { status: 'error' }, 500 แทน สะท้อนผลจริง
     throw new Error(`chatwoot_send_failed:${res.status}`);
+  }
+}
+
+// ============================================================
+// Order context lookup -> Chatwoot Conversation Custom Attributes
+//
+// เมื่อลูกค้าพิมพ์เลขออเดอร์ (WOS-YYYYMMDD-00001) มาในแชท ดึงสถานะ/
+// จังหวัด/ประเภทบริการจาก Supabase มาแปะไว้ใน Custom Attributes ของ
+// conversation นั้น ให้ agent เห็นบริบทได้ทันทีโดยไม่ต้องสลับไปเช็ค
+// admin panel แยก
+// ============================================================
+
+// รูปแบบ order_number จริงจาก generate_order_number() ใน Supabase:
+// 'WOS-' || YYYYMMDD || '-' || เลข 5 หลัก (เช่น WOS-20260903-00123)
+const ORDER_NUMBER_REGEX = /WOS-\d{8}-\d{5}/i;
+
+function extractOrderNumber(text: string): string | null {
+  const match = text.match(ORDER_NUMBER_REGEX);
+  return match ? match[0].toUpperCase() : null;
+}
+
+type OrderContext = {
+  orderNumber: string;
+  status: string; // draft | pending_deposit | deposit_paid | confirmed | checked_in | completed | cancelled | refunded
+  provinces: string[]; // จาก organizations.province ของทุก order_item ในออเดอร์นี้ (อาจมีหลายจังหวัดถ้าเป็น multi-partner order)
+  serviceTypes: string[]; // จาก order_items.service_type: clinic | hotel | transport | wellness | insurance
+};
+
+// ดึงบริบทออเดอร์จาก Supabase ด้วย order_number
+// คืนค่า null ถ้าไม่เจอออเดอร์ หรือถ้า query ล้มเหลว (ไม่ throw — ไม่อยากให้
+// ความล้มเหลวตรงนี้ไปกระทบการตอบลูกค้าหลัก ซึ่งเป็นคนละ concern กัน)
+async function fetchOrderContext(orderNumber: string): Promise<OrderContext | null> {
+  try {
+    const supabase = createServiceClient();
+
+    const { data: order, error: orderErr } = await supabase
+      .from('orders')
+      .select('id, order_number, status')
+      .eq('order_number', orderNumber)
+      .maybeSingle();
+
+    if (orderErr) {
+      console.error('[chatwoot-webhook] fetch order failed', { status: orderErr.code });
+      return null;
+    }
+    if (!order) {
+      debugLog('[debug] order not found for', orderNumber);
+      return null;
+    }
+
+    // order_items ของออเดอร์นี้ + organization_id เพื่อไป join province
+    // (query แยกขั้นแทน embedded select เดียว ตามสไตล์เดิมของโปรเจกต์
+    // ดู src/app/api/admin/orders/route.ts เป็นตัวอย่าง)
+    const { data: items, error: itemsErr } = await supabase
+      .from('order_items')
+      .select('service_type, organization_id')
+      .eq('order_id', order.id);
+
+    if (itemsErr) {
+      console.error('[chatwoot-webhook] fetch order_items failed', { status: itemsErr.code });
+      // ยังคืนข้อมูล order ที่มีได้ แค่ไม่มี province/service_type
+      return { orderNumber: order.order_number, status: order.status, provinces: [], serviceTypes: [] };
+    }
+
+    type OrderItemRow = { service_type: string | null; organization_id: string | null };
+    const typedItems = (items ?? []) as OrderItemRow[];
+    const serviceTypes = [...new Set(typedItems.map((i) => i.service_type).filter((s): s is string => Boolean(s)))];
+    const orgIds = [...new Set(typedItems.map((i) => i.organization_id).filter((id): id is string => Boolean(id)))];
+
+    let provinces: string[] = [];
+    if (orgIds.length > 0) {
+      const { data: orgs, error: orgsErr } = await supabase
+        .from('organizations')
+        .select('id, province')
+        .in('id', orgIds);
+
+      if (orgsErr) {
+        console.error('[chatwoot-webhook] fetch organizations failed', { status: orgsErr.code });
+      } else {
+        type OrgRow = { id: string; province: string | null };
+        const typedOrgs = (orgs ?? []) as OrgRow[];
+        provinces = [...new Set(typedOrgs.map((o) => o.province).filter((p): p is string => Boolean(p)))];
+      }
+    }
+
+    return { orderNumber: order.order_number, status: order.status, provinces, serviceTypes };
+  } catch (err) {
+    console.error('[chatwoot-webhook] fetchOrderContext error', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
+// อัปเดต Chatwoot Conversation Custom Attributes
+// ชื่อ key (order_id, province, package_type, booking_status) ต้องตรงกับ
+// attribute key ที่สร้างไว้ใน Chatwoot > Settings > Custom Attributes เป๊ะ ๆ
+// (ตัวพิมพ์เล็ก-ใหญ่มีผล)
+async function updateChatwootCustomAttributes(conversationId: number, ctx: OrderContext) {
+  const url = `${CHATWOOT_BASE_URL}/api/v1/accounts/${CHATWOOT_ACCOUNT_ID}/conversations/${conversationId}/custom_attributes`;
+
+  try {
+    const res = await fetchWithTimeout(
+      url,
+      {
+        method: 'POST', // endpoint นี้ของ Chatwoot ใช้ POST (ทำหน้าที่เป็น upsert ไม่ใช่ PATCH)
+        headers: {
+          'Content-Type': 'application/json',
+          api_access_token: CHATWOOT_API_ACCESS_TOKEN,
+        },
+        body: JSON.stringify({
+          custom_attributes: {
+            order_id: ctx.orderNumber,
+            province: ctx.provinces.join(', ') || null,
+            package_type: ctx.serviceTypes.join(', ') || null,
+            booking_status: ctx.status,
+          },
+        }),
+      },
+      FETCH_TIMEOUT_MS
+    );
+
+    if (!res.ok) {
+      console.error('[chatwoot-webhook] failed to update custom_attributes', { status: res.status });
+      return;
+    }
+    debugLog('[debug] custom_attributes updated for conversation', conversationId, ctx);
+  } catch (err) {
+    // ตั้งใจไม่ throw — ฟีเจอร์นี้เป็น "nice to have" ให้ agent เห็นบริบท
+    // ถ้าล้มเหลวไม่ควรกระทบการตอบลูกค้าหลักที่ทำไปแล้ว
+    console.error(
+      '[chatwoot-webhook] updateChatwootCustomAttributes error',
+      err instanceof Error ? err.message : String(err)
+    );
   }
 }
