@@ -39,7 +39,7 @@ export interface PartnerUser {
 export async function getPartnerSession(
   response?: NextResponse
 ): Promise<{ user: PartnerUser | null; session: Session | null }> {
-  const supabase = createClient(response);
+  const supabase = createClient(response, 'partner');
   const { data: { session } } = await supabase.auth.getSession();
 
   if (!session) {
