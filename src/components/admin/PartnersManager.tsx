@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import type { Partner } from '@/lib/data';
@@ -65,7 +65,7 @@ const emptyForm: PartnerFormState = {
 };
 
 export function PartnersManager() {
-  const supabase = createClient();
+  const supabase = useMemo(() => createClient(), []);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -132,12 +132,21 @@ export function PartnersManager() {
         location_verified_at: p.location_verified_at ?? null,
       });
     } else {
-      setForm(emptyForm);
+      setForm({ ...emptyForm });
     }
     setModalOpen(true);
   }
 
+  // 5 MB cap — same limit for cover and logo. Prevents an accidental
+  // (or malicious) huge upload from eating storage quota; Supabase
+  // Storage would accept much larger files without this check.
+  const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
   async function handleCoverUpload(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setFormError('ไฟล์รูปปกต้องไม่เกิน 5MB');
+      return;
+    }
     setUploading(true);
     setFormError(null);
     try {
@@ -158,6 +167,10 @@ export function PartnersManager() {
   // See migration 023 for why logo_url is a separate column from
   // cover_image_url.
   async function handleLogoUpload(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setFormError('ไฟล์โลโก้ต้องไม่เกิน 5MB');
+      return;
+    }
     setUploading(true);
     setFormError(null);
     try {
@@ -205,7 +218,7 @@ export function PartnersManager() {
         latitude: data.partner.latitude,
         longitude: data.partner.longitude,
         location_status: data.partner.location_status,
-        location_source: 'google_maps',
+        location_source: data.partner.location_source,
         location_resolved_at: data.partner.location_resolved_at,
       }));
       loadPartners();
@@ -216,33 +229,36 @@ export function PartnersManager() {
     }
   }
 
-  // Verify/reject don't involve an outside fetch, so this goes straight
-  // through the RLS-protected browser client like the rest of this
-  // form (logo_url, show_on_homepage, etc.) — no need for the SSRF-safe
-  // server route here.
+  // Verify/reject go through the admin API (not the RLS-protected
+  // browser client) so they're recorded in audit_log (073) — this
+  // gates public visibility on the map (047 nearby_partners()), so
+  // who verified what and when needs to be recoverable.
   async function handleSetLocationStatus(nextStatus: 'verified' | 'rejected') {
     if (!form.id) return;
     setUpdatingLocationStatus(true);
     setResolveError(null);
-    const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .from('partners')
-      .update({
-        location_status: nextStatus,
-        location_verified_at: nextStatus === 'verified' ? nowIso : null,
-      })
-      .eq('id', form.id);
-    setUpdatingLocationStatus(false);
-    if (error) {
-      setResolveError('อัปเดตสถานะไม่สำเร็จ: ' + error.message);
-      return;
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/verify-location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResolveError(data.error ?? 'อัปเดตสถานะไม่สำเร็จ');
+        return;
+      }
+      setForm((f) => ({
+        ...f,
+        location_status: data.partner.location_status,
+        location_verified_at: data.partner.location_verified_at,
+      }));
+      loadPartners();
+    } catch (e) {
+      setResolveError(e instanceof Error ? e.message : 'อัปเดตสถานะไม่สำเร็จ');
+    } finally {
+      setUpdatingLocationStatus(false);
     }
-    setForm((f) => ({
-      ...f,
-      location_status: nextStatus,
-      location_verified_at: nextStatus === 'verified' ? nowIso : null,
-    }));
-    loadPartners();
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -250,6 +266,10 @@ export function PartnersManager() {
     setFormError(null);
     if (!form.name.trim()) {
       setFormError('กรุณากรอกชื่อพาร์ทเนอร์');
+      return;
+    }
+    if (form.show_on_homepage && !form.logo_url.trim()) {
+      setFormError('ต้องอัปโหลดโลโก้ก่อน ถึงจะแสดงในหน้าแรกได้');
       return;
     }
     setSaving(true);
@@ -264,6 +284,10 @@ export function PartnersManager() {
       logo_url: form.logo_url.trim() || null,
       show_on_homepage: form.show_on_homepage,
       address: form.address.trim() || null,
+      // google_maps_url was missing here — meant a saved partner's map
+      // link silently reverted to blank on the next edit, even though
+      // resolve-location (which writes it directly) worked fine.
+      google_maps_url: form.google_maps_url.trim() || null,
     };
     const { error } = form.id
       ? await supabase.from('partners').update(payload).eq('id', form.id)
@@ -277,28 +301,51 @@ export function PartnersManager() {
     loadPartners();
   }
 
-  async function handleSuspend(id: string) {
-  if (!confirm('ระงับพาร์ทเนอร์นี้?')) return;
+    async function handleSuspend(id: string) {
+    if (!confirm('ระงับพาร์ทเนอร์นี้?')) return;
 
-  const res = await fetch(`/api/admin/partners/${id}/suspend`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      status: 'inactive',
-    }),
-  });
+    const res = await fetch(`/api/admin/partners/${id}/suspend`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: 'inactive',
+      }),
+    });
 
-  const data = await res.json();
+    const data = await res.json();
 
-  if (!res.ok) {
-    alert(data.error || 'ระงับไม่สำเร็จ');
-    return;
+    if (!res.ok) {
+      alert(data.error || 'ระงับพาร์ทเนอร์ไม่สำเร็จ');
+      return;
+    }
+
+    loadPartners();
   }
 
-  loadPartners();
-}
+  async function handleReactivate(id: string) {
+    if (!confirm('ต้องการเปิดใช้งานพาร์ทเนอร์นี้อีกครั้งหรือไม่?')) return;
+
+    const res = await fetch(`/api/admin/partners/${id}/suspend`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: 'active',
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || 'เปิดใช้งานพาร์ทเนอร์ไม่สำเร็จ');
+      return;
+    }
+
+    loadPartners();
+  }
 
   // Name search is case-insensitive and matches anywhere in the name
   // (not just prefix) — same UX as PartnersSearchGrid.tsx on the
@@ -414,7 +461,8 @@ export function PartnersManager() {
                   <td className="px-4 py-2">
                     {(() => {
                       const locStatus = (p as { location_status?: string }).location_status;
-                      if (!locStatus || !(p as { latitude?: number | null }).latitude) {
+                      const latitude = (p as { latitude?: number | null }).latitude;
+                      if (!locStatus || latitude == null) {
                         return <span className="text-xs text-slate-300">—</span>;
                       }
                       const badgeClass =
@@ -432,9 +480,21 @@ export function PartnersManager() {
                     <button onClick={() => openModal(p)} className="mr-3 text-primary-dark hover:underline">
                       แก้ไข
                     </button>
-                    <button onClick={() => handleSuspend(p.id)} className="text-red-500 hover:underline">
-                      ลบ
-                    </button>
+                    {p.status === 'active' ? (
+                      <button
+                        onClick={() => handleSuspend(p.id)}
+                        className="text-red-500 hover:underline"
+                      >
+                        ระงับ
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleReactivate(p.id)}
+                        className="text-emerald-600 hover:underline"
+                      >
+                        เปิดใช้งาน
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}
