@@ -29,7 +29,7 @@ export function ImpersonationBanner() {
 
   async function handleEndImpersonation() {
     setEndingSession(true);
-    const supabase = createClient('partner');
+    const supabase = createClient();
     await supabase.auth.signOut();
     sessionStorage.removeItem('wos-impersonating');
     window.location.href = '/login';

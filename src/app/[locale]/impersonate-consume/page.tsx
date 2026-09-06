@@ -53,7 +53,7 @@ export default function ImpersonateConsumePage() {
   // Memoized so React 18 StrictMode's double-invoke of the component body
   // (dev mode only) doesn't create two GoTrueClient instances racing to
   // read/clear the #access_token hash in the URL — see file header comment.
-  const [supabase] = useState(() => createClient('partner'));
+  const [supabase] = useState(() => createClient());
   const [sessionState, setSessionState] = useState<SessionState>('checking');
   const [authError, setAuthError] = useState<string | null>(null);
 

@@ -38,7 +38,7 @@ export default function SetPasswordPage() {
   // (dev mode only) doesn't create two GoTrueClient instances racing to
   // read/clear the #access_token hash in the URL (same fix as
   // impersonate-consume/page.tsx, which shares this exact pattern).
-  const [supabase] = useState(() => createClient('partner'));
+ const [supabase] = useState(() => createClient()); 
 
   const [sessionState, setSessionState] = useState<SessionState>('checking');
   const [password, setPassword] = useState('');

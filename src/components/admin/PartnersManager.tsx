@@ -277,15 +277,28 @@ export function PartnersManager() {
     loadPartners();
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('ลบพาร์ทเนอร์นี้? แพ็กเกจที่ผูกอยู่จะได้รับผลกระทบ')) return;
-    const { error } = await supabase.from('partners').delete().eq('id', id);
-    if (error) {
-      alert('ลบไม่สำเร็จ: ' + error.message);
-      return;
-    }
-    loadPartners();
+  async function handleSuspend(id: string) {
+  if (!confirm('ระงับพาร์ทเนอร์นี้?')) return;
+
+  const res = await fetch(`/api/admin/partners/${id}/suspend`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      status: 'inactive',
+    }),
+  });
+
+  const data = await res.json();
+
+  if (!res.ok) {
+    alert(data.error || 'ระงับไม่สำเร็จ');
+    return;
   }
+
+  loadPartners();
+}
 
   // Name search is case-insensitive and matches anywhere in the name
   // (not just prefix) — same UX as PartnersSearchGrid.tsx on the
@@ -419,7 +432,7 @@ export function PartnersManager() {
                     <button onClick={() => openModal(p)} className="mr-3 text-primary-dark hover:underline">
                       แก้ไข
                     </button>
-                    <button onClick={() => handleDelete(p.id)} className="text-red-500 hover:underline">
+                    <button onClick={() => handleSuspend(p.id)} className="text-red-500 hover:underline">
                       ลบ
                     </button>
                   </td>
