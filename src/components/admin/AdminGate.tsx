@@ -21,7 +21,7 @@ import { createClient } from '@/lib/supabase/client';
 // เรียกผ่าน .rpc() ได้ตรงจาก client เพราะฟังก์ชันเป็น SECURITY DEFINER
 // อยู่แล้ว ไม่ต้องเปิด table เพิ่ม
 export function AdminGate({ children }: { children: React.ReactNode }) {
-  const supabase = createClient();
+  const supabase = createClient('admin');
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState<boolean | undefined>(undefined);
   const [email, setEmail] = useState('');
