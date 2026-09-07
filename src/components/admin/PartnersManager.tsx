@@ -65,7 +65,12 @@ const emptyForm: PartnerFormState = {
 };
 
 export function PartnersManager() {
-  const supabase = useMemo(() => createClient(), []);
+  // Must read the same session cookie AdminGate signs in under ('sb-wos-admin')
+  // — createClient() with no namespace reads a different, unauthenticated
+  // cookie, so is_platform_admin() sees no session and every INSERT/UPDATE
+  // here fails RLS ("new row violates row-level security policy") even
+  // though SELECT still works (partners has a public read policy too).
+  const supabase = useMemo(() => createClient('admin'), []);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -79,6 +84,20 @@ export function PartnersManager() {
   const [resolvingLocation, setResolvingLocation] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [updatingLocationStatus, setUpdatingLocationStatus] = useState(false);
+
+  // Portal login (แบบที่ 2: สร้างบัญชีไว้ล็อกอินได้ในอนาคต แต่ไม่ส่งอีเมล —
+  // แอดมินคัดลอกลิงก์ไปส่งเอง) — ดู /api/admin/partners/[id]/portal-access
+  const [portalForm, setPortalForm] = useState({
+    organizationName: '',
+    branchName: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+  });
+  const [portalCreating, setPortalCreating] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [portalInviteLink, setPortalInviteLink] = useState<string | null>(null);
+  const [portalExistingEmail, setPortalExistingEmail] = useState<string | null>(null);
 
   async function loadPartners() {
     setLoading(true);
@@ -100,6 +119,16 @@ export function PartnersManager() {
   function openModal(partner?: Partner) {
     setFormError(null);
     setResolveError(null);
+    setPortalError(null);
+    setPortalInviteLink(null);
+    setPortalExistingEmail(null);
+    setPortalForm({
+      organizationName: partner?.name ?? '',
+      branchName: partner?.name ? `${partner.name} - สาขาหลัก` : '',
+      contactName: '',
+      contactEmail: '',
+      contactPhone: '',
+    });
     if (partner) {
       const p = partner as Partner & {
         address?: string | null;
@@ -258,6 +287,79 @@ export function PartnersManager() {
       setResolveError(e instanceof Error ? e.message : 'อัปเดตสถานะไม่สำเร็จ');
     } finally {
       setUpdatingLocationStatus(false);
+    }
+  }
+
+  // Creates org+branch+Auth user for this partner and returns a
+  // copyable set-password link — no email is ever sent (see the route's
+  // header comment for how generateLink({type:'invite'}) does that).
+  async function handleCreatePortalAccess() {
+    if (!form.id) return;
+    setPortalError(null);
+    setPortalExistingEmail(null);
+    if (!portalForm.organizationName.trim() || !portalForm.branchName.trim()) {
+      setPortalError('กรุณากรอกชื่อองค์กรและชื่อสาขา');
+      return;
+    }
+    if (!portalForm.contactName.trim()) {
+      setPortalError('กรุณากรอกชื่อผู้ติดต่อ');
+      return;
+    }
+    if (!portalForm.contactEmail.trim() || !portalForm.contactEmail.includes('@')) {
+      setPortalError('กรุณากรอกอีเมลผู้ติดต่อที่ถูกต้อง');
+      return;
+    }
+    setPortalCreating(true);
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/portal-access`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationName: portalForm.organizationName.trim(),
+          branchName: portalForm.branchName.trim(),
+          contactName: portalForm.contactName.trim(),
+          contactEmail: portalForm.contactEmail.trim(),
+          contactPhone: portalForm.contactPhone.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalError(data.error ?? 'สร้างบัญชีเข้าสู่ระบบไม่สำเร็จ');
+        if (data.existingBranchEmail) setPortalExistingEmail(data.existingBranchEmail);
+        return;
+      }
+      setPortalInviteLink(data.inviteLink);
+    } catch (e) {
+      setPortalError(e instanceof Error ? e.message : 'สร้างบัญชีเข้าสู่ระบบไม่สำเร็จ');
+    } finally {
+      setPortalCreating(false);
+    }
+  }
+
+  // For a partner that already has a login (existingBranchEmail came
+  // back from handleCreatePortalAccess above) — re-mints a fresh
+  // link for that same email via the existing resend-invite-link route
+  // instead of trying to create a second org/branch.
+  async function handleResendPortalLink(email: string) {
+    setPortalError(null);
+    setPortalCreating(true);
+    try {
+      const res = await fetch('/api/admin/partners/resend-invite-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalError(data.error ?? 'ขอลิงก์ใหม่ไม่สำเร็จ');
+        return;
+      }
+      setPortalInviteLink(data.inviteLink);
+      setPortalExistingEmail(null);
+    } catch (e) {
+      setPortalError(e instanceof Error ? e.message : 'ขอลิงก์ใหม่ไม่สำเร็จ');
+    } finally {
+      setPortalCreating(false);
     }
   }
 
@@ -692,6 +794,108 @@ export function PartnersManager() {
                   </p>
                 </div>
               ) : null}
+            </div>
+
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-3">
+              <div>
+                <label className="form-label">การเข้าสู่ระบบพอร์ทัล</label>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  สร้างบัญชีให้พาร์ทเนอร์ล็อกอินเข้าพอร์ทัลได้ในอนาคต — ระบบจะ{' '}
+                  <span className="font-medium">ไม่ส่งอีเมลเชิญอัตโนมัติ</span> คุณจะได้ลิงก์มาคัดลอกไปส่งเอง
+                  (LINE, WhatsApp, อีเมลส่วนตัว ฯลฯ)
+                </p>
+              </div>
+
+              {!form.id ? (
+                <p className="text-xs text-slate-400">บันทึกพาร์ทเนอร์นี้ก่อน ถึงจะสร้างบัญชีเข้าสู่ระบบได้</p>
+              ) : portalInviteLink ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                  <p className="mb-1 text-emerald-700">สร้างลิงก์สำเร็จ — คัดลอกไปส่งให้พาร์ทเนอร์ได้เลย:</p>
+                  <div className="flex gap-2">
+                    <input readOnly className="form-input flex-1 text-xs" value={portalInviteLink} />
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(portalInviteLink)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap"
+                    >
+                      คัดลอก
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="form-label">ชื่อองค์กร</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.organizationName}
+                        onChange={(e) => setPortalForm({ ...portalForm, organizationName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">ชื่อสาขา</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.branchName}
+                        onChange={(e) => setPortalForm({ ...portalForm, branchName: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="form-label">ชื่อผู้ติดต่อ</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactName}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">เบอร์โทร (ถ้ามี)</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactPhone}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactPhone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="form-label">อีเมลผู้ติดต่อ</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={portalForm.contactEmail}
+                      onChange={(e) => setPortalForm({ ...portalForm, contactEmail: e.target.value })}
+                    />
+                  </div>
+
+                  {portalError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalError}
+                      {portalExistingEmail ? (
+                        <button
+                          type="button"
+                          onClick={() => handleResendPortalLink(portalExistingEmail)}
+                          disabled={portalCreating}
+                          className="ml-2 underline disabled:opacity-50"
+                        >
+                          ขอลิงก์ใหม่สำหรับ {portalExistingEmail}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={handleCreatePortalAccess}
+                    disabled={portalCreating}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+                  >
+                    {portalCreating ? 'กำลังสร้าง...' : 'สร้างบัญชีเข้าสู่ระบบ (ไม่ส่งอีเมล)'}
+                  </button>
+                </>
+              )}
             </div>
 
             <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
