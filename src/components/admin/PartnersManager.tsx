@@ -17,6 +17,31 @@ const CATEGORY_OPTIONS = [
   { value: 'Transport', label: 'โรงแรม & รถรับส่ง — Transport' },
 ];
 
+// Response shape of GET /api/admin/partners/[id]/hard-delete (precheck) —
+// see that route's file header. canDelete is server-computed (order_items
+// / packages / reviews = 0); the confirm button below trusts it, but the
+// DELETE call is re-checked server-side regardless (RLS/RPC don't trust
+// this either — see sql/075_admin_hard_delete_partner.sql).
+type HardDeletePrecheck = {
+  partner: { id: string; name: string; category: string; status: string };
+  canDelete: boolean;
+  blockingReason: string | null;
+  willDelete: {
+    organizations: number;
+    branches: number;
+    portalUsers: number;
+    depositRules: number;
+    settlements: number;
+    packages: number;
+    reviews: number;
+  };
+  warnings: {
+    patients: number;
+    documents: number;
+    subscriptions: number;
+  };
+};
+
 interface PartnerFormState {
   id: string | null;
   name: string;
@@ -41,6 +66,7 @@ interface PartnerFormState {
   location_source: string | null;
   location_resolved_at: string | null;
   location_verified_at: string | null;
+  line_user_id: string;
 }
 
 const emptyForm: PartnerFormState = {
@@ -62,6 +88,7 @@ const emptyForm: PartnerFormState = {
   location_source: null,
   location_resolved_at: null,
   location_verified_at: null,
+  line_user_id: '',
 };
 
 export function PartnersManager() {
@@ -99,6 +126,27 @@ export function PartnersManager() {
   const [portalInviteLink, setPortalInviteLink] = useState<string | null>(null);
   const [portalExistingEmail, setPortalExistingEmail] = useState<string | null>(null);
 
+  // "ดูแทนพาร์ทเนอร์" (impersonate) — ดู /api/admin/partners/[id]/impersonate
+  // route ฝั่ง backend มีครบแล้ว (audit log ครบ) แต่ไม่เคยมีปุ่มเรียกใช้จริง
+  // เพิ่มตรงนี้: กดแล้วเปิดแท็บใหม่ที่ล็อกอินเป็นพาร์ทเนอร์นั้นทันที
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
+
+  // ลบพาร์ทเนอร์ถาวร (hard delete) — ดู /api/admin/partners/[id]/hard-delete
+  // GET = precheck (นับว่ามีอะไรผูกอยู่บ้าง, ลบได้ไหม), DELETE = ลบจริง
+  // ปุ่มนี้ไม่เคยมี UI มาก่อน แม้ backend จะพร้อมแล้ว (075/route.ts)
+  // ความปลอดภัยอยู่ 3 ชั้น: (1) เรียก precheck ก่อนเสมอ และ disable ปุ่มยืนยัน
+  // ถ้า canDelete เป็น false, (2) ต้องพิมพ์ชื่อพาร์ทเนอร์ให้ตรงเป๊ะก่อนถึงจะกดลบได้
+  // (กันการกดพลาด/กดรัว ๆ แบบ confirm() เดิม), (3) เซิร์ฟเวอร์/RPC re-check
+  // เงื่อนไขเดิมซ้ำอีกรอบอยู่ดี ต่อให้ precheck ฝั่งนี้เพี้ยนหรือถูก bypass
+  const [deleteTarget, setDeleteTarget] = useState<Partner | null>(null);
+  const [deletePrecheck, setDeletePrecheck] = useState<HardDeletePrecheck | null>(null);
+  const [deletePrecheckLoading, setDeletePrecheckLoading] = useState(false);
+  const [deletePrecheckError, setDeletePrecheckError] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   async function loadPartners() {
     setLoading(true);
     setListError(null);
@@ -122,6 +170,7 @@ export function PartnersManager() {
     setPortalError(null);
     setPortalInviteLink(null);
     setPortalExistingEmail(null);
+    setImpersonateError(null);
     setPortalForm({
       organizationName: partner?.name ?? '',
       branchName: partner?.name ? `${partner.name} - สาขาหลัก` : '',
@@ -159,6 +208,7 @@ export function PartnersManager() {
         location_source: p.location_source ?? null,
         location_resolved_at: p.location_resolved_at ?? null,
         location_verified_at: p.location_verified_at ?? null,
+        line_user_id: (p as { line_user_id?: string | null }).line_user_id ?? '',
       });
     } else {
       setForm({ ...emptyForm });
@@ -171,6 +221,66 @@ export function PartnersManager() {
   // Storage would accept much larger files without this check.
   const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
 
+  // Admin uploads can never go through a plain client-side
+  // `supabase.storage.from('partner-images').upload()` — the bucket's
+  // insert policy (003_storage_bucket_partner_images.sql) requires the
+  // caller's own `organization_id`, and admins don't have one (nor
+  // does a brand-new partner that hasn't been saved yet). Instead: ask
+  // /api/admin/partners/upload-image for a signed upload URL (minted
+  // server-side with the service-role client, bypassing that policy
+  // entirely for a real, auth-checked admin), then PUT the file
+  // straight to Storage with it. Same shape as
+  // uploadBookingAttachment() in src/lib/booking/upload-attachment.ts.
+  async function uploadPartnerImage(file: File, kind: 'cover' | 'logo'): Promise<string> {
+    const res = await fetch('/api/admin/partners/upload-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, kind }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result?.error ?? 'ขอลิงก์อัปโหลดไม่สำเร็จ');
+    }
+    const { error: uploadError } = await supabase.storage
+      .from('partner-images')
+      .uploadToSignedUrl(result.path, result.token, file);
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from('partner-images').getPublicUrl(result.path);
+    return data.publicUrl;
+  }
+
+  // Extracts the storage object path back out of a getPublicUrl()
+  // result, so the "remove image" button can tell the delete route
+  // which object to remove without re-deriving the path some other
+  // way. Returns null for anything not shaped like a partner-images
+  // public URL (e.g. a legacy hand-pasted URL from before uploads
+  // existed) — those just get cleared from the form, nothing to
+  // delete from storage.
+  function extractPartnerImagePath(publicUrl: string): string | null {
+    const marker = '/object/public/partner-images/';
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return null;
+    try {
+      return decodeURIComponent(publicUrl.slice(idx + marker.length));
+    } catch {
+      return null;
+    }
+  }
+
+  async function deletePartnerImage(publicUrl: string) {
+    const path = extractPartnerImagePath(publicUrl);
+    if (!path) return; // nothing storage-side to clean up
+    const res = await fetch('/api/admin/partners/upload-image', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) {
+      const result = await res.json().catch(() => ({}));
+      throw new Error(result?.error ?? 'ลบรูปไม่สำเร็จ');
+    }
+  }
+
   async function handleCoverUpload(file: File) {
     if (file.size > MAX_UPLOAD_BYTES) {
       setFormError('ไฟล์รูปปกต้องไม่เกิน 5MB');
@@ -179,11 +289,8 @@ export function PartnersManager() {
     setUploading(true);
     setFormError(null);
     try {
-      const path = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      const { error: uploadError } = await supabase.storage.from('partner-images').upload(path, file);
-      if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('partner-images').getPublicUrl(path);
-      setForm((f) => ({ ...f, cover_image_url: data.publicUrl }));
+      const publicUrl = await uploadPartnerImage(file, 'cover');
+      setForm((f) => ({ ...f, cover_image_url: publicUrl }));
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'อัปโหลดรูปไม่สำเร็จ');
     } finally {
@@ -203,13 +310,38 @@ export function PartnersManager() {
     setUploading(true);
     setFormError(null);
     try {
-      const path = `logos/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      const { error: uploadError } = await supabase.storage.from('partner-images').upload(path, file);
-      if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('partner-images').getPublicUrl(path);
-      setForm((f) => ({ ...f, logo_url: data.publicUrl }));
+      const publicUrl = await uploadPartnerImage(file, 'logo');
+      setForm((f) => ({ ...f, logo_url: publicUrl }));
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'อัปโหลดโลโก้ไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleRemoveCoverImage() {
+    if (!form.cover_image_url) return;
+    setUploading(true);
+    setFormError(null);
+    try {
+      await deletePartnerImage(form.cover_image_url);
+      setForm((f) => ({ ...f, cover_image_url: '' }));
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'ลบรูปไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleRemoveLogoImage() {
+    if (!form.logo_url) return;
+    setUploading(true);
+    setFormError(null);
+    try {
+      await deletePartnerImage(form.logo_url);
+      setForm((f) => ({ ...f, logo_url: '' }));
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'ลบโลโก้ไม่สำเร็จ');
     } finally {
       setUploading(false);
     }
@@ -363,6 +495,41 @@ export function PartnersManager() {
     }
   }
 
+  // เปิดแท็บใหม่ล่วงหน้าก่อน await เพื่อกัน popup blocker (browser จะบล็อก
+  // window.open ที่เรียกหลัง await เพราะไม่ถือเป็น user gesture อีกต่อไป)
+  // แล้วค่อยตั้ง .location ของแท็บนั้นหลังได้ actionLink กลับมา
+  async function handleImpersonate() {
+    if (!form.id) return;
+    setImpersonateError(null);
+    setImpersonating(true);
+    const newTab = window.open('about:blank', '_blank');
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/impersonate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        newTab?.close();
+        setImpersonateError(data.error ?? 'เข้าดูแทนไม่สำเร็จ');
+        return;
+      }
+      if (newTab) {
+        newTab.location.href = data.actionLink;
+      } else {
+        // popup ถูกบล็อกไปแล้ว (เช่น browser ไม่นับเป็น user gesture) —
+        // เปิดในแท็บปัจจุบันแทน ดีกว่าไม่ทำอะไรเลย
+        window.location.href = data.actionLink;
+      }
+    } catch (e) {
+      newTab?.close();
+      setImpersonateError(e instanceof Error ? e.message : 'เข้าดูแทนไม่สำเร็จ');
+    } finally {
+      setImpersonating(false);
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -372,6 +539,10 @@ export function PartnersManager() {
     }
     if (form.show_on_homepage && !form.logo_url.trim()) {
       setFormError('ต้องอัปโหลดโลโก้ก่อน ถึงจะแสดงในหน้าแรกได้');
+      return;
+    }
+    if (form.line_user_id.trim() && !/^U[0-9a-f]{32}$/i.test(form.line_user_id.trim())) {
+      setFormError('LINE User ID ต้องขึ้นต้นด้วย U ตามด้วยตัวอักษร/ตัวเลข 32 ตัว (ไม่ใช่ LINE OA ID หรือชื่อที่แสดง)');
       return;
     }
     setSaving(true);
@@ -390,13 +561,17 @@ export function PartnersManager() {
       // link silently reverted to blank on the next edit, even though
       // resolve-location (which writes it directly) worked fine.
       google_maps_url: form.google_maps_url.trim() || null,
+      line_user_id: form.line_user_id.trim() || null,
     };
     const { error } = form.id
       ? await supabase.from('partners').update(payload).eq('id', form.id)
       : await supabase.from('partners').insert(payload);
     setSaving(false);
     if (error) {
-      setFormError('บันทึกไม่สำเร็จ: ' + error.message);
+      // idx_partners_line_user_id_unique (migration 086) — surface a
+      // clear message instead of the raw Postgres constraint text.
+      const dupeLineId = error.code === '23505' && error.message.includes('line_user_id');
+      setFormError(dupeLineId ? 'LINE ID นี้ถูกผูกกับพาร์ทเนอร์รายอื่นอยู่แล้ว' : 'บันทึกไม่สำเร็จ: ' + error.message);
       return;
     }
     setModalOpen(false);
@@ -447,6 +622,60 @@ export function PartnersManager() {
     }
 
     loadPartners();
+  }
+
+  async function openDeleteModal(partner: Partner) {
+    setDeleteTarget(partner);
+    setDeletePrecheck(null);
+    setDeletePrecheckError(null);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+    setDeletePrecheckLoading(true);
+    try {
+      const res = await fetch(`/api/admin/partners/${partner.id}/hard-delete`);
+      const data = await res.json();
+      if (!res.ok) {
+        setDeletePrecheckError(data.error ?? 'ตรวจสอบข้อมูลไม่สำเร็จ');
+        return;
+      }
+      setDeletePrecheck(data as HardDeletePrecheck);
+    } catch (e) {
+      setDeletePrecheckError(e instanceof Error ? e.message : 'ตรวจสอบข้อมูลไม่สำเร็จ');
+    } finally {
+      setDeletePrecheckLoading(false);
+    }
+  }
+
+  function closeDeleteModal() {
+    if (deleting) return; // อย่าให้ปิดโมดัลกลางอากาศระหว่างเรียก DELETE อยู่
+    setDeleteTarget(null);
+    setDeletePrecheck(null);
+    setDeletePrecheckError(null);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+  }
+
+  async function handleConfirmHardDelete() {
+    if (!deleteTarget || !deletePrecheck?.canDelete) return;
+    if (deleteConfirmText.trim() !== deleteTarget.name) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/admin/partners/${deleteTarget.id}/hard-delete`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error ?? 'ลบไม่สำเร็จ');
+        return;
+      }
+      setDeleteTarget(null);
+      setDeletePrecheck(null);
+      setDeleteConfirmText('');
+      loadPartners();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   // Name search is case-insensitive and matches anywhere in the name
@@ -585,18 +814,25 @@ export function PartnersManager() {
                     {p.status === 'active' ? (
                       <button
                         onClick={() => handleSuspend(p.id)}
-                        className="text-red-500 hover:underline"
+                        className="mr-3 text-red-500 hover:underline"
                       >
                         ระงับ
                       </button>
                     ) : (
                       <button
                         onClick={() => handleReactivate(p.id)}
-                        className="text-emerald-600 hover:underline"
+                        className="mr-3 text-emerald-600 hover:underline"
                       >
                         เปิดใช้งาน
                       </button>
                     )}
+                    <button
+                      onClick={() => openDeleteModal(p)}
+                      className="text-red-700 hover:underline"
+                      title="ลบถาวร — ย้อนกลับไม่ได้"
+                    >
+                      ลบถาวร
+                    </button>
                   </td>
                 </tr>
               ))}
@@ -681,6 +917,18 @@ export function PartnersManager() {
               />
             </div>
             <div>
+              <label className="form-label">LINE User ID</label>
+              <input
+                className="form-input font-mono text-xs"
+                value={form.line_user_id}
+                onChange={(e) => setForm({ ...form, line_user_id: e.target.value })}
+                placeholder="U1234567890abcdef1234567890abcdef"
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                ใช้ส่งงาน (เช็คอิน-เช็คเอาท์-ชื่อผู้เข้าพัก) ให้พาร์ทเนอร์ทาง LINE โดยตรง ไม่ผูกอัตโนมัติ ต้องกรอกเอง
+              </p>
+            </div>
+            <div>
               <label className="form-label">รูปปก</label>
               <input
                 type="file"
@@ -690,14 +938,24 @@ export function PartnersManager() {
               />
               {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
               {form.cover_image_url ? (
-                <Image
-                  src={form.cover_image_url}
-                  alt=""
-                  width={80}
-                  height={80}
-                  className="mt-2 h-20 w-20 rounded-lg object-cover"
-                  unoptimized
-                />
+                <div className="mt-2 flex items-center gap-3">
+                  <Image
+                    src={form.cover_image_url}
+                    alt=""
+                    width={80}
+                    height={80}
+                    className="h-20 w-20 rounded-lg object-cover"
+                    unoptimized
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoverImage}
+                    disabled={uploading}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600 disabled:opacity-50"
+                  >
+                    ลบรูป
+                  </button>
+                </div>
               ) : null}
             </div>
 
@@ -806,6 +1064,31 @@ export function PartnersManager() {
                 </p>
               </div>
 
+              {form.id ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">เข้าดูแทนพาร์ทเนอร์</p>
+                    <p className="text-xs text-slate-400">
+                      เปิดพอร์ทัลในแท็บใหม่ โดยล็อกอินเป็นบัญชีพาร์ทเนอร์นี้จริง ๆ (สำหรับตรวจสอบ/ช่วยเหลือ) —
+                      บันทึกลง audit log ทุกครั้ง
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleImpersonate}
+                    disabled={impersonating}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {impersonating ? 'กำลังเปิด...' : '🔑 เข้าดูแทน'}
+                  </button>
+                </div>
+              ) : null}
+              {impersonateError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                  {impersonateError}
+                </div>
+              ) : null}
+
               {!form.id ? (
                 <p className="text-xs text-slate-400">บันทึกพาร์ทเนอร์นี้ก่อน ถึงจะสร้างบัญชีเข้าสู่ระบบได้</p>
               ) : portalInviteLink ? (
@@ -911,15 +1194,25 @@ export function PartnersManager() {
               />
               {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
               {form.logo_url ? (
-                <div className="mt-2 flex h-16 items-center rounded-lg border border-slate-200 bg-white px-3">
-                  <Image
-                    src={form.logo_url}
-                    alt=""
-                    width={160}
-                    height={64}
-                    className="max-h-12 w-auto object-contain"
-                    unoptimized
-                  />
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="flex h-16 items-center rounded-lg border border-slate-200 bg-white px-3">
+                    <Image
+                      src={form.logo_url}
+                      alt=""
+                      width={160}
+                      height={64}
+                      className="max-h-12 w-auto object-contain"
+                      unoptimized
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveLogoImage}
+                    disabled={uploading}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600 disabled:opacity-50"
+                  >
+                    ลบโลโก้
+                  </button>
                 </div>
               ) : null}
               <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
@@ -949,6 +1242,100 @@ export function PartnersManager() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {/* ===== ยืนยันลบถาวร ===== */}
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6">
+            <h3 className="text-base font-bold text-red-700">ลบพาร์ทเนอร์ถาวร: {deleteTarget.name}</h3>
+            <p className="text-xs text-slate-500">
+              การลบนี้ถาวร ย้อนกลับไม่ได้ — จะลบ Organization, สาขา, บัญชีเข้าสู่ระบบของพอร์ทัล และข้อมูลพาร์ทเนอร์
+              ทั้งหมด ถ้าต้องการแค่ซ่อน/ปิดการใช้งานชั่วคราว ให้ใช้ปุ่ม &quot;ระงับ&quot; แทน — ยกเลิกการลบนี้ไม่ได้
+              หลังกดยืนยัน
+            </p>
+
+            {deletePrecheckLoading ? (
+              <p className="text-sm text-slate-400">กำลังตรวจสอบข้อมูลที่ผูกอยู่...</p>
+            ) : deletePrecheckError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                {deletePrecheckError}
+              </div>
+            ) : deletePrecheck ? (
+              <>
+                <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                  <p>
+                    จะลบ: Organization {deletePrecheck.willDelete.organizations} รายการ ·
+                    สาขา {deletePrecheck.willDelete.branches} รายการ ·
+                    บัญชีพอร์ทัล {deletePrecheck.willDelete.portalUsers} บัญชี
+                  </p>
+                  <p>
+                    Deposit rules {deletePrecheck.willDelete.depositRules} · Settlements{' '}
+                    {deletePrecheck.willDelete.settlements}
+                  </p>
+                  {deletePrecheck.warnings.patients > 0 ||
+                  deletePrecheck.warnings.documents > 0 ||
+                  deletePrecheck.warnings.subscriptions > 0 ? (
+                    <p className="text-amber-600">
+                      ⚠️ ผูกกับ patients {deletePrecheck.warnings.patients} · documents{' '}
+                      {deletePrecheck.warnings.documents} · subscriptions{' '}
+                      {deletePrecheck.warnings.subscriptions} (จะถูกลบตามไปด้วยแบบ cascade)
+                    </p>
+                  ) : null}
+                </div>
+
+                {!deletePrecheck.canDelete ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                    {deletePrecheck.blockingReason}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="form-label">
+                      พิมพ์ชื่อพาร์ทเนอร์ &quot;{deleteTarget.name}&quot; ให้ตรงทุกตัวอักษรเพื่อยืนยัน
+                    </label>
+                    <input
+                      className="form-input"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder={deleteTarget.name}
+                      autoComplete="off"
+                    />
+                  </div>
+                )}
+
+                {deleteError ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                    {deleteError}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmHardDelete}
+                disabled={
+                  deleting ||
+                  deletePrecheckLoading ||
+                  !deletePrecheck?.canDelete ||
+                  deleteConfirmText.trim() !== deleteTarget.name
+                }
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-40"
+              >
+                {deleting ? 'กำลังลบ...' : 'ลบถาวร'}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

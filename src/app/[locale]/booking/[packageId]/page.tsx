@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { fetchPackageById, fetchPackagesByCategory } from '@/lib/data';
+import { fetchPackageById, fetchPackagesByCategory, fetchTransportVehiclePricing } from '@/lib/data';
 import { BookingForm } from '@/components/BookingForm';
 
 // Replaces booking.html?package_id=<uuid> — same data, same tables,
@@ -18,16 +18,17 @@ export default async function BookingPage({
   }
   if (!pkg) notFound();
 
-  // Hotel/Transport pickers in the original form let the customer optionally
-  // pick a specific partner package — sourced from the Hotel/Transport category.
-  const [hotelOptions, transportOptions] = await Promise.all([
+  // Hotel picker still lets the customer optionally pick a specific
+  // partner package. Transport no longer offers a partner picker (see
+  // migration 081) — just a starting-price-by-vehicle-type map.
+  const [hotelOptions, transportVehiclePricing] = await Promise.all([
     fetchPackagesByCategory(['Hotel']),
-    fetchPackagesByCategory(['Transport']),
+    fetchTransportVehiclePricing(),
   ]);
 
   return (
     <main className="section-padding mx-auto max-w-2xl px-4">
-      <BookingForm pkg={pkg} hotelOptions={hotelOptions} transportOptions={transportOptions} />
+      <BookingForm pkg={pkg} hotelOptions={hotelOptions} transportVehiclePricing={transportVehiclePricing} />
     </main>
   );
 }

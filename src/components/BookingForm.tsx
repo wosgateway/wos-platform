@@ -36,12 +36,40 @@ type LocationType =
   | 'other'
   | 'per_itinerary';
 
+// Hotel room type filter — reads packages.sub_category (see migration
+// 082). Free-text on the DB side (partner-typed, no CHECK constraint)
+// but this fixed list is what the partner/admin dropdowns write, so
+// filtering against it covers the vast majority of real rows. Any
+// value outside this list (legacy free text, or a partner who typed
+// something custom) still shows up in the dropdown, just labeled with
+// the raw value instead of a translated one — see roomTypeLabel below.
+const KNOWN_ROOM_TYPES = ['single', 'double', 'twin', 'deluxe', 'suite'] as const;
+
+function roomTypeLabel(value: string, t: (key: string) => string): string {
+  switch (value) {
+    case 'single':
+      return t('fields.roomTypeSingle');
+    case 'double':
+      return t('fields.roomTypeDouble');
+    case 'twin':
+      return t('fields.roomTypeTwin');
+    case 'deluxe':
+      return t('fields.roomTypeDeluxe');
+    case 'suite':
+      return t('fields.roomTypeSuite');
+    default:
+      // Custom/legacy value the partner typed directly — show as-is
+      // rather than falling back to a generic "other" label, so the
+      // customer can still tell options apart.
+      return value;
+  }
+}
+
 interface FormState {
   bookingDate: string;
   bookingTime: string;
   needTransport: boolean;
   needHotel: boolean;
-  transportPartnerId: string;
   transportMode: TransportMode;
   transportVehicleType: VehicleType;
   transportVehicleTypeDetail: string;
@@ -71,7 +99,6 @@ const initialState: FormState = {
   bookingTime: '',
   needTransport: false,
   needHotel: false,
-  transportPartnerId: '',
   transportMode: 'one_way',
   transportVehicleType: '',
   transportVehicleTypeDetail: '',
@@ -189,11 +216,14 @@ function calcNights(checkin: string, checkout: string): number {
 export function BookingForm({
   pkg,
   hotelOptions,
-  transportOptions,
+  transportVehiclePricing,
 }: {
   pkg: Package;
   hotelOptions: Package[];
-  transportOptions: Package[];
+  // vehicleType -> starting price (THB). No per-partner transport
+  // package selection anymore — see migration 081. A vehicleType
+  // missing from this map (or priced 0) just shows no hint.
+  transportVehiclePricing: Record<string, number>;
 }) {
   const t = useTranslations('booking');
   const [step, setStep] = useState(1);
@@ -201,6 +231,9 @@ export function BookingForm({
   // Client-side province filter for the hotel step — kept identical to
   // JourneyBookingForm.tsx's version, see the comment there.
   const [hotelProvinceFilter, setHotelProvinceFilter] = useState<string>('all');
+  // Room-type filter, applied after province — same "kept identical to
+  // JourneyBookingForm.tsx" note applies here.
+  const [hotelRoomTypeFilter, setHotelRoomTypeFilter] = useState<string>('all');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [attachmentWarning, setAttachmentWarning] = useState(false);
@@ -241,7 +274,12 @@ export function BookingForm({
   const currentStepKey = stepKeys[step - 1] ?? 'schedule';
 
   const selectedHotel = hotelOptions.find((p) => p.id === form.hotelPartnerId);
-  const selectedTransport = transportOptions.find((p) => p.id === form.transportPartnerId);
+  // Starting-price hint only, not a bound price — real transport price
+  // is quoted by the team after a partner/vehicle is assigned.
+  const transportStartingPrice =
+    form.transportVehicleType && form.transportVehicleType !== 'other'
+      ? transportVehiclePricing[form.transportVehicleType]
+      : undefined;
 
   // Distinct hotel provinces, normalized so alias spellings collapse
   // into one dropdown option — see src/lib/province.ts.
@@ -250,13 +288,42 @@ export function BookingForm({
     [hotelOptions]
   );
 
-  // hotelOptions narrowed by the province filter above — feeds hotelGroups.
+  // hotelOptions narrowed by the province filter above — feeds
+  // hotelRoomTypes/hotelOptionsFiltered below, not hotelGroups directly.
   const hotelOptionsInProvince = useMemo(() => {
     if (hotelProvinceFilter === 'all') return hotelOptions;
     return hotelOptions.filter(
       (pkg) => normalizeProvince((pkg.partners as { province?: string | null } | undefined)?.province) === hotelProvinceFilter
     );
   }, [hotelOptions, hotelProvinceFilter]);
+
+  // Distinct room types present within the current province filter.
+  // Known values (KNOWN_ROOM_TYPES) sort first in their fixed order;
+  // anything else (custom/legacy free text) follows alphabetically.
+  const hotelRoomTypes = useMemo(() => {
+    const present = new Set<string>();
+    for (const pkg of hotelOptionsInProvince) {
+      const v = (pkg.sub_category as string | null | undefined)?.trim();
+      if (v) present.add(v);
+    }
+    const known = KNOWN_ROOM_TYPES.filter((k) => present.has(k));
+    const custom = Array.from(present)
+      .filter((v) => !(KNOWN_ROOM_TYPES as readonly string[]).includes(v))
+      .sort((a, b) => a.localeCompare(b, 'th'));
+    return [...known, ...custom];
+  }, [hotelOptionsInProvince]);
+
+  // hotelOptionsInProvince narrowed further by the room-type filter —
+  // this is what actually feeds hotelGroups. Filtering by room type
+  // (not hotel identity) preserves the "which hotel/location/star
+  // rating" choice the doc analysis said matters most for hotels,
+  // unlike transport where the vehicle tier alone was enough.
+  const hotelOptionsFiltered = useMemo(() => {
+    if (hotelRoomTypeFilter === 'all') return hotelOptionsInProvince;
+    return hotelOptionsInProvince.filter(
+      (pkg) => ((pkg.sub_category as string | null | undefined)?.trim() || '') === hotelRoomTypeFilter
+    );
+  }, [hotelOptionsInProvince, hotelRoomTypeFilter]);
 
   // Group hotel room packages by their hotel (partner), so the picker
   // reads as "Hotel name -> room tiers" instead of one flat list of room
@@ -266,7 +333,7 @@ export function BookingForm({
   // silently disappears from the list.
   const hotelGroups = useMemo(() => {
     const groups = new Map<string, { label: string; options: Package[] }>();
-    for (const pkg of hotelOptionsInProvince) {
+    for (const pkg of hotelOptionsFiltered) {
       const partnerName = (pkg.partners as { name?: string } | undefined)?.name;
       const key = partnerName || pkg.partner_id;
       const label = partnerName || 'โรงแรม';
@@ -274,7 +341,7 @@ export function BookingForm({
       groups.get(key)!.options.push(pkg);
     }
     return Array.from(groups.values()).sort((a, b) => a.label.localeCompare(b.label, 'th'));
-  }, [hotelOptionsInProvince]);
+  }, [hotelOptionsFiltered]);
 
   const hotelNights = useMemo(
     () => calcNights(form.hotelCheckinDate, form.hotelCheckoutDate),
@@ -286,24 +353,12 @@ export function BookingForm({
     const hotel = form.needHotel
       ? packagePrice(selectedHotel) * hotelNights * (form.roomQuantity || 1)
       : 0;
-    const transport =
-      form.needTransport && form.transportMode === 'daily'
-        ? packagePrice(selectedTransport) * (form.transportDays || 1)
-        : form.needTransport
-          ? packagePrice(selectedTransport)
-          : 0;
-    return { main, hotel, transport, total: main + hotel + transport };
-  }, [
-    pkg,
-    form.needHotel,
-    hotelNights,
-    form.roomQuantity,
-    form.needTransport,
-    form.transportMode,
-    form.transportDays,
-    selectedHotel,
-    selectedTransport,
-  ]);
+    // Transport has no bound price at booking time anymore (no partner
+    // picker) — deliberately excluded from `total`; the team quotes it
+    // after assignment. See transportStartingPrice for the display-only
+    // hint shown during the transport step.
+    return { main, hotel, total: main + hotel };
+  }, [pkg, form.needHotel, hotelNights, form.roomQuantity, selectedHotel]);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -414,9 +469,9 @@ export function BookingForm({
 
       if (form.needTransport) {
         items.push({
-          ...(form.transportPartnerId
-            ? { package_id: form.transportPartnerId }
-            : { service_type: 'transport' as const }),
+          // No partner picker anymore — transport is always
+          // "let team decide" (see migration 081 / vehicleType hint).
+          service_type: 'transport' as const,
           quantity: form.transportMode === 'daily' ? form.transportDays || 1 : 1,
           scheduled_date: form.transportPickupDate || null,
           scheduled_time: form.transportPickupTime || null,
@@ -637,6 +692,11 @@ export function BookingForm({
                 onChange={(e) => update('transportVehicleTypeDetail', e.target.value)}
               />
             ) : null}
+            {transportStartingPrice ? (
+              <p className="mt-2 text-xs text-slate-500">
+                {t('fields.vehicleTypeStartingFrom', { price: formatTHB(transportStartingPrice) })}
+              </p>
+            ) : null}
           </div>
           <div>
             <label className="form-label">{t('fields.passengerCount')} *</label>
@@ -649,18 +709,6 @@ export function BookingForm({
             />
           </div>
 
-          <select
-            className="form-input"
-            value={form.transportPartnerId}
-            onChange={(e) => update('transportPartnerId', e.target.value)}
-          >
-            <option value="">{t('fields.letTeamDecide')}</option>
-            {transportOptions.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.title as string}
-              </option>
-            ))}
-          </select>
           <select
             className="form-input"
             value={form.transportMode}
@@ -798,6 +846,10 @@ export function BookingForm({
               onChange={(e) => {
                 const nextProvince = e.target.value;
                 setHotelProvinceFilter(nextProvince);
+                // Room type filter is scoped to the province choice — reset
+                // it so the customer doesn't get stuck on a value that no
+                // longer applies (or silently filters everything out).
+                setHotelRoomTypeFilter('all');
                 // If the currently-picked hotel package falls outside the
                 // newly chosen province, clear it — otherwise the review
                 // step could show a hotel that no longer matches the
@@ -817,6 +869,34 @@ export function BookingForm({
               {hotelProvinces.map((prov) => (
                 <option key={prov} value={prov}>
                   {prov}
+                </option>
+              ))}
+            </select>
+          ) : null}
+
+          {hotelRoomTypes.length > 1 ? (
+            <select
+              className="form-input"
+              aria-label={t('fields.filterByRoomType')}
+              value={hotelRoomTypeFilter}
+              onChange={(e) => {
+                const nextRoomType = e.target.value;
+                setHotelRoomTypeFilter(nextRoomType);
+                // Same reset reasoning as the province filter above — don't
+                // leave a now-out-of-scope hotel selected in the review step.
+                if (nextRoomType !== 'all' && form.hotelPartnerId) {
+                  const current = hotelOptions.find((p) => p.id === form.hotelPartnerId);
+                  const currentRoomType = (current?.sub_category as string | null | undefined)?.trim() || '';
+                  if (currentRoomType !== nextRoomType) {
+                    update('hotelPartnerId', '');
+                  }
+                }
+              }}
+            >
+              <option value="all">{t('fields.allRoomTypes')}</option>
+              {hotelRoomTypes.map((rt) => (
+                <option key={rt} value={rt}>
+                  {roomTypeLabel(rt, t)}
                 </option>
               ))}
             </select>
@@ -972,9 +1052,7 @@ export function BookingForm({
             {form.needTransport ? (
               <div className="flex justify-between text-slate-600">
                 <span>🚗 {t('summary.transport')}</span>
-                <span className="font-medium text-slate-800">
-                  {formatTHB(priceBreakdown.transport)}
-                </span>
+                <span className="font-medium text-slate-800">{t('summary.teamWillQuote')}</span>
               </div>
             ) : null}
             <div className="mt-1 flex justify-between border-t border-primary/20 pt-2 text-base font-bold text-slate-900">
@@ -982,6 +1060,9 @@ export function BookingForm({
               <span>{formatTHB(priceBreakdown.total)}</span>
             </div>
             <p className="pt-1 text-xs text-slate-400">{t('summary.disclaimer')}</p>
+            {form.needTransport ? (
+              <p className="text-xs text-slate-400">{t('summary.pendingQuoteNote')}</p>
+            ) : null}
           </div>
 
           <div className="space-y-1 rounded-xl border border-slate-100 px-4 py-3 text-sm text-slate-600">

@@ -346,10 +346,18 @@
       "vehicleTypeVipVan": "🚐 VIP Van",
       "vehicleTypeMedicalTransport": "🚑 ລົດພະຍາບານ/ລົດສົ່ງຕໍ່ຄົນເຈັບ",
       "vehicleTypeOtherPlaceholder": "ລະບຸປະເພດລົດ",
+      "vehicleTypeStartingFrom": "ເລີ່ມຕົ້ນ {price}",
       "passengerCount": "ຈຳນວນຜູ້ໂດຍສານ",
       "medicalAssistance": "🚑 ບໍລິການຊ່ວຍເຫຼືອທາງການແພດ",
       "filterByProvince": "ກັ່ນຕອງຕາມແຂວງ",
-      "allProvinces": "ທຸກແຂວງ"
+      "allProvinces": "ທຸກແຂວງ",
+      "filterByRoomType": "ກັ່ນຕອງຕາມປະເພດຫ້ອງ",
+      "allRoomTypes": "ທຸກປະເພດຫ້ອງ",
+      "roomTypeSingle": "ຫ້ອງດ່ຽວ (Single)",
+      "roomTypeDouble": "ຕຽງໃຫຍ່ 2 ທ່ານ (Double)",
+      "roomTypeTwin": "ຕຽງຄູ່ 2 ທ່ານ (Twin)",
+      "roomTypeDeluxe": "ຫ້ອງດີລັກ (Deluxe)",
+      "roomTypeSuite": "ຫ້ອງສະວີດ (Suite)"
     },
     "summary": {
       "main": "ໂປຣແກຣມຫຼັກ",
@@ -974,6 +982,7 @@
     "waitingAssignmentBadge": "ລໍຖ້າທີມຈັດໃຫ້",
     "hotelStayLabel": "ເຂົ້າພັກ {checkin} ຫາ {checkout}",
     "roomsLabel": "{count} ຫ້ອງ",
+    "itemPriceLabel": "ລາຄາ: {amount}",
     "dailyLabel": "ເໝົາລາຍວັນ · {count} ວັນ · ເລີ່ມ {time}",
     "roundTripLabel": "ໄປ-ກັບ · ຮັບ {pickup} · ສົ່ງກັບ {dropoff}",
     "oneWayLabel": "ໄປທາງດຽວ · ຮັບ {pickup}",
@@ -1377,5 +1386,33 @@
         ]
       }
     ]
+  },
+  "tripJourney": {
+    "greeting": "ສະບາຍດີ ທ່ານ {name}",
+    "greetingGeneric": "ທິບຂອງທ່ານ",
+    "companion": "ຜູ້ຮ່ວມເດີນທາງ",
+    "itineraryHeading": "ກຳນົດການເດີນທາງ",
+    "noEventsYet": "ຍັງບໍ່ມີກຳນົດການໃນທິບນີ້",
+    "tripStatus": {
+      "planned": "ວາງແຜນໄວ້",
+      "in_progress": "ກຳລັງເດີນທາງ",
+      "completed": "ສຳເລັດແລ້ວ",
+      "cancelled": "ຍົກເລີກ"
+    },
+    "eventStatus": {
+      "pending": "ລໍຖ້າດຳເນີນການ",
+      "confirmed": "ຢືນຢັນແລ້ວ",
+      "in_progress": "ກຳລັງດຳເນີນການ",
+      "completed": "ສຳເລັດແລ້ວ",
+      "cancelled": "ຍົກເລີກ"
+    },
+    "error": {
+      "not_found": "ບໍ່ພົບຂໍ້ມູນທິບນີ້ ລິ້ງອາດບໍ່ຖືກຕ້ອງ ກະລຸນາຕິດຕໍ່ທີມງານ",
+      "link_revoked": "ລິ້ງນີ້ຖືກຖອນແລ້ວ ກະລຸນາຕິດຕໍ່ທີມງານເພື່ອຂໍລິ້ງໃໝ່",
+      "link_expired": "ລິ້ງນີ້ໝົດອາຍຸແລ້ວ ກະລຸນາຕິດຕໍ່ທີມງານເພື່ອຂໍລິ້ງໃໝ່",
+      "unknown": "ໂຫຼດຂໍ້ມູນບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່ອີກຄັ້ງ"
+    },
+    "whatsappCta": "💬 ສົນທະນາກັບ WOS ຜ່ານ WhatsApp",
+    "contactLine": "ມີຄຳຖາມ? ຕິດຕໍ່ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
   }
 }

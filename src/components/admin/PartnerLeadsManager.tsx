@@ -85,7 +85,9 @@ function toWhatsAppNumber(phone: string | null) {
 }
 
 export function PartnerLeadsManager() {
-  const supabase = createClient();
+  // See PartnersManager.tsx's comment — must match AdminGate's 'sb-wos-admin'
+  // cookie or writes here fail RLS as an unauthenticated request.
+  const supabase = createClient('admin');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);

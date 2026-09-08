@@ -54,7 +54,7 @@ export function TimePicker({ value, onChange, minuteStep = 5, className }: TimeP
   return (
     <div className={`grid grid-cols-2 gap-2 ${className ?? ''}`}>
       <select
-        className="form-input"
+        className="form-input px-2"
         aria-label={t('fields.hour')}
         value={h}
         onChange={(e) => {
@@ -71,7 +71,7 @@ export function TimePicker({ value, onChange, minuteStep = 5, className }: TimeP
         ))}
       </select>
       <select
-        className="form-input"
+        className="form-input px-2"
         aria-label={t('fields.minute')}
         value={min}
         onChange={(e) => {

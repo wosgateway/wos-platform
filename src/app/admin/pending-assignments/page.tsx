@@ -5,13 +5,9 @@
 // Minimal admin screen for resolving "let team decide" order_items
 // (needs_assignment = true — see migration 013/014). Lists every
 // pending row with its order/customer context, and lets an admin
-// type a package_id + quantity to assign.
-//
-// This intentionally does NOT include a package picker (autocomplete
-// searching `packages` by title/partner) — that's a nice-to-have on
-// top of this, not required for the flow to work. Swap the raw
-// package_id input for a proper picker whenever you're ready; the
-// PATCH call underneath doesn't change.
+// search a partner then pick one of that partner's packages
+// (PackagePickerCombobox — same two-step picker BookingsManager uses
+// for reassignment) plus a quantity, to assign.
 //
 // Assumes this route already sits behind your existing admin
 // layout/auth guard (e.g. an app/admin/layout.tsx that redirects
@@ -21,6 +17,7 @@
 // missing.
 
 import { useEffect, useState } from 'react';
+import { PackagePickerCombobox } from '@/components/admin/PackagePickerCombobox';
 
 interface PendingItem {
   id: string;
@@ -45,9 +42,9 @@ export default function PendingAssignmentsPage() {
   const [items, setItems] = useState<PendingItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, { package_id: string; quantity: string }>>(
-    {}
-  );
+  const [drafts, setDrafts] = useState<
+    Record<string, { package_id: string; package_label: string; quantity: string }>
+  >({});
 
   async function load() {
     setError(null);
@@ -65,12 +62,29 @@ export default function PendingAssignmentsPage() {
     load();
   }, []);
 
+  const emptyDraft = { package_id: '', package_label: '', quantity: '1' };
+
   function draftFor(id: string) {
-    return drafts[id] ?? { package_id: '', quantity: '1' };
+    return drafts[id] ?? emptyDraft;
   }
 
-  function updateDraft(id: string, field: 'package_id' | 'quantity', value: string) {
-    setDrafts((prev) => ({ ...prev, [id]: { ...draftFor(id), [field]: value } }));
+  // Merges one or more field updates into a draft atomically off
+  // `prev` (the up-to-date state inside the functional updater), not
+  // off draftFor(id)/the outer `drafts` closure. Two updateDraft
+  // calls fired back-to-back in the same handler (see onSelect below)
+  // both get batched by React into the same render — reading the
+  // outer `drafts` in either updater sees the SAME stale snapshot,
+  // so the second call's spread silently overwrites whatever the
+  // first call just set. Reading off `prev` instead means each
+  // updater sees the previous one's result.
+  function updateDraft(
+    id: string,
+    fields: Partial<{ package_id: string; package_label: string; quantity: string }>
+  ) {
+    setDrafts((prev) => ({
+      ...prev,
+      [id]: { ...(prev[id] ?? emptyDraft), ...fields },
+    }));
   }
 
   async function assign(item: PendingItem) {
@@ -163,16 +177,21 @@ export default function PendingAssignmentsPage() {
                 </div>
 
                 <div className="flex flex-wrap items-end gap-3">
-                  <div>
+                  <div className="w-80">
                     <label className="mb-1 block text-xs font-medium text-slate-500">
-                      package_id ({item.service_type})
+                      package ({item.service_type})
                     </label>
-                    <input
-                      type="text"
-                      className="form-input w-80"
-                      placeholder="paste the packages.id UUID"
-                      value={draft.package_id}
-                      onChange={(e) => updateDraft(item.id, 'package_id', e.target.value)}
+                    <PackagePickerCombobox
+                      category={item.service_type === 'hotel' ? 'Hotel' : 'Transport'}
+                      disabled={assigning === item.id}
+                      selectedLabel={draft.package_label}
+                      onSelect={(packageId, packageLabel) =>
+                        updateDraft(item.id, {
+                          package_id: packageId,
+                          package_label: packageLabel ?? packageId,
+                        })
+                      }
+                      placeholder="-- ค้นหาร้าน แล้วเลือกแพ็กเกจ --"
                     />
                   </div>
                   <div>
@@ -184,7 +203,7 @@ export default function PendingAssignmentsPage() {
                       min={1}
                       className="form-input w-24"
                       value={draft.quantity}
-                      onChange={(e) => updateDraft(item.id, 'quantity', e.target.value)}
+                      onChange={(e) => updateDraft(item.id, { quantity: e.target.value })}
                     />
                   </div>
                   <button

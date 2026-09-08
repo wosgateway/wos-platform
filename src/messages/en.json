@@ -346,10 +346,18 @@
       "vehicleTypeVipVan": "🚐 VIP Van",
       "vehicleTypeMedicalTransport": "🚑 Medical transport",
       "vehicleTypeOtherPlaceholder": "Enter vehicle type",
+      "vehicleTypeStartingFrom": "Starting from {price}",
       "passengerCount": "Number of passengers",
       "medicalAssistance": "🚑 Medical assistance transport",
       "filterByProvince": "Filter by province",
-      "allProvinces": "All provinces"
+      "allProvinces": "All provinces",
+      "filterByRoomType": "Filter by room type",
+      "allRoomTypes": "All room types",
+      "roomTypeSingle": "Single room",
+      "roomTypeDouble": "Double room",
+      "roomTypeTwin": "Twin room",
+      "roomTypeDeluxe": "Deluxe room",
+      "roomTypeSuite": "Suite"
     },
     "summary": {
       "main": "Main program",
@@ -974,6 +982,7 @@
     "waitingAssignmentBadge": "Awaiting team assignment",
     "hotelStayLabel": "Stay {checkin} to {checkout}",
     "roomsLabel": "{count} room(s)",
+    "itemPriceLabel": "Price: {amount}",
     "dailyLabel": "Full-day charter · {count} day(s) · starts {time}",
     "roundTripLabel": "Round trip · pickup {pickup} · return {dropoff}",
     "oneWayLabel": "One way · pickup {pickup}",
@@ -1377,5 +1386,33 @@
         ]
       }
     ]
+  },
+  "tripJourney": {
+    "greeting": "Hello, {name}",
+    "greetingGeneric": "Your trip",
+    "companion": "Travel companion",
+    "itineraryHeading": "Trip itinerary",
+    "noEventsYet": "No events scheduled yet for this trip",
+    "tripStatus": {
+      "planned": "Planned",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "eventStatus": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "error": {
+      "not_found": "We couldn't find this trip. The link may be incorrect — please contact our team.",
+      "link_revoked": "This link has been revoked. Please contact our team for a new one.",
+      "link_expired": "This link has expired. Please contact our team for a new one.",
+      "unknown": "Something went wrong loading your trip. Please try again."
+    },
+    "whatsappCta": "💬 Chat with WOS on WhatsApp",
+    "contactLine": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
   }
 }

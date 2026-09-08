@@ -29,6 +29,12 @@ export interface Package {
   // สวิตช์เปิด/ปิดการแสดงผลของแอดมิน — แยกจาก status เพื่อให้แอดมินระงับ
   // การแสดงบนหน้าเว็บชั่วคราวได้โดยไม่ต้องรีเซ็ตสถานะอนุมัติ (ดู migration_add_package_is_active.sql)
   is_active: boolean;
+  // Free-text, scoped per partners.category — see migration 082. For
+  // Hotel packages this holds the room type (single/double/twin/deluxe/
+  // suite/other) picked from a fixed dropdown in PackagesManager.tsx;
+  // used to filter the hotel step in BookingForm.tsx/JourneyBookingForm.tsx.
+  // NULL/unused for every other category.
+  sub_category?: string | null;
   submitted_by: string | null;
   created_at: string;
   // ข้อมูลแนะนำที่พักตอนเบราส์ดูโปรแกรม — ไม่ใช่ราคาผูกมัด
@@ -142,4 +148,25 @@ export async function fetchPackagesByCategory(dbCategories: string[]): Promise<P
     .order('title', { ascending: true });
   if (error) throw error;
   return data ?? [];
+}
+
+// Starting-price hint for the transport booking step (migration 081) —
+// replaces the old per-partner package dropdown, which didn't scale
+// past a handful of transport partners and leaked partner names the
+// cross-border customer had no way to evaluate anyway (see decision:
+// vehicleType, chosen earlier in the flow, already acts as the
+// price tier). Returns vehicle_type -> starting_price; a vehicle type
+// with no row (or a 0 price) just means "no hint shown" in the UI.
+export async function fetchTransportVehiclePricing(): Promise<Record<string, number>> {
+  const supabase = createAnonClient();
+  const { data, error } = await supabase
+    .from('transport_vehicle_pricing')
+    .select('vehicle_type, starting_price')
+    .eq('is_active', true);
+  if (error) throw error;
+  const map: Record<string, number> = {};
+  for (const row of data ?? []) {
+    map[row.vehicle_type as string] = Number(row.starting_price ?? 0);
+  }
+  return map;
 }

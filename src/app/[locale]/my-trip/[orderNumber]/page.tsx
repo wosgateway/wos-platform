@@ -401,6 +401,17 @@ export default function MyTripPage() {
                       {item.scheduled_date} {item.scheduled_time || ''}
                     </div>
                   ) : null}
+                  {/* Per-item price — was fetched (item.price) but
+                      never rendered here before; only the order-level
+                      total/deposit/balance summary showed below.
+                      Customers had no way to see what each hotel/
+                      transport line actually cost. null when the item
+                      still needs_assignment (no package matched yet). */}
+                  {item.price !== null ? (
+                    <div className="mt-1 text-xs font-semibold text-slate-700">
+                      {t('itemPriceLabel', { amount: formatMoney(item.price, order.currency) })}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             );

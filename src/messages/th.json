@@ -325,10 +325,18 @@
       "vehicleTypeVipVan": "🚐 VIP Van",
       "vehicleTypeMedicalTransport": "🚑 รถพยาบาล/รถส่งต่อผู้ป่วย",
       "vehicleTypeOtherPlaceholder": "ระบุประเภทรถ",
+      "vehicleTypeStartingFrom": "เริ่มต้น {price}",
       "passengerCount": "จำนวนผู้โดยสาร",
       "medicalAssistance": "🚑 บริการช่วยเหลือทางการแพทย์",
       "filterByProvince": "กรองตามจังหวัด",
-      "allProvinces": "ทุกจังหวัด"
+      "allProvinces": "ทุกจังหวัด",
+      "filterByRoomType": "กรองตามประเภทห้อง",
+      "allRoomTypes": "ทุกประเภทห้อง",
+      "roomTypeSingle": "ห้องเดี่ยว (Single)",
+      "roomTypeDouble": "เตียงใหญ่ 2 ท่าน (Double)",
+      "roomTypeTwin": "เตียงคู่ 2 ท่าน (Twin)",
+      "roomTypeDeluxe": "ห้องดีลักซ์ (Deluxe)",
+      "roomTypeSuite": "ห้องสวีท (Suite)"
     },
     "summary": {
       "main": "โปรแกรมหลัก",
@@ -953,6 +961,7 @@
     "waitingAssignmentBadge": "รอทีมงานจัดให้",
     "hotelStayLabel": "เข้าพัก {checkin} ถึง {checkout}",
     "roomsLabel": "{count} ห้อง",
+    "itemPriceLabel": "ราคา: {amount}",
     "dailyLabel": "เหมารายวัน · {count} วัน · เริ่ม {time}",
     "roundTripLabel": "ไป-กลับ · รับ {pickup} · ส่งกลับ {dropoff}",
     "oneWayLabel": "เที่ยวเดียว · รับ {pickup}",
@@ -1356,5 +1365,33 @@
         ]
       }
     ]
+  },
+  "tripJourney": {
+    "greeting": "สวัสดีคุณ {name}",
+    "greetingGeneric": "ทริปของคุณ",
+    "companion": "ผู้ร่วมเดินทาง",
+    "itineraryHeading": "กำหนดการเดินทาง",
+    "noEventsYet": "ยังไม่มีกำหนดการในทริปนี้",
+    "tripStatus": {
+      "planned": "วางแผนไว้",
+      "in_progress": "กำลังเดินทาง",
+      "completed": "เสร็จสิ้น",
+      "cancelled": "ยกเลิก"
+    },
+    "eventStatus": {
+      "pending": "รอดำเนินการ",
+      "confirmed": "ยืนยันแล้ว",
+      "in_progress": "กำลังดำเนินการ",
+      "completed": "เสร็จสิ้น",
+      "cancelled": "ยกเลิก"
+    },
+    "error": {
+      "not_found": "ไม่พบข้อมูลทริปนี้ ลิงก์อาจไม่ถูกต้อง กรุณาติดต่อทีมงาน",
+      "link_revoked": "ลิงก์นี้ถูกเพิกถอนแล้ว กรุณาติดต่อทีมงานเพื่อขอลิงก์ใหม่",
+      "link_expired": "ลิงก์นี้หมดอายุแล้ว กรุณาติดต่อทีมงานเพื่อขอลิงก์ใหม่",
+      "unknown": "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"
+    },
+    "whatsappCta": "💬 แชทกับ WOS ทาง WhatsApp",
+    "contactLine": "มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
   }
 }
