@@ -46,6 +46,7 @@ import {
 } from 'lucide-react';
 
 const PUBLIC_TRIP_PATH = '/th/my-trip/token'; // see note above — page not live yet
+const PARTNER_TRIP_PATH = '/th/partner-trip'; // matches src/app/[locale]/partner-trip/[token]/page.tsx
 
 type TripStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
 type EventType =
@@ -130,6 +131,15 @@ interface Trip {
 interface PartnerOption {
   id: string;
   name: string;
+}
+
+interface PartnerLink {
+  id: string;
+  partner_id: string;
+  access_token: string;
+  token_revoked_at: string | null;
+  token_expires_at: string | null;
+  partners: { id: string; name: string } | null;
 }
 
 const STATUS_LABEL: Record<TripStatus, string> = {
@@ -310,6 +320,11 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
   const [showImportSheet, setShowImportSheet] = useState(false);
   const [tokenBusy, setTokenBusy] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [partnerLinks, setPartnerLinks] = useState<PartnerLink[]>([]);
+  const [partnerLinksError, setPartnerLinksError] = useState<string | null>(null);
+  const [partnerLinkBusyId, setPartnerLinkBusyId] = useState<string | null>(null);
+  const [copiedPartnerLinkId, setCopiedPartnerLinkId] = useState<string | null>(null);
+  const [addPartnerLinkId, setAddPartnerLinkId] = useState('');
 
   async function load() {
     setError(null);
@@ -323,8 +338,21 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
     }
   }
 
+  async function loadPartnerLinks() {
+    setPartnerLinksError(null);
+    try {
+      const res = await fetch(`/api/trips/${tripId}/partner-links`, { cache: 'no-store' });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result?.error ?? 'failed to load');
+      setPartnerLinks(result.links ?? []);
+    } catch (e) {
+      setPartnerLinksError(e instanceof Error ? e.message : 'failed to load');
+    }
+  }
+
   useEffect(() => {
     load();
+    loadPartnerLinks();
     // partners list — RLS allows authenticated admin read directly (same
     // pattern as PartnersManager.tsx), so no dedicated API route needed.
     const supabase = createClient();
@@ -368,6 +396,34 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
     await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function handlePartnerLinkAction(partnerId: string, action: 'reissue' | 'revoke') {
+    setPartnerLinkBusyId(partnerId);
+    try {
+      const res = await fetch(`/api/trips/${tripId}/partner-links`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partnerId, action, expires_in_days: 30 }),
+      });
+      if (!res.ok) {
+        const result = await res.json().catch(() => null);
+        throw new Error(result?.error ?? 'partner link action failed');
+      }
+      if (action === 'reissue') setAddPartnerLinkId('');
+      await loadPartnerLinks();
+    } catch (e) {
+      setPartnerLinksError(e instanceof Error ? e.message : 'partner link action failed');
+    } finally {
+      setPartnerLinkBusyId(null);
+    }
+  }
+
+  async function handleCopyPartnerLink(link: PartnerLink) {
+    const url = `${window.location.origin}${PARTNER_TRIP_PATH}/${link.access_token}`;
+    await navigator.clipboard.writeText(url);
+    setCopiedPartnerLinkId(link.id);
+    setTimeout(() => setCopiedPartnerLinkId((cur) => (cur === link.id ? null : cur)), 2000);
   }
 
   if (error) {
@@ -531,6 +587,118 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
         </div>
       </div>
 
+      {/* Partner link cards — one token per (trip, partner), see
+          088_trip_partner_links.sql. Separate from the customer link
+          above: each partner only ever sees their own events. */}
+      <div className="card-shadow mb-5 rounded-2xl border border-slate-100 bg-white p-4">
+        <div className="mb-3 flex items-center gap-2">
+          <Link2 className="h-4 w-4 text-slate-400" />
+          <h2 className="text-sm font-semibold text-slate-900">ลิงก์สำหรับพาร์ทเนอร์</h2>
+        </div>
+
+        {partnerLinksError ? (
+          <p className="mb-3 text-xs text-rose-600">
+            โหลดลิงก์พาร์ทเนอร์ไม่สำเร็จ: {partnerLinksError}{' '}
+            <button onClick={loadPartnerLinks} className="underline">
+              ลองใหม่
+            </button>
+          </p>
+        ) : null}
+
+        {partnerLinks.length === 0 ? (
+          <p className="mb-3 text-xs text-slate-400">ยังไม่มีลิงก์สำหรับพาร์ทเนอร์รายใด</p>
+        ) : (
+          <div className="mb-3 space-y-2">
+            {partnerLinks.map((link) => {
+              const state: 'active' | 'revoked' | 'expired' = link.token_revoked_at
+                ? 'revoked'
+                : link.token_expires_at && new Date(link.token_expires_at) < new Date()
+                ? 'expired'
+                : 'active';
+              const busy = partnerLinkBusyId === link.partner_id;
+              return (
+                <div key={link.id} className="rounded-xl border border-slate-100 p-3">
+                  <div className="mb-2 flex items-center gap-2">
+                    <Building2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="truncate text-sm font-medium text-slate-800">
+                      {link.partners?.name ?? 'พาร์ทเนอร์ที่ถูกลบ'}
+                    </span>
+                    <span
+                      className={`ml-auto shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                        state === 'active'
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-rose-100 text-rose-700'
+                      }`}
+                    >
+                      {state === 'active' ? 'ใช้งานได้' : state === 'revoked' ? 'ถูกเพิกถอน' : 'หมดอายุ'}
+                    </span>
+                  </div>
+                  {state === 'active' && link.token_expires_at ? (
+                    <p className="mb-2 text-[11px] text-slate-400">
+                      หมดอายุ {formatShortDate(link.token_expires_at)}
+                    </p>
+                  ) : null}
+                  <div className="flex gap-2">
+                    {state === 'active' ? (
+                      <>
+                        <button
+                          onClick={() => handleCopyPartnerLink(link)}
+                          className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          {copiedPartnerLinkId === link.id ? 'คัดลอกแล้ว' : 'คัดลอกลิงก์'}
+                        </button>
+                        <button
+                          onClick={() => handlePartnerLinkAction(link.partner_id, 'revoke')}
+                          disabled={busy}
+                          className="flex items-center justify-center gap-1.5 rounded-lg border border-rose-200 px-3 py-1.5 text-xs font-medium text-rose-600 disabled:opacity-50"
+                        >
+                          <Ban className="h-3.5 w-3.5" />
+                          เพิกถอน
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        onClick={() => handlePartnerLinkAction(link.partner_id, 'reissue')}
+                        disabled={busy}
+                        className="flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5" />
+                        {busy ? 'กำลังสร้าง...' : 'ออกลิงก์ใหม่'}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="flex gap-2">
+          <select
+            value={addPartnerLinkId}
+            onChange={(e) => setAddPartnerLinkId(e.target.value)}
+            className="form-input flex-1 text-xs"
+          >
+            <option value="">เลือกพาร์ทเนอร์เพื่อออกลิงก์...</option>
+            {partners
+              .filter((p) => !partnerLinks.some((l) => l.partner_id === p.id))
+              .map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+          </select>
+          <button
+            onClick={() => addPartnerLinkId && handlePartnerLinkAction(addPartnerLinkId, 'reissue')}
+            disabled={!addPartnerLinkId || partnerLinkBusyId === addPartnerLinkId}
+            className="shrink-0 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50"
+          >
+            ออกลิงก์
+          </button>
+        </div>
+      </div>
+
       {/* Timeline */}
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-900">กำหนดการ</h2>
@@ -653,6 +821,8 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
           tripId={tripId}
           partners={partners}
           initial={eventModal.mode === 'edit' ? eventModal.event : null}
+          customerName={trip.customers?.full_name}
+          customerPhone={trip.customers?.phone}
           onClose={() => setEventModal(null)}
           onSaved={() => {
             setEventModal(null);
@@ -988,12 +1158,21 @@ function EventSheet({
   tripId,
   partners,
   initial,
+  customerName,
+  customerPhone,
   onClose,
   onSaved,
 }: {
   tripId: string;
   partners: PartnerOption[];
   initial: TripEvent | null;
+  // Trip's actual customer (trip.customers.full_name/.phone) — used only to
+  // default contact_name/contact_phone on a brand-new event, so the admin
+  // isn't typing/pasting it by hand next to the driver-phone fields below
+  // (that's how a driver's number has ended up in a customer contact field
+  // before). Never overrides an existing event's saved values.
+  customerName?: string | null;
+  customerPhone?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }) {
@@ -1005,8 +1184,8 @@ function EventSheet({
   const [endTime, setEndTime] = useState(initial?.end_time?.slice(0, 5) ?? '');
   const [location, setLocation] = useState(initial?.location ?? '');
   const [partnerId, setPartnerId] = useState(initial?.partner_id ?? '');
-  const [contactName, setContactName] = useState(initial?.contact_name ?? '');
-  const [contactPhone, setContactPhone] = useState(initial?.contact_phone ?? '');
+  const [contactName, setContactName] = useState(initial?.contact_name ?? (initial ? '' : customerName ?? ''));
+  const [contactPhone, setContactPhone] = useState(initial?.contact_phone ?? (initial ? '' : customerPhone ?? ''));
   const [notes, setNotes] = useState(initial?.notes ?? '');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1525,12 +1704,15 @@ function EventSheet({
 
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">ผู้ติดต่อ</label>
+              <label className="mb-1 block text-xs font-medium text-slate-500">ผู้ติดต่อ (ลูกค้า)</label>
               <input value={contactName} onChange={(e) => setContactName(e.target.value)} className="form-input" />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">เบอร์โทรผู้ติดต่อ</label>
+              <label className="mb-1 block text-xs font-medium text-slate-500">เบอร์โทรผู้ติดต่อ (ลูกค้า)</label>
               <input value={contactPhone} onChange={(e) => setContactPhone(e.target.value)} className="form-input" />
+              <p className="mt-1 text-[11px] text-slate-400">
+                เบอร์ของลูกค้าเอง ไม่ใช่เบอร์คนขับ/พาร์ทเนอร์ — partner รถจะเห็นเบอร์นี้เพื่อโทรนัดรับ
+              </p>
             </div>
           </div>
 

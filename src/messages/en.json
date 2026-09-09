@@ -325,7 +325,7 @@
       "returnSectionTitle": "Return trip",
       "name": "Full name",
       "phone": "Phone number",
-      "line": "Line ID",
+      "line": "LINE / WhatsApp",
       "country": "Current country of residence",
       "select": "-- Select --",
       "other": "Other",
@@ -1414,5 +1414,32 @@
     },
     "whatsappCta": "💬 Chat with WOS on WhatsApp",
     "contactLine": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
+  },
+  "partnerTripJourney": {
+    "heading": "Your assigned schedule",
+    "scheduleHeading": "Schedule",
+    "noEventsYet": "No events assigned to you yet for this trip",
+    "tripStatus": {
+      "planned": "Planned",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "eventStatus": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "error": {
+      "not_found": "We couldn't find this. The link may be incorrect — please contact our team.",
+      "link_revoked": "This link has been revoked. Please contact our team for a new one.",
+      "link_expired": "This link has expired. Please contact our team for a new one.",
+      "unknown": "Something went wrong loading this. Please try again."
+    },
+    "whatsappCta": "💬 Chat with WOS on WhatsApp",
+    "contactLine": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
+    "customerContact": "Customer contact"
   }
 }

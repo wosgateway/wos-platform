@@ -304,7 +304,7 @@
       "returnSectionTitle": "เที่ยวกลับ",
       "name": "ชื่อ-นามสกุล",
       "phone": "เบอร์โทรศัพท์",
-      "line": "Line ID",
+      "line": "LINE / WhatsApp",
       "country": "ประเทศที่อยู่อาศัยปัจจุบัน",
       "select": "-- เลือก / ເລືອກ / Select --",
       "other": "อื่นๆ",
@@ -1393,5 +1393,32 @@
     },
     "whatsappCta": "💬 แชทกับ WOS ทาง WhatsApp",
     "contactLine": "มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
+  },
+  "partnerTripJourney": {
+    "heading": "กำหนดการที่คุณรับผิดชอบ",
+    "scheduleHeading": "กำหนดการ",
+    "noEventsYet": "ยังไม่มีกำหนดการสำหรับคุณในทริปนี้",
+    "tripStatus": {
+      "planned": "วางแผนไว้",
+      "in_progress": "กำลังเดินทาง",
+      "completed": "เสร็จสิ้น",
+      "cancelled": "ยกเลิก"
+    },
+    "eventStatus": {
+      "pending": "รอดำเนินการ",
+      "confirmed": "ยืนยันแล้ว",
+      "in_progress": "กำลังดำเนินการ",
+      "completed": "เสร็จสิ้น",
+      "cancelled": "ยกเลิก"
+    },
+    "error": {
+      "not_found": "ไม่พบข้อมูลนี้ ลิงก์อาจไม่ถูกต้อง กรุณาติดต่อทีมงาน",
+      "link_revoked": "ลิงก์นี้ถูกเพิกถอนแล้ว กรุณาติดต่อทีมงานเพื่อขอลิงก์ใหม่",
+      "link_expired": "ลิงก์นี้หมดอายุแล้ว กรุณาติดต่อทีมงานเพื่อขอลิงก์ใหม่",
+      "unknown": "โหลดข้อมูลไม่สำเร็จ กรุณาลองใหม่อีกครั้ง"
+    },
+    "whatsappCta": "💬 แชทกับ WOS ทาง WhatsApp",
+    "contactLine": "มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
+    "customerContact": "ผู้ติดต่อลูกค้า"
   }
 }
