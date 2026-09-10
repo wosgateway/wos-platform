@@ -47,8 +47,8 @@ interface LogoPartner {
 // the perceived speed (px/sec) stays roughly constant regardless of
 // list length. Feel free to tweak SECONDS_PER_LOGO to speed up/slow
 // down the "ค่อยๆเลื่อน" pace.
-const SECONDS_PER_LOGO = 4;
-const MIN_LOOP_SECONDS = 20;
+const SECONDS_PER_LOGO = 8;
+const MIN_LOOP_SECONDS = 40;
 
 export function PartnerLogos() {
   const t = useTranslations('home.partners');
