@@ -1184,7 +1184,7 @@ export function PartnersManager() {
             <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
               <label className="form-label">โลโก้ (สำหรับแถบเลื่อนหน้าแรก)</label>
               <p className="mb-2 text-xs text-slate-400">
-                ใช้ไฟล์ PNG/SVG พื้นหลังโปร่งใส แนะนำขนาด 400×160px (หรือสัดส่วนใกล้เคียง) จะเลื่อนได้สวยที่สุด — ดูรายละเอียดขนาดเพิ่มเติมได้ที่ PartnerLogos.tsx
+                ใช้ไฟล์ PNG/SVG พื้นหลังโปร่งใส แนะนำขนาด 320×320px (สี่เหลี่ยมจัตุรัส) จะอยู่ในกรอบการ์ดหน้าแรกได้สวยที่สุด — อัปโหลดแล้วติ๊ก &quot;แสดงในแถบ...หน้าแรก&quot; ด้านล่าง จะขึ้นหน้าแรกทันทีโดยไม่ต้องแก้โค้ด — ดูรายละเอียดเพิ่มเติมได้ที่ PartnerLogos.tsx
               </p>
               <input
                 type="file"

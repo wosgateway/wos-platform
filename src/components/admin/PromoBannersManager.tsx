@@ -229,6 +229,11 @@ export function PromoBannersManager() {
           ช่อง &quot;ชื่อ&quot; ใช้เป็น alt text เท่านั้น ไม่ได้แสดงทับบนรูป ตั้งวันเริ่ม/สิ้นสุดได้ถ้าอยากให้หมดอายุเอง
           ไม่งั้นคุมด้วยสวิตช์ &quot;แสดงอยู่&quot; อย่างเดียวก็พอ
         </p>
+        <p className="mt-2 text-xs text-slate-400">
+          ขนาดรูปแนะนำ: <strong className="font-semibold text-slate-500">1600×470px</strong> (สัดส่วน
+          ~3.4:1) — วางข้อความ/โลโก้สำคัญไว้กลางภาพและเว้นขอบซ้าย-ขวาให้พอ เพราะบนมือถือกรอบจะแคบลง
+          (~2.2:1) และครอปขอบซ้าย-ขวาออกบางส่วน ไฟล์ JPG/PNG/WebP/GIF ไม่เกิน 5MB
+        </p>
       </div>
 
       <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-slate-300 px-4 py-3 text-sm text-slate-500 hover:border-primary hover:text-primary-dark">

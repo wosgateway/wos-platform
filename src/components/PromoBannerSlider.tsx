@@ -19,6 +19,22 @@
 //
 // A slide with a linkUrl set (from PromoBannersManager.tsx) renders as an
 // <a> wrapping the image; without one it's a plain non-interactive div.
+//
+// PROMO IMAGE SPEC (tell whoever prepares the banner files):
+//   - Recommended canvas: 1600×470px (~3.4:1) — matches the
+//     sm:aspect-[3.4/1] slide ratio below, so it fills the frame on
+//     desktop with no cropping.
+//   - The image renders with object-cover, and on mobile the frame
+//     narrows to aspect-[2.2/1] — the left/right edges get cropped
+//     off first. Keep any text/logo/CTA baked into the image
+//     centered, with generous margin from the left and right edges,
+//     so nothing important gets cut off on phones.
+//   - Format: JPEG, PNG, WebP, or GIF. Max file size 5MB (enforced
+//     by the promo-banners storage bucket — see 093_promo_banners.sql
+//     — and checked client-side in PromoBannersManager.tsx).
+//   - There's no separate heading/subheading field — any headline or
+//     CTA text must be part of the image itself (banner.alt is just
+//     alt text, not an overlay).
 
 import { useEffect, useRef, useState } from 'react';
 import Image from 'next/image';
@@ -123,7 +139,7 @@ export function PromoBannerSlider({ banners = PLACEHOLDER_BANNERS }: { banners?:
               );
 
               const slideClassName =
-                'relative aspect-[3/1] w-full shrink-0 snap-start sm:aspect-[3.4/1]';
+                'relative aspect-[2.2/1] w-full shrink-0 snap-start sm:aspect-[3.4/1]';
 
               // banner.linkUrl is free-text set by admins in PromoBannersManager.tsx
               // (can be an internal path or a full external URL) — wrap in a plain
