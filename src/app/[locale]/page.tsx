@@ -17,6 +17,7 @@ import { TestimonialsV2 } from '@/components/TestimonialsV2';
 import { FAQ } from '@/components/FAQ';
 import { KnowledgeCenter } from '@/components/KnowledgeCenter';
 import HeroV2 from '@/components/HeroV2';
+import { ConsultationCTA } from '@/components/ConsultationCTA';
 
 export default async function HomePage({
   searchParams,
@@ -157,6 +158,15 @@ export default async function HomePage({
 
       {/* ===== FAQ ===== */}
       <FAQ />
+
+      {/* ===== FREE CONSULTATION CTA (Phase 3 of "ปรึกษา WOS ฟรี") =====
+          Last section on the page on purpose: a visitor who scrolled this
+          far without converting on a category/package still gets one more
+          low-friction option before hitting the footer. See
+          ConsultationCTA.tsx for why this shares the `consultation` i18n
+          namespace with the form page itself, and HeroV2's third CTA link
+          for the ?source=homepage_hero counterpart at the top of the page. */}
+      <ConsultationCTA />
     </main>
   );
 }

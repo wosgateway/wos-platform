@@ -13,7 +13,8 @@
       "subtitle": "เชื่อมทุกขั้นตอนการดูแลสุขภาพระหว่างลาวและไทยไว้ในที่เดียว",
       "ctaPrimary": "ค้นหาบริการสุขภาพ",
       "ctaSecondary": "เป็นพันธมิตรกับ WOS",
-      "badge": "Health Journey Platform"
+      "badge": "Health Journey Platform",
+      "ctaConsultation": "ปรึกษา WOS ฟรี"
     },
     "trustBar": {
       "items": [
@@ -1420,5 +1421,67 @@
     "whatsappCta": "💬 แชทกับ WOS ทาง WhatsApp",
     "contactLine": "มีคำถาม? ติดต่อ LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
     "customerContact": "ผู้ติดต่อลูกค้า"
+  },
+  "consultation": {
+    "eyebrow": "บริการฟรี ไม่มีค่าใช้จ่าย",
+    "title": "ปรึกษา WOS ฟรี",
+    "description": "เล่าให้เราฟังว่าคุณกำลังมองหาอะไร ทีมงาน WOS จะติดต่อกลับเพื่อช่วยวางแผนการเดินทางเพื่อสุขภาพของคุณ",
+    "fields": {
+      "name": "ชื่อ-นามสกุล",
+      "namePlaceholder": "กรอกชื่อของคุณ",
+      "contactChannel": "ช่องทางที่สะดวกให้ติดต่อกลับ",
+      "contactChannelOptions": {
+        "phone": "โทรศัพท์",
+        "whatsapp": "WhatsApp",
+        "line": "LINE",
+        "email": "อีเมล",
+        "other": "อื่นๆ"
+      },
+      "contactValue": "เบอร์โทร / ไอดีติดต่อ",
+      "contactValuePlaceholder": "เช่น 08X-XXX-XXXX หรือ LINE ID",
+      "country": "ประเทศที่อยู่อาศัยปัจจุบัน",
+      "requestTypes": "สิ่งที่คุณสนใจ (เลือกได้มากกว่า 1 ข้อ)",
+      "requestTypeOptions": {
+        "health_checkup": "ตรวจสุขภาพ",
+        "medical_treatment": "รักษาพยาบาล",
+        "dental": "ทันตกรรม",
+        "wellness": "เวลเนส",
+        "aesthetic": "ความงาม",
+        "hospital_clinic": "โรงพยาบาล / คลินิก",
+        "hotel": "โรงแรมที่พัก",
+        "transport": "รถรับส่ง",
+        "not_sure": "ยังไม่แน่ใจ"
+      },
+      "message": "รายละเอียดเพิ่มเติม (ถ้ามี)",
+      "messagePlaceholder": "เล่าอาการ ความต้องการ หรือคำถามของคุณ",
+      "travelPeriod": "ช่วงเวลาที่วางแผนเดินทาง",
+      "travelPeriodOptions": {
+        "unspecified": "ยังไม่กำหนด",
+        "within_1_month": "ภายใน 1 เดือน",
+        "1_to_3_months": "1-3 เดือน",
+        "more_than_3_months": "มากกว่า 3 เดือน"
+      },
+      "select": "-- เลือก --",
+      "other": "อื่นๆ",
+      "submit": "ส่งคำขอปรึกษา",
+      "submitting": "กำลังส่ง..."
+    },
+    "success": {
+      "title": "ได้รับคำขอของคุณแล้ว",
+      "description": "ขอบคุณที่ไว้วางใจ WOS ทีมงานจะติดต่อกลับโดยเร็วที่สุด",
+      "another": "ส่งคำขอเพิ่มเติม"
+    },
+    "errors": {
+      "name": "กรุณากรอกชื่อ",
+      "contactChannel": "กรุณาเลือกช่องทางติดต่อ",
+      "contactValue": "กรุณากรอกช่องทางติดต่อให้ครบถ้วน",
+      "country": "กรุณาเลือกประเทศ",
+      "requestTypes": "กรุณาเลือกสิ่งที่คุณสนใจอย่างน้อย 1 ข้อ",
+      "generic": "เกิดข้อผิดพลาด กรุณาลองใหม่อีกครั้ง"
+    },
+    "bannerEyebrow": "ยังไม่แน่ใจจะเริ่มตรงไหน?",
+    "bannerTitle": "ปรึกษา WOS ฟรี",
+    "bannerDescription": "เล่าให้เราฟัง ทีมงาน WOS พร้อมช่วยแนะนำโปรแกรมสุขภาพที่เหมาะกับคุณ ไม่มีค่าใช้จ่าย",
+    "cta": "ปรึกษาฟรีตอนนี้"
   }
 }

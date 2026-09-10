@@ -13,6 +13,7 @@ const NAV_LINKS = [
   // พาร์ทเนอร์อยู่แล้ว ตอนเปลี่ยน default tab เป็น "ภาพรวม" ลืมเพิ่มทางลัด
   // ตรงนี้ไว้ ทำให้ดูเหมือนหน้าดูข้อมูลพาร์ทเนอร์หายไปจาก nav
   { href: '/admin?tab=partners', label: 'พาร์ทเนอร์' },
+  { href: '/admin?tab=consultations', label: 'ปรึกษาฟรี' },
   { href: '/admin?tab=transport-pricing', label: 'ราคารถ' },
   { href: '/admin/journeys', label: 'ทริป' },
   { href: '/admin/drivers', label: 'คนขับ' },

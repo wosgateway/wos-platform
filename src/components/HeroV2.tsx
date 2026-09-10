@@ -1,5 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, MessageCircle } from 'lucide-react';
 import { Link } from '@/i18n/navigation';
 import WOSNetworkDiagram from '@/components/WOSNetworkDiagram';
 import HeroBackgroundSlideshow, { type HeroImage } from '@/components/HeroBackgroundSlideshow';
@@ -120,6 +120,20 @@ export default async function HeroV2({ images }: { images: HeroImage[] }) {
               className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-white/70 px-8 py-[0.8rem] font-semibold text-white transition-all duration-200 hover:bg-white hover:text-navy"
             >
               {t('ctaSecondary')}
+            </Link>
+            {/* Third, lower-emphasis CTA — doesn't compete visually with the
+                two pill buttons above (no fill/border, just underline-on-hover)
+                since "find a program" is still the primary hero action for
+                most visitors. Routes to the Phase 1 consultation form;
+                ?source=homepage_hero matches the SOURCES allowlist in
+                src/app/api/consultation/route.ts so leads from here are
+                distinguishable in the admin panel from the bottom-page CTA. */}
+            <Link
+              href="/consultation?source=homepage_hero"
+              className="inline-flex items-center gap-1.5 px-2 py-[0.8rem] text-sm font-medium text-white/80 underline decoration-white/40 underline-offset-4 transition-colors hover:text-white hover:decoration-white"
+            >
+              <MessageCircle className="h-4 w-4" strokeWidth={2.25} aria-hidden="true" />
+              {t('ctaConsultation')}
             </Link>
           </div>
 

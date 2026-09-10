@@ -73,8 +73,20 @@ export async function GET() {
     .select('id', { count: 'exact', head: true })
     .eq('status', 'confirmed');
 
-  if (activeErr || readyErr) {
-    console.error('overview counts failed:', activeErr ?? readyErr);
+  // Separate funnel from the order-based counts above — a consultation
+  // request (Phase 1-4 of "ปรึกษา WOS ฟรี") has no order_id yet, it's a
+  // pre-order lead sitting in consultation_requests. Surfaced here as a
+  // header count only (not merged into `actionItems` below, which assumes
+  // an order to link into) so a new lead is still visible from the tab
+  // staff land on by default, instead of only showing up if someone
+  // happens to click into the Consultations tab.
+  const { count: newConsultations, error: newConsultationsErr } = await supabase
+    .from('consultation_requests')
+    .select('id', { count: 'exact', head: true })
+    .eq('status', 'new');
+
+  if (activeErr || readyErr || newConsultationsErr) {
+    console.error('overview counts failed:', activeErr ?? readyErr ?? newConsultationsErr);
     return withRefreshedCookies(
       NextResponse.json({ error: 'failed to load overview counts' }, { status: 500 }),
       cookieCarrier
@@ -208,6 +220,7 @@ export async function GET() {
         unassigned: unassignedItems?.length ?? 0,
         awaitingPartnerConfirmation: awaitingConfirmationItems?.length ?? 0,
         paymentPending: pendingPayments?.length ?? 0,
+        newConsultations: newConsultations ?? 0,
       },
       items: actionItems,
     }),

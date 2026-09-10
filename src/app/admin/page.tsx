@@ -18,11 +18,20 @@ import { PartnersManager } from '@/components/admin/PartnersManager';
 import { PackagesManager } from '@/components/admin/PackagesManager';
 import { BookingsManager } from '@/components/admin/BookingsManager';
 import { PartnerLeadsManager } from '@/components/admin/PartnerLeadsManager';
+import { ConsultationsManager } from '@/components/admin/ConsultationsManager';
 import { TransportPricingManager } from '@/components/admin/TransportPricingManager';
 
-type AdminTab = 'overview' | 'partners' | 'packages' | 'bookings' | 'leads' | 'transport-pricing';
+type AdminTab = 'overview' | 'partners' | 'packages' | 'bookings' | 'leads' | 'consultations' | 'transport-pricing';
 
-const VALID_TABS: AdminTab[] = ['overview', 'partners', 'packages', 'bookings', 'leads', 'transport-pricing'];
+const VALID_TABS: AdminTab[] = [
+  'overview',
+  'partners',
+  'packages',
+  'bookings',
+  'leads',
+  'consultations',
+  'transport-pricing',
+];
 
 const TAB_LABELS: Record<AdminTab, string> = {
   overview: 'ภาพรวม',
@@ -30,6 +39,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   packages: 'แพ็กเกจ',
   bookings: 'รายการจอง',
   leads: 'พันธมิตรสมัครใหม่',
+  consultations: 'ปรึกษาฟรี',
   'transport-pricing': 'ราคารถ',
 };
 
@@ -79,6 +89,8 @@ function AdminPageContent() {
         <BookingsManager />
       ) : tab === 'leads' ? (
         <PartnerLeadsManager />
+      ) : tab === 'consultations' ? (
+        <ConsultationsManager />
       ) : (
         <TransportPricingManager />
       )}

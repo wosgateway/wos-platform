@@ -32,6 +32,7 @@ interface OverviewCounts {
   unassigned: number;
   awaitingPartnerConfirmation: number;
   paymentPending: number;
+  newConsultations: number;
 }
 
 interface OverviewActionItem {
@@ -102,7 +103,7 @@ export function OverviewManager() {
 
   return (
     <div className="p-4">
-      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="mb-4 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
         <SummaryCard
           label="ทริปที่กำลังดำเนินการ"
           value={counts.activeJourneys}
@@ -129,6 +130,11 @@ export function OverviewManager() {
           onClick={() => setFilter('payment_pending')}
         />
         <SummaryCard label="พร้อมแล้ว" value={counts.readyItems} tone="success" />
+        {/* Separate funnel from the 4 order-based buckets above (a
+            consultation request has no order_id yet — it's a pre-order
+            lead), so this links to the Consultations tab (Phase 4)
+            instead of filtering `visibleItems` like the others. */}
+        <SummaryCard label="ปรึกษาฟรี (ใหม่)" value={counts.newConsultations} tone="warning" href="/admin?tab=consultations" />
       </div>
 
       {visibleItems.length === 0 ? (
@@ -192,12 +198,14 @@ function SummaryCard({
   tone = 'neutral',
   active,
   onClick,
+  href,
 }: {
   label: string;
   value: number;
   tone?: 'neutral' | 'warning' | 'info' | 'danger' | 'success';
   active?: boolean;
   onClick?: () => void;
+  href?: string;
 }) {
   const toneClass: Record<string, string> = {
     neutral: 'text-slate-700',
@@ -207,17 +215,29 @@ function SummaryCard({
     success: 'text-emerald-600',
   };
 
-  const Wrapper = onClick ? 'button' : 'div';
+  const className = `rounded-lg border p-3 text-left block ${
+    active ? 'border-primary ring-1 ring-primary' : 'border-slate-100'
+  } ${onClick || href ? 'cursor-pointer' : ''}`;
 
-  return (
-    <Wrapper
-      onClick={onClick}
-      className={`rounded-lg border p-3 text-left ${
-        active ? 'border-primary ring-1 ring-primary' : 'border-slate-100'
-      } ${onClick ? 'cursor-pointer' : ''}`}
-    >
+  const content = (
+    <>
       <div className={`text-2xl font-semibold ${toneClass[tone]}`}>{value}</div>
       <div className="text-xs text-slate-400">{label}</div>
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link href={href} className={className}>
+        {content}
+      </Link>
+    );
+  }
+
+  const Wrapper = onClick ? 'button' : 'div';
+  return (
+    <Wrapper onClick={onClick} className={className}>
+      {content}
     </Wrapper>
   );
 }
