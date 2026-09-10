@@ -17,6 +17,7 @@ const PUBLIC_LOCALE_ROUTE_SEGMENTS = [
   'become-partner',
   'booking',
   'category',
+  'consultation',
   // Landing page for the admin "ดูแทนพาร์ทเนอร์" (impersonation) magic
   // link — see /api/admin/partners/[id]/impersonate/route.ts and
   // impersonate-consume/page.tsx. Same reasoning as 'set-password'

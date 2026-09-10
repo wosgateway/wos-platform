@@ -18,10 +18,10 @@
 // SendGrid, ...) only touches sendEmail() below; buildEmailSubject/
 // buildEmailHtml/buildEmailText and the route.ts call site don't change.
 //
-// Env vars (all three required together — missing any one is treated
-// as "email notifications not configured" and this is a silent no-op,
-// same convention order-notify.ts uses for its 3 channels so
-// local/dev/preview environments don't need any of this):
+// Two channels, each independently optional — same "missing any one
+// required env var = silent no-op for that channel" convention
+// order-notify.ts uses, so local/dev/preview environments don't need
+// any of this configured:
 //   RESEND_API_KEY                 Resend API key (dashboard > API Keys)
 //   CONSULTATION_NOTIFY_EMAIL_TO    WOS team inbox that should receive
 //                                   new leads (comma-separated for
@@ -33,6 +33,12 @@
 //                                   "WOS Leads <leads@notify.wos.asia>"
 //                                   — must be on a domain verified in
 //                                   the Resend dashboard or sends 403.
+//   TELEGRAM_BOT_TOKEN +
+//   TELEGRAM_CHAT_ID                Same bot/chat order-notify.ts's
+//                                   sendTelegram() already uses for new
+//                                   orders — one bot, both lead types
+//                                   land in the same chat instead of
+//                                   needing a second bot just for this.
 
 // Matches NEXT_PUBLIC_APP_URL convention already used for outbound links
 // in src/app/api/admin/send-quotation/route.tsx.
@@ -164,6 +170,38 @@ function buildEmailHtml(payload: NotifyConsultationPayload): string {
   `.trim();
 }
 
+function buildTelegramText(payload: NotifyConsultationPayload): string {
+  const requestTypes = payload.requestTypes.map((t) => REQUEST_TYPE_LABEL[t] ?? t).join(', ');
+  return [
+    `🆕 ปรึกษา WOS ฟรี — คำขอใหม่`,
+    `👤 ${payload.name} (${payload.country})`,
+    `📞 ${CONTACT_CHANNEL_LABEL[payload.contactChannel] ?? payload.contactChannel} — ${payload.contactValue}`,
+    `🩺 สนใจ: ${requestTypes || '-'}`,
+    `🗓 ช่วงเวลาเดินทาง: ${TRAVEL_PERIOD_LABEL[payload.travelPeriod] ?? payload.travelPeriod}`,
+    `🔗 ที่มา: ${SOURCE_LABEL[payload.source] ?? payload.source}${payload.utmCampaign ? ` (#${payload.utmCampaign})` : ''}`,
+    payload.message ? `💬 ${payload.message}` : null,
+    `👉 ${adminUrl()}`,
+  ]
+    .filter((line): line is string => line !== null)
+    .join('\n');
+}
+
+async function sendTelegram(payload: NotifyConsultationPayload): Promise<void> {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN;
+  const chatId = process.env.TELEGRAM_CHAT_ID;
+  if (!botToken || !chatId) return;
+
+  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ chat_id: chatId, text: buildTelegramText(payload) }),
+  });
+
+  if (!res.ok) {
+    throw new Error(`Telegram sendMessage responded ${res.status}`);
+  }
+}
+
 async function sendEmail(payload: NotifyConsultationPayload): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   const to = process.env.CONSULTATION_NOTIFY_EMAIL_TO;
@@ -194,12 +232,12 @@ async function sendEmail(payload: NotifyConsultationPayload): Promise<void> {
   }
 }
 
-// Single-channel today (email only — the rest of Phase 5's scope), but
-// shaped like notifyNewOrder() (Promise.allSettled over an array of
-// channel senders) so adding a second channel later means appending one
-// more entry to this array, not restructuring the function.
+// Two channels (email + Telegram), shaped like notifyNewOrder()
+// (Promise.allSettled over an array of channel senders) — adding a
+// third channel later means appending one more entry here, not
+// restructuring the function.
 export async function notifyNewConsultation(payload: NotifyConsultationPayload): Promise<void> {
-  const results = await Promise.allSettled([sendEmail(payload)]);
+  const results = await Promise.allSettled([sendEmail(payload), sendTelegram(payload)]);
   for (const result of results) {
     if (result.status === 'rejected') {
       // Logged only — never surfaced to the customer, never retried.

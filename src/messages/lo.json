@@ -251,7 +251,8 @@
     "myTrip": "ທິບຂອງຂ້ອຍ",
     "viewAllServices": "ເບິ່ງບໍລິການທັງໝົດ",
     "openMenu": "ເປີດເມນູ",
-    "closeMenu": "ປິດເມນູ"
+    "closeMenu": "ປິດເມນູ",
+    "selectLanguage": "ເລືອກພາສາ"
   },
   "common": {
     "partnersCount": "{count} ຄູ່ຮ່ວມງານ",

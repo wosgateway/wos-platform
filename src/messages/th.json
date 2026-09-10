@@ -251,7 +251,8 @@
     "myTrip": "ทริปของฉัน",
     "viewAllServices": "ดูบริการทั้งหมด",
     "openMenu": "เปิดเมนู",
-    "closeMenu": "ปิดเมนู"
+    "closeMenu": "ปิดเมนู",
+    "selectLanguage": "เลือกภาษา"
   },
   "common": {
     "partnersCount": "{count} พาร์ทเนอร์",

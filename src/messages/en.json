@@ -251,7 +251,8 @@
     "myTrip": "My Trip",
     "viewAllServices": "View all services",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "selectLanguage": "Select language"
   },
   "common": {
     "partnersCount": "{count} partners",
