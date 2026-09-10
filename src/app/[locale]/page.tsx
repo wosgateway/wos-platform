@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { CATEGORIES } from '@/lib/categories';
-import { fetchFeaturedPackages } from '@/lib/data';
+import { fetchFeaturedPackages, fetchActivePromoBanners } from '@/lib/data';
 import { CategoryCard } from '@/components/CategoryCard';
 import { PartnerLogos } from '@/components/PartnerLogos';
 import { WOSHealthJourney } from '@/components/WOSHealthJourney';
@@ -18,6 +18,7 @@ import { FAQ } from '@/components/FAQ';
 import { KnowledgeCenter } from '@/components/KnowledgeCenter';
 import HeroV2 from '@/components/HeroV2';
 import { ConsultationCTA } from '@/components/ConsultationCTA';
+import { PromoBannerSlider } from '@/components/PromoBannerSlider';
 
 export default async function HomePage({
   searchParams,
@@ -44,6 +45,17 @@ export default async function HomePage({
     featuredPackages = await fetchFeaturedPackages();
   } catch (err) {
     console.error('fetchFeaturedPackages failed', err);
+  }
+
+  // สไลด์แบนเนอร์ใต้ Hero — เช่นเดียวกับ featuredPackages ด้านบน กันพังทั้งหน้า
+  // ถ้า query ล้มเหลว (เช่น ก่อนรัน 093_promo_banners.sql) ให้ fallback เป็น []
+  // ซึ่ง PromoBannerSlider ที่ banners=[] จะ return null ไปเลย ไม่ fallback
+  // กลับไปโชว์ placeholder gradient (นั่นมีไว้แค่ตอน dev ก่อน backend เสร็จ)
+  let promoBanners: Awaited<ReturnType<typeof fetchActivePromoBanners>> = [];
+  try {
+    promoBanners = await fetchActivePromoBanners();
+  } catch (err) {
+    console.error('fetchActivePromoBanners failed', err);
   }
 
   // "Find Your Health Goal" → Categories wiring: ?goal=<slug> from the
@@ -86,6 +98,20 @@ export default async function HomePage({
             alt: 'Guest relaxing at a WOS-affiliated wellness retreat overlooking the river',
           },
         ]}
+      />
+
+      {/* ===== PROMO BANNER SLIDER =====
+          Real banners from `promo_banners` (093_promo_banners.sql), managed
+          via PromoBannersManager.tsx in /admin. Empty array (no active rows,
+          or fetch failure above) → PromoBannerSlider returns null, so the
+          section just doesn't render — no placeholder fallback in prod. */}
+      <PromoBannerSlider
+        banners={promoBanners.map((b) => ({
+          id: b.id,
+          imageUrl: b.image_url,
+          alt: b.title || 'โปรโมชั่น',
+          linkUrl: b.link_url,
+        }))}
       />
 
       {/* ===== PARTNER LOGOS ===== */}

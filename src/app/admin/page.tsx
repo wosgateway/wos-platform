@@ -20,8 +20,17 @@ import { BookingsManager } from '@/components/admin/BookingsManager';
 import { PartnerLeadsManager } from '@/components/admin/PartnerLeadsManager';
 import { ConsultationsManager } from '@/components/admin/ConsultationsManager';
 import { TransportPricingManager } from '@/components/admin/TransportPricingManager';
+import { PromoBannersManager } from '@/components/admin/PromoBannersManager';
 
-type AdminTab = 'overview' | 'partners' | 'packages' | 'bookings' | 'leads' | 'consultations' | 'transport-pricing';
+type AdminTab =
+  | 'overview'
+  | 'partners'
+  | 'packages'
+  | 'bookings'
+  | 'leads'
+  | 'consultations'
+  | 'transport-pricing'
+  | 'promo-banners';
 
 const VALID_TABS: AdminTab[] = [
   'overview',
@@ -31,6 +40,7 @@ const VALID_TABS: AdminTab[] = [
   'leads',
   'consultations',
   'transport-pricing',
+  'promo-banners',
 ];
 
 const TAB_LABELS: Record<AdminTab, string> = {
@@ -41,6 +51,7 @@ const TAB_LABELS: Record<AdminTab, string> = {
   leads: 'พันธมิตรสมัครใหม่',
   consultations: 'ปรึกษาฟรี',
   'transport-pricing': 'ราคารถ',
+  'promo-banners': 'แบนเนอร์',
 };
 
 function AdminPageContent() {
@@ -91,8 +102,10 @@ function AdminPageContent() {
         <PartnerLeadsManager />
       ) : tab === 'consultations' ? (
         <ConsultationsManager />
-      ) : (
+      ) : tab === 'transport-pricing' ? (
         <TransportPricingManager />
+      ) : (
+        <PromoBannersManager />
       )}
     </div>
   );

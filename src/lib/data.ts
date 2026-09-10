@@ -157,6 +157,46 @@ export async function fetchPackagesByCategory(dbCategories: string[]): Promise<P
 // vehicleType, chosen earlier in the flow, already acts as the
 // price tier). Returns vehicle_type -> starting_price; a vehicle type
 // with no row (or a 0 price) just means "no hint shown" in the UI.
+export interface PromoBanner {
+  id: string;
+  image_url: string;
+  link_url: string | null;
+  title: string;
+  display_order: number;
+  is_active: boolean;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+// สไลด์แบนเนอร์ใต้ Hero หน้าแรก (093_promo_banners.sql) — filter is_active
+// และช่วงวันที่ซ้ำกับ RLS ในแอป ไม่พึ่ง RLS อย่างเดียว (เหมือน pattern
+// fetchPartnerById ที่ .eq('status','active') ซ้ำกับ policy) เผื่อวันไหน
+// RLS หลุด/เปลี่ยน ยังมี guard ชั้นแอปกันอยู่. เรียงตาม display_order
+// ให้ตรงกับลำดับที่แอดมินจัดใน PromoBannersManager.tsx
+export async function fetchActivePromoBanners(): Promise<PromoBanner[]> {
+  const supabase = createAnonClient();
+  const { data, error } = await supabase
+    .from('promo_banners')
+    .select('*')
+    .eq('is_active', true)
+    .order('display_order', { ascending: true });
+  if (error) throw error;
+
+  // start_date/end_date window applied here rather than chained as more
+  // .or() filters on the query above — this list is always tiny (a
+  // handful of promo slides), and doing it in JS avoids relying on
+  // exactly how supabase-js combines two separate .or() calls (each adds
+  // its own "or" query param; whether repeated ones AND together isn't
+  // worth staking a scheduling bug on). Still an app-level guard on top
+  // of RLS, same intent as fetchPartnerById's redundant .eq('status', ...).
+  const today = new Date().toISOString().slice(0, 10);
+  return (data ?? []).filter((b) => {
+    if (b.start_date && b.start_date > today) return false;
+    if (b.end_date && b.end_date < today) return false;
+    return true;
+  });
+}
+
 export async function fetchTransportVehiclePricing(): Promise<Record<string, number>> {
   const supabase = createAnonClient();
   const { data, error } = await supabase
