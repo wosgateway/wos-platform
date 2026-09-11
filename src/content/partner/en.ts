@@ -158,6 +158,20 @@ export const en: PartnerPageContent = {
       { label: "Contract term", value: "1 year, auto-renews unless cancelled in advance" },
       { label: "Settlement currency", value: "THB / USD (by agreement)" },
     ],
+    feeScheduleHeadline: "Fee schedule by partner type",
+    feeSchedule: [
+      { icon: "🏥", category: "Clinic / Medical Provider", fee: "15%", principle: "Charged on services originated through WOS" },
+      { icon: "🌿", category: "Wellness / Spa", fee: "15%", principle: "Depends on the service and margin" },
+      { icon: "🏨", category: "Hotel / Resort", fee: "12%", principle: "Suited to hotels with booking volume" },
+      { icon: "🚐", category: "Transport", fee: "15%", principle: "Sedan / SUV / Van / VIP vehicles" },
+      { icon: "🧘", category: "Fitness / Yoga / Activity", fee: "15%", principle: "Packages / activities" },
+      { icon: "🥗", category: "Healthy Food", fee: "10%", principle: "Relatively low margin" },
+      { icon: "🥊", category: "Muay Thai / Training", fee: "15%", principle: "Short- and long-term packages" },
+      { icon: "👨‍⚕️", category: "Specialist / Consultant", fee: "10%", principle: "Professional service fees" },
+      { icon: "📦", category: "WOS Bundled Journey", fee: "20%+", principle: "WOS bundles multiple services and manages the journey" },
+    ],
+    feeScheduleNote:
+      "Fees may be adjusted based on booking volume, contract length, and partnership model — contact the WOS team for an offer tailored to your business.",
     disclaimer: "Full commission and contract terms are set out in the signed Pilot Agreement / MOU.",
   },
   mou: {

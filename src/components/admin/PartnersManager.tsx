@@ -159,8 +159,29 @@ export function PartnersManager() {
     setPartners((data ?? []) as Partner[]);
   }
 
+  // Login email(s) per partner (from /api/admin/partners/portal-accounts) —
+  // fetched separately from `partners` itself since it's a service-role
+  // join across organizations/branches/users, not a plain table select.
+  // Best-effort: if it fails, the table still renders fine, just without
+  // this column filled in (see the "-" fallback below).
+  const [portalAccounts, setPortalAccounts] = useState<Record<string, { email: string; status: string | null }[]>>(
+    {}
+  );
+
+  async function loadPortalAccounts() {
+    try {
+      const res = await fetch('/api/admin/partners/portal-accounts');
+      if (!res.ok) return;
+      const data = await res.json();
+      setPortalAccounts(data.accounts ?? {});
+    } catch {
+      // Non-critical for the list view — silently skip.
+    }
+  }
+
   useEffect(() => {
     loadPartners();
+    loadPortalAccounts();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -764,6 +785,7 @@ export function PartnersManager() {
                 <th className="px-4 py-2">คะแนน</th>
                 <th className="px-4 py-2">หน้าแรก</th>
                 <th className="px-4 py-2">ตำแหน่ง</th>
+                <th className="px-4 py-2">บัญชีเข้าสู่ระบบ</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -804,6 +826,28 @@ export function PartnersManager() {
                             : 'bg-amber-100 text-amber-700';
                       return (
                         <span className={`rounded-full px-2 py-0.5 text-xs ${badgeClass}`}>{locStatus}</span>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-4 py-2">
+                    {(() => {
+                      const accounts = portalAccounts[p.id];
+                      if (!accounts || accounts.length === 0) {
+                        return <span className="text-xs text-slate-300">ยังไม่มีบัญชี</span>;
+                      }
+                      return (
+                        <div className="flex flex-col gap-0.5">
+                          {accounts.map((acc) => (
+                            <span key={acc.email} className="text-xs text-slate-600">
+                              {acc.email}
+                              {acc.status && acc.status !== 'active' ? (
+                                <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-400">
+                                  {acc.status}
+                                </span>
+                              ) : null}
+                            </span>
+                          ))}
+                        </div>
                       );
                     })()}
                   </td>

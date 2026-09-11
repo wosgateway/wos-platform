@@ -49,6 +49,10 @@ textarea:focus {
     @apply py-16 md:py-[5.5rem];
   }
 
+  .cta-pulse {
+    animation: cta-pulse 2.5s ease-in-out infinite;
+  }
+
   .btn-primary {
     @apply inline-flex items-center justify-center gap-2 rounded-full bg-primary px-8 py-[0.85rem]
       font-semibold text-white transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed
@@ -159,5 +163,25 @@ textarea:focus {
   }
   html {
     @apply font-sans;
+  }
+}
+
+/* Soft "breathing" glow for the tertiary hero CTA (consultation link) —
+   deliberately NOT a blink/opacity toggle, which reads as spammy and is
+   an accessibility problem for photosensitive users. Ring expands and
+   fades instead. Respects prefers-reduced-motion via the media query. */
+@keyframes cta-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(201, 151, 74, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 12px rgba(201, 151, 74, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cta-pulse {
+    animation: none;
   }
 }

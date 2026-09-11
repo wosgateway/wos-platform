@@ -57,11 +57,21 @@ export interface CommercialTerm {
   note?: string;
 }
 
+export interface FeeScheduleItem {
+  icon: string;
+  category: string;
+  fee: string; // e.g. "15%" or "20%+"
+  principle: string; // short note on how the fee is calculated
+}
+
 export interface CommercialTerms {
   headline: string;
   intro: string;
   docStamp: string; // small stamp label on the terms card, e.g. "Founding Partner Terms"
   terms: CommercialTerm[];
+  feeScheduleHeadline: string;
+  feeSchedule: FeeScheduleItem[];
+  feeScheduleNote: string;
   disclaimer: string;
 }
 

@@ -1,0 +1,58 @@
+-- ============================================================================
+-- 094_unique_branches_partner_id.sql
+--
+-- ปลอดภัยที่จะรัน (idempotent) — ใช้ IF NOT EXISTS
+--
+-- เหตุผล: /api/admin/partners/provision (route.ts) ตอนที่ admin ระบุ
+-- existingPartnerId จะเช็คก่อนว่ามี branch อื่นผูกกับ partner นี้อยู่แล้ว
+-- หรือไม่ (SELECT ... WHERE partner_id = existing.id) แล้วค่อย
+-- UPDATE branches SET partner_id = ... ทีหลัง — แต่ระหว่าง SELECT กับ
+-- UPDATE สองขั้นนี้ไม่ได้อยู่ใน transaction เดียวกัน (service role,
+-- ไม่มี DB transaction คร่อมทั้ง route ตามที่อธิบายไว้ในคอมเมนต์บนสุด
+-- ของไฟล์) จึงมี race window จริง: ถ้ามี 2 คำขอ provision พร้อมกันที่
+-- ใช้ existingPartnerId เดียวกัน (เช่น admin กด submit สองครั้ง หรือ
+-- สองแท็บ) ทั้งคู่อาจผ่านการเช็คนี้พร้อมกันก่อนที่ใครจะ UPDATE สำเร็จ
+-- แล้วจบลงด้วย branch สองอันผูกกับ partner listing เดียวกัน
+--
+-- Partial unique index นี้ปิด race window ที่ต้นทาง (ระดับ DB) — ถ้า
+-- partner_id ไม่ใช่ NULL ต้องไม่ซ้ำกันข้าม branches แถวไหนเลย คำขอที่
+-- แพ้ race จะได้ unique_violation (Postgres error code 23505) กลับมา
+-- จาก UPDATE ตรง ๆ แทนที่จะแอบสร้าง state ที่ผิดเงียบ ๆ
+--
+-- WHERE partner_id IS NOT NULL เพราะ branch ส่วนใหญ่ที่ยังไม่ได้ผูกกับ
+-- partner listing (partner_id = NULL) ต้องมีได้หลายแถวตามปกติ — ถ้าทำ
+-- unique index แบบไม่กรอง NULL จะพังทันทีเพราะ NULL ชนกันไม่ได้ก็จริง
+-- แต่เขียนชัดไว้กันสับสน และให้ตรงเจตนา
+-- ============================================================================
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_branches_partner_id
+    ON public.branches (partner_id)
+    WHERE partner_id IS NOT NULL;
+
+-- ============================================================================
+-- ก่อนรันจริงบน production ต้องรันคำสั่งนี้ก่อนเสมอ เพื่อเช็คว่าไม่มี
+-- partner_id ที่ผูกกับหลาย branch อยู่แล้ว (ไม่งั้น CREATE UNIQUE INDEX
+-- จะ fail ทันที — ตามเจตนา ไม่ควรให้ migration นี้แอบแก้ข้อมูลเอง):
+--
+--   SELECT
+--       partner_id,
+--       COUNT(*) AS branch_count,
+--       ARRAY_AGG(id ORDER BY id) AS branch_ids
+--   FROM public.branches
+--   WHERE partner_id IS NOT NULL
+--   GROUP BY partner_id
+--   HAVING COUNT(*) > 1;
+--
+-- 0 rows  -> GO ปลอดภัยที่จะรัน migration นี้ต่อได้เลย
+-- มี rows -> HOLD ต้องตัดสินใจก่อนว่า branch ไหนใน branch_ids คือตัวจริง
+--            (canonical) ที่ควรเก็บ partner_id ไว้ แล้วเคลียร์
+--            partner_id ของ branch ที่เหลือในกลุ่มเดียวกันให้เป็น NULL
+--            ก่อน ค่อยรัน CREATE UNIQUE INDEX — ห้ามให้ migration
+--            ตัดสินใจแทนแบบอัตโนมัติ เพราะเป็นการตัดสินใจเชิงธุรกิจ
+--            ว่า branch ไหนควรเป็นเจ้าของ listing ที่แท้จริง
+--
+-- VERIFY after running:
+--   select indexname, indexdef from pg_indexes
+--   where schemaname = 'public' and tablename = 'branches'
+--     and indexname = 'uq_branches_partner_id';
+-- ============================================================================

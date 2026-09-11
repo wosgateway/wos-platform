@@ -585,6 +585,70 @@
   padding-top: 12px;
 }
 
+.wos-fee-doc {
+  margin-top: 20px;
+}
+
+.wos-fee-table-wrap {
+  margin-top: 16px;
+  overflow-x: auto;
+  border: 1px solid var(--wos-line);
+  border-radius: 8px;
+}
+
+.wos-fee-table {
+  width: 100%;
+  min-width: 480px;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+
+.wos-fee-table thead th {
+  text-align: left;
+  font-family: var(--wos-font-mono);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--wos-paper);
+  background: var(--wos-route);
+  padding: 10px 14px;
+}
+
+.wos-fee-table thead th:nth-child(2) {
+  text-align: right;
+  width: 110px;
+}
+
+.wos-fee-table tbody tr {
+  border-top: 1px solid var(--wos-line);
+}
+
+.wos-fee-table tbody tr:nth-child(even) {
+  background: var(--wos-paper);
+}
+
+.wos-fee-table td {
+  padding: 12px 14px;
+  vertical-align: top;
+}
+
+.wos-fee-icon {
+  display: inline-block;
+  margin-right: 8px;
+}
+
+.wos-fee-value {
+  text-align: right;
+  font-family: var(--wos-font-mono);
+  font-weight: 600;
+  color: var(--wos-route);
+  white-space: nowrap;
+}
+
+.wos-fee-principle {
+  color: var(--wos-ink-soft);
+}
+
 .wos-doc-list {
   list-style: none;
   padding: 0;
@@ -852,6 +916,9 @@
   }
   .wos-cta {
     padding: 36px 24px;
+  }
+  .wos-fee-table {
+    min-width: 420px;
   }
 }
 

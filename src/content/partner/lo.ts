@@ -166,6 +166,20 @@ export const lo: PartnerPageContent = {
       { label: "ໄລຍະເວລາສັນຍາ", value: "1 ປີ ຕໍ່ອາຍຸອັດຕະໂນມັດ ເວັ້ນເສຍແຕ່ແຈ້ງຍົກເລີກລ່ວງໜ້າ" },
       { label: "ສະກຸນເງິນທີ່ຈ່າຍ", value: "THB / USD (ຕາມຂໍ້ຕົກລົງ)" },
     ],
+    feeScheduleHeadline: "ອັດຕາຄ່າທຳນຽມຕາມປະເພດຄູ່ຮ່ວມທຸລະກິດ",
+    feeSchedule: [
+      { icon: "🏥", category: "Clinic / Medical Provider", fee: "15%", principle: "ຄິດຈາກບໍລິການທີ່ເກີດຈາກ WOS" },
+      { icon: "🌿", category: "Wellness / Spa", fee: "15%", principle: "ຂຶ້ນກັບບໍລິການ ແລະ margin" },
+      { icon: "🏨", category: "Hotel / Resort", fee: "12%", principle: "ເໝາະກັບໂຮງແຮມທີ່ມີ volume" },
+      { icon: "🚐", category: "Transport", fee: "15%", principle: "Sedan/SUV/Van/ລົດ VIP" },
+      { icon: "🧘", category: "Fitness / Yoga / Activity", fee: "15%", principle: "Package / Activity" },
+      { icon: "🥗", category: "Healthy Food", fee: "10%", principle: "margin ຄ່ອນຂ້າງຕ່ຳ" },
+      { icon: "🥊", category: "Muay Thai / Training", fee: "15%", principle: "Package ໄລຍະສັ້ນ/ຍາວ" },
+      { icon: "👨‍⚕️", category: "Specialist / Consultant", fee: "10%", principle: "ຄ່າບໍລິການວິຊາຊີບ" },
+      { icon: "📦", category: "WOS Bundled Journey", fee: "20%+", principle: "WOS ລວມຫຼາຍບໍລິການ ແລະ ບໍລິຫານ Journey" },
+    ],
+    feeScheduleNote:
+      "ອັດຕາຄ່າທຳນຽມອາດປັບຕາມປະລິມານການຈອງ ໄລຍະເວລາສັນຍາ ແລະ ຮູບແບບຄວາມຮ່ວມມື — ຕິດຕໍ່ທີມ WOS ເພື່ອຮັບຂໍ້ສະເໜີທີ່ເໝາະສົມກັບທຸລະກິດຂອງທ່ານ",
     disclaimer: "ລາຍລະອຽດຄ່າຄອມມິຊັນ ແລະ ເງື່ອນໄຂສະບັບສົມບູນຈະລະບຸໄວ້ໃນ Pilot Agreement / MOU ທີ່ລົງນາມຮ່ວມກັນ",
   },
   mou: {

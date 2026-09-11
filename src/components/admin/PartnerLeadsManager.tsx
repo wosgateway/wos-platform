@@ -2,10 +2,16 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { createClient } from '@/lib/supabase/client';
+import { ConvertToPartnerModal, type ConvertPrefill } from './ConvertToPartnerModal';
 
-// Reads B2B partner-application leads submitted via the public
-// /become-partner form. BecomePartnerForm.tsx inserts these into the
-// `cases` table (NOT `bookings`, NOT `partners`/`organizations`) with:
+// Reads B2B partner-application leads submitted via /partner/apply
+// (ApplyForm.tsx — see that file's header for why it writes here
+// instead of partner_applications). BecomePartnerForm.tsx (the
+// /become-partner form) writes to a *different* table,
+// public.partner_applications, which has its own admin surface at
+// PartnerApplicationsManager.tsx — the two sources are not merged here.
+// BecomePartnerForm.tsx inserts into the `cases` table (NOT `bookings`,
+// NOT `partners`/`organizations`) with:
 //   - service_type: "[B2B] {clinic_hospital|hotel_resort|transport_agent|investor}"
 //   - status: "new_lead_b2b"
 // This tab is the only place in admin that surfaces those rows — before
@@ -16,8 +22,15 @@ import { createClient } from '@/lib/supabase/client';
 //   new_lead_b2b -> contacted_b2b -> converted_b2b | rejected_b2b
 // These extra status values are new; nothing else in the codebase reads
 // or depends on them, so they're safe to introduce here.
+//
+// converted_b2b is no longer a manually-selectable dropdown value — it
+// used to be, but selecting it only flipped this row's label and never
+// actually created a partner tenant. It's now set exclusively by a
+// successful /api/admin/partners/provision call (via the Convert modal
+// below), which sets it atomically as part of claiming the lead.
 
-type LeadStatus = 'new_lead_b2b' | 'contacted_b2b' | 'converted_b2b' | 'rejected_b2b';
+type ManualLeadStatus = 'new_lead_b2b' | 'contacted_b2b' | 'rejected_b2b';
+type LeadStatus = ManualLeadStatus | 'converted_b2b';
 
 interface Lead {
   id: string;
@@ -75,6 +88,31 @@ function businessTypeLabel(serviceType: string | null) {
   return BUSINESS_TYPE_LABEL[key] || key || '-';
 }
 
+// Best-guess mapping into provision's PARTNER_CATEGORIES enum — admin
+// can still change it in the Convert modal before submitting. Covers
+// both label sets (see BUSINESS_TYPE_LABEL above); anything unmapped
+// (investor, corporate) is left blank for the admin to pick.
+const BUSINESS_TYPE_TO_CATEGORY: Record<string, ConvertPrefill['category']> = {
+  clinic_hospital: 'Hospital',
+  hospital: 'Hospital',
+  clinic: 'Clinic',
+  hotel_resort: 'Hotel',
+  hotel: 'Hotel',
+  transport_agent: 'Transport',
+  transport: 'Transport',
+  wellness_spa: 'Wellness',
+};
+
+// ApplyForm.tsx (the /partner/apply flow) packs fields cases has no
+// column for — including primary_email — into `message` as structured
+// text. Best-effort pull an email out of it so the Convert modal isn't
+// always blank; admin still reviews/edits before submitting either way.
+function extractEmailFromMessage(message: string | null): string {
+  if (!message) return '';
+  const match = message.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+  return match ? match[0] : '';
+}
+
 // Same normalization approach as BookingsManager.tsx's toWhatsAppNumber,
 // simplified since leads don't have a `country` field to disambiguate.
 function toWhatsAppNumber(phone: string | null) {
@@ -93,6 +131,7 @@ export function PartnerLeadsManager() {
   const [listError, setListError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<'all' | LeadStatus>('all');
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [convertTarget, setConvertTarget] = useState<Lead | null>(null);
 
   async function loadLeads() {
     setLoading(true);
@@ -203,6 +242,7 @@ export function PartnerLeadsManager() {
                 <th className="px-4 py-3 font-semibold">ประเภทธุรกิจ</th>
                 <th className="px-4 py-3 font-semibold">ข้อมูลเพิ่มเติม</th>
                 <th className="px-4 py-3 font-semibold">สถานะ</th>
+                <th className="px-4 py-3 font-semibold"></th>
               </tr>
             </thead>
             <tbody>
@@ -237,17 +277,32 @@ export function PartnerLeadsManager() {
                     <td className="px-4 py-3 text-slate-700">{businessTypeLabel(lead.service_type)}</td>
                     <td className="max-w-[220px] px-4 py-3 text-xs text-slate-500">{lead.message || '-'}</td>
                     <td className="px-4 py-3">
-                      <select
-                        disabled={busy}
-                        value={status}
-                        onChange={(e) => updateStatus(lead.id, e.target.value as LeadStatus)}
-                        className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[status]}`}
-                      >
-                        <option value="new_lead_b2b">{STATUS_LABEL.new_lead_b2b}</option>
-                        <option value="contacted_b2b">{STATUS_LABEL.contacted_b2b}</option>
-                        <option value="converted_b2b">{STATUS_LABEL.converted_b2b}</option>
-                        <option value="rejected_b2b">{STATUS_LABEL.rejected_b2b}</option>
-                      </select>
+                      {status === 'converted_b2b' ? (
+                        <span className={`rounded-lg px-2 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS.converted_b2b}`}>
+                          {STATUS_LABEL.converted_b2b}
+                        </span>
+                      ) : (
+                        <select
+                          disabled={busy}
+                          value={status}
+                          onChange={(e) => updateStatus(lead.id, e.target.value as ManualLeadStatus)}
+                          className={`rounded-lg border-0 px-2 py-1 text-xs font-semibold ${STATUS_BADGE_CLASS[status]}`}
+                        >
+                          <option value="new_lead_b2b">{STATUS_LABEL.new_lead_b2b}</option>
+                          <option value="contacted_b2b">{STATUS_LABEL.contacted_b2b}</option>
+                          <option value="rejected_b2b">{STATUS_LABEL.rejected_b2b}</option>
+                        </select>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      {status !== 'converted_b2b' ? (
+                        <button
+                          onClick={() => setConvertTarget(lead)}
+                          className="whitespace-nowrap rounded-lg border border-primary px-3 py-1.5 text-xs font-semibold text-primary-dark hover:bg-primary/5"
+                        >
+                          แปลงเป็นพันธมิตร →
+                        </button>
+                      ) : null}
                     </td>
                   </tr>
                 );
@@ -256,6 +311,31 @@ export function PartnerLeadsManager() {
           </table>
         </div>
       )}
+
+      {convertTarget
+        ? (() => {
+            const { contactName, companyName } = parseContact(convertTarget.patient_name);
+            const displayCompany = companyName !== '-' ? companyName : convertTarget.hospital || '';
+            const businessKey = (convertTarget.service_type || '').replace('[B2B]', '').trim();
+            return (
+              <ConvertToPartnerModal
+                leadSource="case"
+                leadId={convertTarget.id}
+                prefill={{
+                  organizationName: displayCompany,
+                  category: BUSINESS_TYPE_TO_CATEGORY[businessKey] ?? '',
+                  contactName: contactName !== '-' ? contactName : '',
+                  contactPhone: convertTarget.phone_number || '',
+                  contactEmail: extractEmailFromMessage(convertTarget.message),
+                }}
+                onClose={() => setConvertTarget(null)}
+                onConverted={() => {
+                  loadLeads();
+                }}
+              />
+            );
+          })()
+        : null}
     </div>
   );
 }

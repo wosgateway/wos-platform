@@ -291,6 +291,35 @@ export async function POST(req: Request) {
       await restoreLeadStatus();
       return fail('ไม่พบ partner listing ที่ระบุ (existingPartnerId ไม่ตรงกับข้อมูลจริง)', 404);
     }
+
+    // Guard against silently stealing a listing that's already linked to a
+    // different branch (e.g. admin fat-fingers/pastes the wrong ID). This
+    // pre-check gives the admin an immediate, friendly 409 before we even
+    // attempt the UPDATE below — sql/094_unique_branches_partner_id.sql adds
+    // the actual DB-level `UNIQUE (partner_id) WHERE partner_id IS NOT NULL`
+    // guard that makes this race-safe (see the 23505 handling on the link
+    // UPDATE further down); this SELECT alone can't be, since it's a
+    // separate call with no transaction spanning it and that UPDATE.
+    const { data: linkedBranch, error: linkedBranchErr } = await supabase
+      .from('branches')
+      .select('id, name')
+      .eq('partner_id', existing.id)
+      .neq('id', branch.id)
+      .maybeSingle();
+
+    if (linkedBranchErr) {
+      console.error('provision: existingPartnerId link check failed', linkedBranchErr);
+      await restoreLeadStatus();
+      return fail('ตรวจสอบสถานะ partner listing ไม่สำเร็จ กรุณาลองใหม่', 500);
+    }
+    if (linkedBranch) {
+      await restoreLeadStatus();
+      return fail(
+        `Partner listing "${existing.name}" ถูกผูกกับสาขา "${linkedBranch.name}" อยู่แล้ว ไม่สามารถผูกซ้ำกับสาขาใหม่ได้ (existingPartnerId ไม่ถูกต้อง หรือกรุณาแก้ไขการเชื่อมโยงเดิมก่อน)`,
+        409,
+      );
+    }
+
     partner = existing;
   } else {
     const { data: newPartner, error: partnerErr } = await supabase
@@ -319,13 +348,38 @@ export async function POST(req: Request) {
 
   // 4. link branch -> partner listing (current_user_partner_id() / getPartnerSession()
   // both depend on branches.partner_id — see sql/072_add_branches_partner_id.sql)
+  //
+  // The existingPartnerId branch above only SELECTs for an already-linked
+  // branch, then this UPDATE runs as a separate call — there's no DB
+  // transaction spanning the two (see the file-level comment on why: no
+  // single transaction can span the later Auth/GoTrue call either, so we
+  // never opened one here). That leaves a real race window: two concurrent
+  // provision requests reusing the same existingPartnerId (double-click,
+  // two admin tabs) could both pass the SELECT check before either UPDATE
+  // commits, and both end up linking the same partner to two different
+  // branches. sql/094_unique_branches_partner_id.sql closes that at the DB
+  // level with `UNIQUE (partner_id) WHERE partner_id IS NOT NULL`, so the
+  // loser of the race gets a unique_violation (23505) from THIS update
+  // instead of silently succeeding — we detect that code specifically and
+  // return the same "already linked" 409 the pre-check above returns.
   const { error: linkErr } = await supabase.from('branches').update({ partner_id: partner.id }).eq('id', branch.id);
   if (linkErr) {
-    console.error('provision: link branch -> partner failed', linkErr);
     if (createdPartner) await supabase.from('partners').delete().eq('id', partner.id);
     await supabase.from('branches').delete().eq('id', branch.id);
     await supabase.from('organizations').delete().eq('id', org.id);
     await restoreLeadStatus();
+
+    if (linkErr.code === '23505') {
+      // Lost the race against another concurrent provision request that
+      // reused the same existingPartnerId — not a real server error, so
+      // don't log it as one.
+      return fail(
+        `Partner listing "${partner.name}" ถูกผูกกับสาขาอื่นไปแล้วในระหว่างที่คำขอนี้กำลังทำงาน (มีคำขอ provision อื่นแข่งกันอยู่) กรุณารีเฟรชแล้วลองใหม่`,
+        409,
+      );
+    }
+
+    console.error('provision: link branch -> partner failed', linkErr);
     return fail('เชื่อม Branch กับ Partner listing ไม่สำเร็จ: ' + linkErr.message, 500);
   }
 

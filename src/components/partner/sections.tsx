@@ -256,6 +256,49 @@ export function CommercialTermsSection({ content }: { content: PartnerPageConten
           </table>
           <p className="wos-disclaimer">{commercialTerms.disclaimer}</p>
         </div>
+
+        <div className="wos-doc wos-fee-doc">
+          <span className="wos-doc-stamp">
+            {content.locale === "th" ? "อัตราค่าธรรมเนียม" : content.locale === "lo" ? "ອັດຕາຄ່າທຳນຽມ" : "Fee schedule"}
+          </span>
+          <h3 className="wos-pass-headline">{commercialTerms.feeScheduleHeadline}</h3>
+          <div className="wos-fee-table-wrap">
+            <table className="wos-fee-table">
+              <thead>
+                <tr>
+                  <th>
+                    {content.locale === "th"
+                      ? "ประเภท Partner"
+                      : content.locale === "lo"
+                        ? "ປະເພດ Partner"
+                        : "Partner type"}
+                  </th>
+                  <th>
+                    {content.locale === "th" ? "ค่าธรรมเนียม" : content.locale === "lo" ? "ຄ່າທຳນຽມ" : "WOS fee"}
+                  </th>
+                  <th>
+                    {content.locale === "th" ? "หลักการ" : content.locale === "lo" ? "ຫຼັກການ" : "Basis"}
+                  </th>
+                </tr>
+              </thead>
+              <tbody>
+                {commercialTerms.feeSchedule.map((row) => (
+                  <tr key={row.category}>
+                    <td>
+                      <span className="wos-fee-icon" aria-hidden="true">
+                        {row.icon}
+                      </span>
+                      {row.category}
+                    </td>
+                    <td className="wos-fee-value">{row.fee}</td>
+                    <td className="wos-fee-principle">{row.principle}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="wos-disclaimer">{commercialTerms.feeScheduleNote}</p>
+        </div>
       </div>
     </section>
   );

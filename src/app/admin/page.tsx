@@ -17,7 +17,7 @@ import { OverviewManager } from '@/components/admin/OverviewManager';
 import { PartnersManager } from '@/components/admin/PartnersManager';
 import { PackagesManager } from '@/components/admin/PackagesManager';
 import { BookingsManager } from '@/components/admin/BookingsManager';
-import { PartnerLeadsManager } from '@/components/admin/PartnerLeadsManager';
+import { PartnerLeadsHub } from '@/components/admin/PartnerLeadsHub';
 import { ConsultationsManager } from '@/components/admin/ConsultationsManager';
 import { TransportPricingManager } from '@/components/admin/TransportPricingManager';
 import { PromoBannersManager } from '@/components/admin/PromoBannersManager';
@@ -99,7 +99,7 @@ function AdminPageContent() {
       ) : tab === 'bookings' ? (
         <BookingsManager />
       ) : tab === 'leads' ? (
-        <PartnerLeadsManager />
+        <PartnerLeadsHub />
       ) : tab === 'consultations' ? (
         <ConsultationsManager />
       ) : tab === 'transport-pricing' ? (

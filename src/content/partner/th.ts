@@ -214,6 +214,20 @@ export const th: PartnerPageContent = {
       { label: "ระยะเวลาสัญญา", value: "1 ปี ต่ออายุอัตโนมัติ เว้นแต่แจ้งยกเลิกล่วงหน้า" },
       { label: "สกุลเงินการชำระเงิน", value: "THB / USD (ตามข้อตกลง)" },
     ],
+    feeScheduleHeadline: "อัตราค่าธรรมเนียมตามประเภทพันธมิตร",
+    feeSchedule: [
+      { icon: "🏥", category: "Clinic / Medical Provider", fee: "15%", principle: "คิดจากบริการที่เกิดจาก WOS" },
+      { icon: "🌿", category: "Wellness / Spa", fee: "15%", principle: "ขึ้นกับบริการและ margin" },
+      { icon: "🏨", category: "Hotel / Resort", fee: "12%", principle: "เหมาะกับโรงแรมที่มี volume" },
+      { icon: "🚐", category: "Transport", fee: "15%", principle: "Sedan/SUV/Van/รถ VIP" },
+      { icon: "🧘", category: "Fitness / Yoga / Activity", fee: "15%", principle: "Package / Activity" },
+      { icon: "🥗", category: "Healthy Food", fee: "10%", principle: "margin ค่อนข้างต่ำ" },
+      { icon: "🥊", category: "Muay Thai / Training", fee: "15%", principle: "Package ระยะสั้น/ยาว" },
+      { icon: "👨‍⚕️", category: "Specialist / Consultant", fee: "10%", principle: "ค่าบริการวิชาชีพ" },
+      { icon: "📦", category: "WOS Bundled Journey", fee: "20%+", principle: "WOS รวมหลายบริการและบริหาร Journey" },
+    ],
+    feeScheduleNote:
+      "อัตราค่าธรรมเนียมอาจปรับตามปริมาณการจอง ระยะเวลาสัญญา และรูปแบบความร่วมมือ — ติดต่อทีม WOS เพื่อรับข้อเสนอที่เหมาะกับธุรกิจของคุณ",
     disclaimer:
       "รายละเอียดค่าคอมมิชชั่นและเงื่อนไขฉบับสมบูรณ์จะระบุใน Pilot Agreement / MOU ที่ลงนามร่วมกัน",
   },
