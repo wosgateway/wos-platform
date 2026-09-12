@@ -6,11 +6,12 @@ import { Breadcrumb } from '@/components/Breadcrumb';
 import { PartnerGallery } from '@/components/PartnerGallery';
 import { PackagesGrid } from '@/components/PackagesGrid';
 import { PartnerLocationMap } from '@/components/PartnerLocationMap';
+import { PartnerStructuredData } from '@/components/seo/PartnerStructuredData';
 
 export default async function PartnerDetailPage({
-  params: { id },
+  params: { locale, id },
 }: {
-  params: { id: string };
+  params: { locale: string; id: string };
 }) {
   const t = await getTranslations('common');
   const tCat = await getTranslations('categories');
@@ -48,7 +49,9 @@ export default async function PartnerDetailPage({
     typeof partner.longitude === 'number';
 
   return (
-    <main>
+    <>
+      <PartnerStructuredData locale={locale} partner={partner} />
+      <main>
       <Breadcrumb
         trail={[
           ...(category
@@ -114,5 +117,6 @@ export default async function PartnerDetailPage({
         </div>
       </section>
     </main>
+    </>
   );
 }

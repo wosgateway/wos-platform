@@ -11,6 +11,7 @@ import { ChatWidget } from '@/components/ChatWidget';
 import { JourneyProvider } from '@/lib/journey/context';
 import { MobileJourneyBar } from '@/components/journey/MobileJourneyBar';
 import { LangSetter } from '@/components/LangSetter';
+import { WosStructuredData } from '@/components/seo/WosStructuredData';
 
 export function generateStaticParams() {
   return routing.locales.map((locale) => ({ locale }));
@@ -42,6 +43,7 @@ export default async function LocaleLayout({
 
   return (
     <NextIntlClientProvider messages={messages}>
+      <WosStructuredData />
       <LangSetter locale={locale} />
       <JourneyProvider>
         {!isPartnerPortal && <Header />}

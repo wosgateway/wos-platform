@@ -19,10 +19,13 @@ import { KnowledgeCenter } from '@/components/KnowledgeCenter';
 import HeroV2 from '@/components/HeroV2';
 import { ConsultationCTA } from '@/components/ConsultationCTA';
 import { PromoBannerSlider } from '@/components/PromoBannerSlider';
+import { HomeStructuredData } from '@/components/seo/HomeStructuredData';
 
 export default async function HomePage({
+  params: { locale },
   searchParams,
 }: {
+  params: { locale: string };
   searchParams: { goal?: string };
 }) {
   const t = await getTranslations('home');
@@ -76,7 +79,9 @@ export default async function HomePage({
   const activeGoalDesc = activeGoalIndex >= 0 ? goalItems[activeGoalIndex]?.desc : null;
 
   return (
-    <main>
+    <>
+      <HomeStructuredData locale={locale} />
+      <main>
       {/* ===== HERO (WOS.os rebrand, network diagram slotted in) =====
           Pass 2–3 images to crossfade automatically (see
           HeroBackgroundSlideshow). All images should share the same
@@ -194,5 +199,6 @@ export default async function HomePage({
           for the ?source=homepage_hero counterpart at the top of the page. */}
       <ConsultationCTA />
     </main>
+    </>
   );
 }
