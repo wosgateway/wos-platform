@@ -42,6 +42,9 @@ import {
   Phone,
   User,
 } from 'lucide-react';
+import { JourneyMap } from '@/components/trips/JourneyMap';
+import { getMapPoints, resolveEventLocation } from '@/lib/trips/routes/journey-points';
+import { buildPointUrl, buildRouteUrl } from '@/lib/trips/routes/google-maps';
 
 type Locale = 'th' | 'lo' | 'en';
 const LOCALE_OPTIONS: { value: Locale; label: string }[] = [
@@ -76,8 +79,16 @@ interface TripEvent {
   contact_name: string | null;
   contact_phone: string | null;
   sort_order: number | null;
-  notes: string | null;
-  partners: { name: string } | null;
+  // lat/lng/address/location_status added for the Journey Map (Phase
+  // 3) — see journey-points.ts, which is the only place that reads
+  // location_status; the timeline UI below still only shows `name`.
+  partners: {
+    name: string;
+    latitude: number | null;
+    longitude: number | null;
+    address: string | null;
+    location_status: 'pending' | 'verified' | 'rejected' | null;
+  } | null;
   // 1:1 with trip_events. trip_event_id has a UNIQUE constraint, so
   // PostgREST embeds this as a single object, not an array.
   transport_assignments: TransportAssignment | null;
@@ -146,6 +157,51 @@ function formatTime(t: string | null) {
   return t.slice(0, 5);
 }
 
+// A6 — Google Maps deep link, per event. Superseded by
+// src/lib/trips/routes/ (Phase 3, Journey Map): resolveEventLocation()
+// prefers a verified partner coordinate, falling back to partner
+// address then `location` text (see its own comments for why), and
+// buildPointUrl() turns that into a coordinate-or-text Maps link — the
+// pin-accurate link the old comment here was anticipating.
+//
+// Transport events are the one exception: they carry pickup/dropoff
+// text on transport_assignments instead of a single `location`, so
+// this opens the two-stop pickup → dropoff route rather than one pin.
+function eventMapsUrl(event: TripEvent): string | null {
+  if (event.event_type === 'transport' && event.transport_assignments) {
+    return buildRouteUrl([
+      { latitude: null, longitude: null, searchText: event.transport_assignments.pickup_location },
+      { latitude: null, longitude: null, searchText: event.transport_assignments.dropoff_location },
+    ]);
+  }
+  const resolved = resolveEventLocation(event);
+  return resolved ? buildPointUrl(resolved) : null;
+}
+
+// A5 — "Next Up" hero: an event actively in progress takes priority
+// over anything merely upcoming; otherwise the earliest not-yet-done
+// event by (event_date, start_time, sort_order); null when every
+// event is completed/cancelled (or there are none), which renders
+// the "journey complete" state.
+function pickHeroEvent(events: TripEvent[]): { event: TripEvent; isNow: boolean } | null {
+  const inProgress = events.find((e) => e.status === 'in_progress');
+  if (inProgress) return { event: inProgress, isNow: true };
+
+  const upcoming = events
+    .filter((e) => e.status !== 'completed' && e.status !== 'cancelled')
+    .slice()
+    .sort((a, b) => {
+      if (a.event_date !== b.event_date) return a.event_date.localeCompare(b.event_date);
+      const at = a.start_time ?? '';
+      const bt = b.start_time ?? '';
+      if (at !== bt) return at.localeCompare(bt);
+      return (a.sort_order ?? 0) - (b.sort_order ?? 0);
+    });
+
+  if (upcoming.length === 0) return null;
+  return { event: upcoming[0], isNow: false };
+}
+
 export default function MyTripJourneyPage() {
   const params = useParams();
   const token = params?.token as string;
@@ -193,7 +249,7 @@ export default function MyTripJourneyPage() {
         <button
           key={opt.value}
           onClick={() => switchLocale(opt.value)}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          className={`flex min-h-[44px] items-center rounded-full px-3 text-xs font-medium transition-colors ${
             locale === opt.value ? 'bg-primary text-white' : 'text-slate-500 hover:bg-slate-50'
           }`}
         >
@@ -237,6 +293,11 @@ export default function MyTripJourneyPage() {
   const primaryName =
     trip.trip_participants.find((p) => p.is_primary)?.customers?.full_name ?? null;
   const otherParticipants = trip.trip_participants.filter((p) => !p.is_primary);
+
+  // Phase 3 — Journey Map. Derived entirely from trip.trip_events
+  // (§18: route is a derived view, not a new source of truth); events
+  // with no resolvable location simply don't produce a point (§8).
+  const mapPoints = getMapPoints(trip.trip_events);
 
   const groupedEvents = (() => {
     const groups = new Map<string, TripEvent[]>();
@@ -285,6 +346,68 @@ export default function MyTripJourneyPage() {
         ) : null}
       </div>
 
+      {/* A5 — Hero card: current or next event, above the fold */}
+      {(() => {
+        const hero = pickHeroEvent(trip.trip_events);
+        if (!hero) {
+          const hasAnyEvents = trip.trip_events.length > 0;
+          if (!hasAnyEvents) return null;
+          return (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-6 text-center shadow-sm">
+              <p className="text-2xl">✅</p>
+              <p className="mt-2 text-sm font-semibold text-emerald-800">{t('hero.completeTitle')}</p>
+              <p className="mt-1 text-xs text-emerald-700">{t('hero.completeSubtitle')}</p>
+            </div>
+          );
+        }
+        const { event: heroEvent, isNow } = hero;
+        const Icon = EVENT_TYPE_ICON[heroEvent.event_type];
+        const heroKey = `${heroEvent.event_date}_${heroEvent.start_time ?? ''}_${heroEvent.title}`;
+        const mapsUrl = eventMapsUrl(heroEvent);
+        return (
+          <div className="rounded-2xl border border-primary/20 bg-primary/5 p-5 shadow-sm">
+            <p className="text-[11px] font-bold uppercase tracking-wide text-primary-dark">
+              {isNow ? t('hero.nowLabel') : t('hero.nextLabel')}
+            </p>
+            <div className="mt-2 flex items-start gap-3">
+              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary-dark">
+                <Icon className="h-5 w-5" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-base font-bold text-slate-900">{heroEvent.title}</p>
+                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-slate-500">
+                  {heroEvent.start_time ? (
+                    <span>
+                      {formatTime(heroEvent.start_time)}
+                      {heroEvent.end_time ? `–${formatTime(heroEvent.end_time)}` : ''}
+                    </span>
+                  ) : null}
+                  {heroEvent.location ? <span className="truncate">{heroEvent.location}</span> : null}
+                </div>
+              </div>
+            </div>
+            <div className="mt-4 flex gap-2">
+              <a
+                href={`#event-${heroKey}`}
+                className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl bg-white text-center text-xs font-semibold text-primary-dark shadow-sm"
+              >
+                {t('hero.viewDetails')}
+              </a>
+              {mapsUrl ? (
+                <a
+                  href={mapsUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex min-h-[44px] flex-1 items-center justify-center rounded-xl bg-primary text-center text-xs font-semibold text-white"
+                >
+                  📍 {t('hero.openMaps')}
+                </a>
+              ) : null}
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Timeline */}
       <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
         <h2 className="border-b border-slate-100 p-5 pb-3 text-sm font-bold text-slate-700">{t('itineraryHeading')}</h2>
@@ -302,8 +425,10 @@ export default function MyTripJourneyPage() {
                     .map((ev, idx) => {
                       const Icon = EVENT_TYPE_ICON[ev.event_type];
                       const transport = ev.transport_assignments ?? null;
+                      const eventKey = `${ev.event_date}_${ev.start_time ?? ''}_${ev.title}`;
+                      const mapsUrl = eventMapsUrl(ev);
                       return (
-                        <div key={idx} className="flex gap-3">
+                        <div key={idx} id={`event-${eventKey}`} className="flex gap-3 scroll-mt-4">
                           <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary-dark">
                             <Icon className="h-4.5 w-4.5" />
                           </div>
@@ -362,7 +487,16 @@ export default function MyTripJourneyPage() {
                                 ) : null}
                               </div>
                             ) : null}
-                            {ev.notes ? <p className="mt-1 text-xs text-slate-400">{ev.notes}</p> : null}
+                            {mapsUrl ? (
+                              <a
+                                href={mapsUrl}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="mt-2 inline-flex min-h-[44px] items-center gap-1 rounded-lg border border-slate-200 px-2.5 text-[11px] font-medium text-slate-600"
+                              >
+                                📍 {t('hero.openMaps')}
+                              </a>
+                            ) : null}
                           </div>
                         </div>
                       );
@@ -373,6 +507,11 @@ export default function MyTripJourneyPage() {
           </div>
         )}
       </div>
+
+      {/* Journey Map — §10 layout: sits below the Timeline, not above
+          it, so the customer sees "what/when" before "where". Renders
+          nothing when mapPoints is empty. */}
+      <JourneyMap points={mapPoints} />
 
       {/* WhatsApp CTA — same primary "need help" affordance as the
           order-number my-trip page. */}

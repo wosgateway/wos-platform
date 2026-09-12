@@ -12,9 +12,28 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Plus, Search, X, MapPin, Calendar } from 'lucide-react';
+import { Plus, Search, X, MapPin, Calendar, AlertTriangle, Clock } from 'lucide-react';
 
 type TripStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled';
+
+// Mirrors AttentionCase['code'] in src/lib/journey/attention.ts — kept as a
+// plain string union here rather than importing the server-only type, since
+// this component only ever reads it off the API response.
+type AttentionCaseCode =
+  | 'OVERDUE'
+  | 'UNASSIGNED_PARTNER'
+  | 'PENDING_CONFIRMATION'
+  | 'FAILED_REMINDER'
+  | 'MISSING_LOCATION'
+  | 'MISSING_CUSTOMER_CONTACT'
+  | 'TRANSPORT_INCOMPLETE';
+
+interface AttentionSummary {
+  cases: { code: AttentionCaseCode; eventId: string | null; message: string }[];
+  overallStatus: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'ATTENTION_REQUIRED';
+  progress: { completed: number; total: number };
+  nextEvent: { id: string; title: string; event_date: string; start_time: string | null } | null;
+}
 
 interface TripRow {
   id: string;
@@ -27,6 +46,7 @@ interface TripRow {
   status: TripStatus;
   created_at: string;
   customers: { id: string; full_name: string; phone: string } | null;
+  attention: AttentionSummary;
 }
 
 interface CustomerHit {
@@ -34,6 +54,19 @@ interface CustomerHit {
   full_name: string;
   phone: string;
   email: string | null;
+}
+
+// One customer order, reduced to what CreateTripSheet needs to
+// pre-fill a new trip's dates instead of the admin re-typing dates
+// that already exist on an order (see /api/admin/customers/[id]/orders).
+interface CustomerOrderHint {
+  id: string;
+  order_number: string;
+  status: string;
+  suggested_start_date: string | null;
+  suggested_end_date: string | null;
+  pickup_location_hint: string | null;
+  dropoff_location_hint: string | null;
 }
 
 const STATUS_LABEL: Record<TripStatus, string> = {
@@ -61,6 +94,10 @@ function formatDateRange(start: string, end: string) {
   const fmt = (d: string) =>
     new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'short' });
   return `${fmt(start)} – ${fmt(end)}`;
+}
+
+function formatEventTime(startTime: string | null) {
+  return startTime ? startTime.slice(0, 5) : null; // 'HH:MM:SS' -> 'HH:MM'
 }
 
 export function JourneysManager() {
@@ -157,38 +194,70 @@ export function JourneysManager() {
         </div>
       ) : (
         <div className="space-y-2">
-          {visibleTrips.map((trip) => (
-            <button
-              key={trip.id}
-              onClick={() => router.push(`/admin/journeys/${trip.id}`)}
-              className="card-shadow flex w-full items-center gap-3 rounded-2xl border border-slate-100 bg-white p-4 text-left transition-transform active:scale-[0.99]"
-            >
-              <div className="min-w-0 flex-1">
-                <div className="mb-1 flex items-center gap-2">
-                  <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[trip.status]}`} />
-                  <span className="truncate text-sm font-semibold text-slate-900">
-                    {trip.customers?.full_name ?? 'ไม่ทราบชื่อลูกค้า'}
+          {visibleTrips.map((trip) => {
+            const attentionCount = trip.attention?.cases.length ?? 0;
+            const progress = trip.attention?.progress;
+            const nextEvent = trip.attention?.nextEvent;
+            return (
+              <button
+                key={trip.id}
+                onClick={() => router.push(`/admin/journeys/${trip.id}`)}
+                className="card-shadow flex w-full flex-col gap-2 rounded-2xl border border-slate-100 bg-white p-4 text-left transition-transform active:scale-[0.99]"
+              >
+                <div className="flex w-full items-center gap-3">
+                  <div className="min-w-0 flex-1">
+                    <div className="mb-1 flex items-center gap-2">
+                      <span className={`h-1.5 w-1.5 rounded-full ${STATUS_DOT[trip.status]}`} />
+                      <span className="truncate text-sm font-semibold text-slate-900">
+                        {trip.customers?.full_name ?? 'ไม่ทราบชื่อลูกค้า'}
+                      </span>
+                      <span className="ml-auto shrink-0 text-xs text-slate-400">{trip.trip_number}</span>
+                    </div>
+                    <div className="flex items-center gap-3 text-xs text-slate-500">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="h-3.5 w-3.5" />
+                        {formatDateRange(trip.start_date, trip.end_date)}
+                      </span>
+                      {trip.destination ? (
+                        <span className="flex min-w-0 items-center gap-1 truncate">
+                          <MapPin className="h-3.5 w-3.5 shrink-0" />
+                          <span className="truncate">{trip.destination}</span>
+                        </span>
+                      ) : null}
+                      {progress && progress.total > 0 ? (
+                        <span className="shrink-0 text-slate-400">
+                          {progress.completed}/{progress.total} completed
+                        </span>
+                      ) : null}
+                    </div>
+                  </div>
+                  <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${STATUS_PILL[trip.status]}`}>
+                    {STATUS_LABEL[trip.status]}
                   </span>
-                  <span className="ml-auto shrink-0 text-xs text-slate-400">{trip.trip_number}</span>
                 </div>
-                <div className="flex items-center gap-3 text-xs text-slate-500">
-                  <span className="flex items-center gap-1">
-                    <Calendar className="h-3.5 w-3.5" />
-                    {formatDateRange(trip.start_date, trip.end_date)}
-                  </span>
-                  {trip.destination ? (
-                    <span className="flex min-w-0 items-center gap-1 truncate">
-                      <MapPin className="h-3.5 w-3.5 shrink-0" />
-                      <span className="truncate">{trip.destination}</span>
-                    </span>
-                  ) : null}
-                </div>
-              </div>
-              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${STATUS_PILL[trip.status]}`}>
-                {STATUS_LABEL[trip.status]}
-              </span>
-            </button>
-          ))}
+
+                {nextEvent ? (
+                  <div className="flex items-center gap-1.5 rounded-xl bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
+                    <Clock className="h-3.5 w-3.5 shrink-0 text-slate-400" />
+                    <span className="font-medium text-slate-700">NEXT</span>
+                    <span className="truncate">{nextEvent.title}</span>
+                    {formatEventTime(nextEvent.start_time) ? (
+                      <span className="ml-auto shrink-0 text-slate-400">{formatEventTime(nextEvent.start_time)}</span>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {attentionCount > 0 ? (
+                  <div className="flex items-center gap-1.5 rounded-xl bg-amber-50 px-2.5 py-1.5 text-xs font-medium text-amber-700">
+                    <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                    {attentionCount === 1
+                      ? '1 item requires attention'
+                      : `${attentionCount} items require attention`}
+                  </div>
+                ) : null}
+              </button>
+            );
+          })}
         </div>
       )}
 
@@ -228,6 +297,58 @@ function CreateTripSheet({
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Once a customer is picked, pull their existing orders and use them
+  // to pre-fill start/end date — previously this always started blank,
+  // forcing the admin to re-type dates that were already on the order
+  // from booking time. Dates stay fully editable either way; this is
+  // just a starting point, not a lock. See
+  // /api/admin/customers/[id]/orders for how suggested_start_date /
+  // suggested_end_date are derived per order.
+  const [customerOrders, setCustomerOrders] = useState<CustomerOrderHint[]>([]);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [appliedOrderId, setAppliedOrderId] = useState<string | null>(null);
+
+  function applyOrderDates(order: CustomerOrderHint) {
+    if (order.suggested_start_date) setStartDate(order.suggested_start_date);
+    if (order.suggested_end_date) setEndDate(order.suggested_end_date);
+    setAppliedOrderId(order.id);
+  }
+
+  useEffect(() => {
+    if (!selectedCustomer) {
+      setCustomerOrders([]);
+      setAppliedOrderId(null);
+      return;
+    }
+    let cancelled = false;
+    setLoadingOrders(true);
+    fetch(`/api/admin/customers/${selectedCustomer.id}/orders`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((result) => {
+        if (cancelled) return;
+        const orders: CustomerOrderHint[] = result?.orders ?? [];
+        setCustomerOrders(orders);
+        // Auto-apply the most recent order's dates (orders are already
+        // sorted newest-first by the API) so the common case — one
+        // active order per customer — needs zero extra clicks. With
+        // more than one order, the admin picks explicitly below instead
+        // of silently guessing which one this trip is for.
+        if (orders.length === 1 && orders[0].suggested_start_date) {
+          applyOrderDates(orders[0]);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setCustomerOrders([]);
+      })
+      .finally(() => {
+        if (!cancelled) setLoadingOrders(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedCustomer]);
 
   useEffect(() => {
     if (selectedCustomer) return;
@@ -358,6 +479,52 @@ function CreateTripSheet({
               </div>
             )}
           </div>
+
+          {/* Order date auto-fill — only relevant once a customer is
+              picked and has more than one active order, since the
+              single-order case already auto-applies above. */}
+          {selectedCustomer && loadingOrders ? (
+            <div className="text-xs text-slate-400">กำลังตรวจสอบออเดอร์ของลูกค้า...</div>
+          ) : null}
+          {selectedCustomer && !loadingOrders && customerOrders.length > 1 ? (
+            <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="mb-2 text-xs font-medium text-amber-800">
+                ลูกค้ามีหลายออเดอร์ — เลือกออเดอร์เพื่อดึงวันที่มาใส่อัตโนมัติ
+              </p>
+              <div className="space-y-1.5">
+                {customerOrders.map((o) => (
+                  <button
+                    type="button"
+                    key={o.id}
+                    onClick={() => applyOrderDates(o)}
+                    className={`block w-full rounded-lg border px-2.5 py-1.5 text-left text-xs ${
+                      appliedOrderId === o.id
+                        ? 'border-primary bg-primary/5 text-primary-dark'
+                        : 'border-amber-200 bg-white text-slate-700 hover:bg-amber-100/50'
+                    }`}
+                  >
+                    <span className="font-medium">{o.order_number}</span>
+                    {o.suggested_start_date ? (
+                      <span className="ml-2 text-slate-500">
+                        {o.suggested_start_date}
+                        {o.suggested_end_date && o.suggested_end_date !== o.suggested_start_date
+                          ? ` – ${o.suggested_end_date}`
+                          : ''}
+                      </span>
+                    ) : (
+                      <span className="ml-2 text-slate-400">ไม่มีวันที่ในออเดอร์</span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
+          {selectedCustomer && !loadingOrders && appliedOrderId ? (
+            <p className="text-xs text-emerald-600">✓ ดึงวันที่จากออเดอร์แล้ว — แก้ไขด้านล่างได้ตามจริง</p>
+          ) : null}
+          {selectedCustomer && !loadingOrders && customerOrders.length === 0 ? (
+            <p className="text-xs text-slate-400">ลูกค้ารายนี้ยังไม่มีออเดอร์ที่ใช้งานอยู่ — กรอกวันที่เองด้านล่าง</p>
+          ) : null}
 
           {/* Dates */}
           <div className="grid grid-cols-2 gap-3">

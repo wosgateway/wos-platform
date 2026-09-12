@@ -648,9 +648,14 @@ export function BookingsManager() {
   // instead of guessing — financial data must never silently fall
   // back to a made-up "1".
   //
-  // round_trip/one_way transport never scales with quantity (always
-  // 1) — no ambiguity there. 'daily' transport relies on the
-  // persisted column; for bookings made before migration 057 shipped,
+  // one_way transport is always quantity 1 (single leg) — no
+  // ambiguity there. round_trip transport is TWO one-way legs done on
+  // two separate days (pickup day + a separate return day) priced at
+  // the one-way unit rate, so it is always quantity 2 (fixed in
+  // migration 059 — previously hard-coded to 1, which silently halved
+  // every round-trip transport charge; see WOS-20260912-00062).
+  // 'daily' transport relies on the persisted column; for bookings
+  // made before migration 057 shipped,
   // that column defaults to 1 and there is no way to recover the real
   // day-count after the fact (it was never stored anywhere). We
   // surface the current value for confirmation rather than assume
@@ -675,8 +680,13 @@ export function BookingsManager() {
       const parsed = input ? Number(input) : NaN;
       if (!input || Number.isNaN(parsed) || parsed <= 0) return;
       quantity = parsed;
+    } else if (item.service_type === 'transport' && item.transport_mode === 'round_trip') {
+      // Round trip = pickup leg + return leg on a separate day, each
+      // billed at the one-way unit rate → quantity 2, always.
+      quantity = 2;
     } else {
-      // one_way / round_trip transport — never scales with quantity.
+      // one_way transport (and medical_assistance) — single leg,
+      // quantity always 1.
       quantity = 1;
     }
 

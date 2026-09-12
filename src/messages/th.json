@@ -1374,6 +1374,22 @@
     "companion": "ผู้ร่วมเดินทาง",
     "itineraryHeading": "กำหนดการเดินทาง",
     "noEventsYet": "ยังไม่มีกำหนดการในทริปนี้",
+    "journeyMap": {
+      "heading": "เส้นทางการเดินทาง",
+      "stopCount": "{count} จุด",
+      "pickup": "จุดรับ",
+      "dropoff": "จุดส่ง",
+      "open": "เปิด",
+      "openFullRoute": "เปิดเส้นทางทั้งหมดใน Google Maps"
+    },
+    "hero": {
+      "nowLabel": "ตอนนี้",
+      "nextLabel": "ต่อไป",
+      "completeTitle": "การเดินทางของคุณเสร็จสมบูรณ์แล้ว",
+      "completeSubtitle": "ขอบคุณที่เดินทางกับ WOS",
+      "viewDetails": "ดูรายละเอียด",
+      "openMaps": "เปิดแผนที่"
+    },
     "tripStatus": {
       "planned": "วางแผนไว้",
       "in_progress": "กำลังเดินทาง",
@@ -1400,6 +1416,13 @@
     "heading": "กำหนดการที่คุณรับผิดชอบ",
     "scheduleHeading": "กำหนดการ",
     "noEventsYet": "ยังไม่มีกำหนดการสำหรับคุณในทริปนี้",
+    "statusAction": {
+      "markConfirmed": "ยืนยันงานนี้",
+      "markInProgress": "เริ่มดำเนินการ",
+      "markCompleted": "เสร็จสิ้นงานนี้",
+      "updating": "กำลังอัปเดต...",
+      "updateFailed": "อัปเดตไม่สำเร็จ กรุณาลองใหม่"
+    },
     "tripStatus": {
       "planned": "วางแผนไว้",
       "in_progress": "กำลังเดินทาง",

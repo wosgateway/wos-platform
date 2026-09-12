@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/admin/require-admin";
 import { createServiceClient } from "@/lib/supabase/service";
 import { withCarriedCookies } from "@/lib/trips/with-carried-cookies";
 import { notifyPartnerHotelEvent } from "@/lib/notify/hotel-line";
+import { notifyEventConfirmed } from "@/lib/trips/reminders/engine";
 
 const EVENT_STATUS_TRANSITIONS: Record<string, string[]> = {
   pending: ["confirmed", "cancelled"],
@@ -114,6 +115,15 @@ export async function PATCH(
       notes: event.notes,
       isUpdate: true,
     });
+  }
+
+  // My Journey Phase 2, R3 (brief §4): admin moving an event to
+  // "confirmed" is the same trigger the partner-facing status route
+  // fires on — covered here too so R3 fires regardless of which side
+  // made the change. Best-effort, fire-and-forget, cannot fail this
+  // request.
+  if (patch.status === "confirmed") {
+    void notifyEventConfirmed(event.id);
   }
 
   return withCarriedCookies(cookieCarrier, NextResponse.json({ event }));

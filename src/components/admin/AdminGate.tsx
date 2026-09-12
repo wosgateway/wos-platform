@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
 import type { Session } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { NewActivityAlert } from '@/components/admin/NewActivityAlert';
 
 const NAV_LINKS = [
   { href: '/admin', label: 'ภาพรวม' },
@@ -160,9 +161,12 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     <div>
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
         <span className="text-sm text-slate-500">เข้าสู่ระบบเป็น {session.user.email}</span>
-        <button onClick={handleLogout} className="text-sm font-medium text-slate-500 hover:text-red-600">
-          ออกจากระบบ
-        </button>
+        <div className="flex items-center gap-1">
+          <NewActivityAlert />
+          <button onClick={handleLogout} className="text-sm font-medium text-slate-500 hover:text-red-600">
+            ออกจากระบบ
+          </button>
+        </div>
       </div>
       <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-4 py-1.5">
         {NAV_LINKS.map((link) => {

@@ -28,7 +28,16 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
 
   // Every downstream query below filters by trip.id (never by token again)
   // and returns only customer-appropriate fields — no internal ids like
-  // order_item_id, no admin-only notes.
+  // order_item_id, no admin-only notes. (trip_events.notes is deliberately
+  // NOT selected below — that column can carry internal/admin remarks not
+  // meant to leave WOS; see the same note on partner-trip/[token]/route.ts,
+  // which already excluded it. This route used to select it too — fixed.)
+  //
+  // partners' latitude/longitude/address/location_status are read here
+  // for the Journey Map (Phase 3) — getMapPoints() in
+  // src/lib/trips/routes/journey-points.ts only trusts a coordinate
+  // when location_status = 'verified', so location_status has to come
+  // along even though nothing renders it directly.
   const { data: fullTrip, error: fetchError } = await supabase
     .from("trips")
     .select(
@@ -38,8 +47,8 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
       trip_participants ( display_name, is_primary, customers ( full_name ) ),
       trip_events (
         event_type, title, event_date, start_time, end_time, location,
-        status, contact_name, contact_phone, sort_order, notes,
-        partners ( name ),
+        status, contact_name, contact_phone, sort_order,
+        partners ( name, latitude, longitude, address, location_status ),
         transport_assignments (
           vehicle, pickup_location, dropoff_location, pickup_time,
           dropoff_time_estimated, status, driver_name, driver_phone

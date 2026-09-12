@@ -185,3 +185,29 @@ textarea:focus {
     animation: none;
   }
 }
+
+/* Admin nav "new order / new partner lead" bell (NewActivityAlert.tsx).
+   Same reasoning as .cta-pulse above: a hard on/off opacity blink reads as
+   spammy and is genuinely bad for photosensitive users, so this pulses
+   the icon's color/scale instead of toggling visibility. Paired with
+   Tailwind's built-in animate-ping for the small red ring on the badge,
+   which is a scale+fade, not a visibility toggle, so it's fine as-is. */
+@keyframes bell-blink {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.12);
+  }
+}
+
+.animate-bell-blink {
+  animation: bell-blink 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-bell-blink {
+    animation: none;
+  }
+}

@@ -43,6 +43,9 @@ import {
   PackagePlus,
   Loader2,
   CheckCircle2,
+  AlertTriangle,
+  Clock,
+  ExternalLink,
 } from 'lucide-react';
 
 const PUBLIC_TRIP_PATH = '/th/my-trip/token'; // see note above — page not live yet
@@ -140,6 +143,25 @@ interface PartnerLink {
   token_revoked_at: string | null;
   token_expires_at: string | null;
   partners: { id: string; name: string } | null;
+}
+
+// Mirrors AttentionCase['code'] in src/lib/journey/attention.ts — kept as a
+// plain string union rather than importing the server-only type, since this
+// component only ever reads it off the API response.
+type AttentionCaseCode =
+  | 'OVERDUE'
+  | 'UNASSIGNED_PARTNER'
+  | 'PENDING_CONFIRMATION'
+  | 'FAILED_REMINDER'
+  | 'MISSING_LOCATION'
+  | 'MISSING_CUSTOMER_CONTACT'
+  | 'TRANSPORT_INCOMPLETE';
+
+interface AttentionSummary {
+  cases: { code: AttentionCaseCode; eventId: string | null; message: string }[];
+  overallStatus: 'PLANNED' | 'IN_PROGRESS' | 'COMPLETED' | 'CANCELLED' | 'ATTENTION_REQUIRED';
+  progress: { completed: number; total: number };
+  nextEvent: { id: string; title: string; event_date: string; start_time: string | null } | null;
 }
 
 const STATUS_LABEL: Record<TripStatus, string> = {
@@ -307,10 +329,14 @@ function formatTime(t: string | null) {
   if (!t) return null;
   return t.slice(0, 5);
 }
+function openMapsUrl(location: string) {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(location)}`;
+}
 
 export function JourneyDetail({ tripId }: { tripId: string }) {
   const router = useRouter();
   const [trip, setTrip] = useState<Trip | null>(null);
+  const [attention, setAttention] = useState<AttentionSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [partners, setPartners] = useState<PartnerOption[]>([]);
   const [showEditTrip, setShowEditTrip] = useState(false);
@@ -333,6 +359,7 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
       const result = await res.json();
       if (!res.ok) throw new Error(result?.error ?? 'failed to load');
       setTrip(result.trip);
+      setAttention(result.attention ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'failed to load');
     }
@@ -374,6 +401,14 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
     }
     return Array.from(groups.entries()).sort(([a], [b]) => a.localeCompare(b));
   }, [trip]);
+
+  // Attention Engine gives us the next event's id — resolve it against the
+  // full trip_events list already loaded, rather than re-fetching, so the
+  // NEXT UP card can show partner/location and jump straight into EventSheet.
+  const nextEventFull = useMemo(() => {
+    if (!trip || !attention?.nextEvent) return null;
+    return trip.trip_events.find((e) => e.id === attention.nextEvent!.id) ?? null;
+  }, [trip, attention]);
 
   async function handleTokenAction(action: 'reissue' | 'revoke') {
     setTokenBusy(true);
@@ -526,6 +561,59 @@ export function JourneyDetail({ tripId }: { tripId: string }) {
           </div>
         ) : null}
       </div>
+
+      {/* Attention required card — only rendered when the Attention Engine
+          found something; empty state is simply no card, not an empty one. */}
+      {attention && attention.cases.length > 0 ? (
+        <div className="card-shadow mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <AlertTriangle className="h-4 w-4 shrink-0 text-amber-600" />
+            <h2 className="text-sm font-semibold text-amber-800">ต้องดำเนินการ</h2>
+          </div>
+          <ul className="space-y-1 text-xs text-amber-800">
+            {attention.cases.map((c, i) => (
+              <li key={`${c.code}-${c.eventId ?? 'trip'}-${i}`} className="flex items-start gap-1.5">
+                <span className="mt-0.5 shrink-0">•</span>
+                <span>{c.message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
+      {/* Next up card */}
+      {nextEventFull ? (
+        <div className="card-shadow mb-5 rounded-2xl border border-slate-100 bg-white p-4">
+          <div className="mb-2 flex items-center gap-2">
+            <Clock className="h-4 w-4 shrink-0 text-slate-400" />
+            <h2 className="text-sm font-semibold text-slate-900">ถัดไป</h2>
+          </div>
+          <div className="mb-1 text-sm font-medium text-slate-900">{nextEventFull.title}</div>
+          <div className="mb-3 flex items-center gap-3 text-xs text-slate-500">
+            {formatTime(nextEventFull.start_time) ? <span>{formatTime(nextEventFull.start_time)}</span> : null}
+            {nextEventFull.partners?.name ? <span>{nextEventFull.partners.name}</span> : null}
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => setEventModal({ mode: 'edit', event: nextEventFull })}
+              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl bg-primary px-3 py-2 text-xs font-medium text-white"
+            >
+              ดู Event
+            </button>
+            {nextEventFull.location ? (
+              <a
+                href={openMapsUrl(nextEventFull.location)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-1.5 rounded-xl border border-slate-200 px-3 py-2 text-xs font-medium text-slate-600"
+              >
+                <ExternalLink className="h-3.5 w-3.5" />
+                เปิดแผนที่
+              </a>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
 
       {/* Secure link card */}
       <div className="card-shadow mb-5 rounded-2xl border border-slate-100 bg-white p-4">

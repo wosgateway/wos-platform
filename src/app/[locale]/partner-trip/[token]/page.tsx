@@ -70,6 +70,7 @@ interface TransportAssignment {
 // Matches the exact select() in /api/partner-trip/[token]/route.ts —
 // no `notes`, no `partners` embed (already scoped to one partner).
 interface PartnerTripEvent {
+  id: string;
   event_type: EventType;
   title: string;
   event_date: string;
@@ -138,6 +139,18 @@ function formatTime(t: string | null) {
   return t.slice(0, 5);
 }
 
+// B2 — mirrors PARTNER_ALLOWED_TRANSITIONS in
+// /api/partner-trip/[token]/events/[eventId]/status/route.ts. This is
+// UI convenience only (which single action button to show, and its
+// label) — the route re-checks the transition server-side regardless,
+// so this map going stale would just show/hide a button, never grant
+// an unauthorized write.
+const PARTNER_NEXT_STATUS: Partial<Record<EventStatus, { next: EventStatus; labelKey: string }>> = {
+  pending: { next: 'confirmed', labelKey: 'statusAction.markConfirmed' },
+  confirmed: { next: 'in_progress', labelKey: 'statusAction.markInProgress' },
+  in_progress: { next: 'completed', labelKey: 'statusAction.markCompleted' },
+};
+
 export default function PartnerTripPage() {
   const params = useParams();
   const token = params?.token as string;
@@ -150,6 +163,39 @@ export default function PartnerTripPage() {
   const [events, setEvents] = useState<PartnerTripEvent[]>([]);
   const [errorKind, setErrorKind] = useState<'not_found' | 'link_revoked' | 'link_expired' | 'unknown' | null>(null);
   const [loading, setLoading] = useState(true);
+  const [updatingId, setUpdatingId] = useState<string | null>(null);
+  const [updateErrorId, setUpdateErrorId] = useState<string | null>(null);
+
+  // B2 — optimistic-on-success status update. Server is still the
+  // source of truth: on a 4xx (invalid transition / not this
+  // partner's event) we roll back and surface statusAction.updateFailed
+  // rather than trusting the click.
+  const updateStatus = useCallback(
+    async (eventId: string, nextStatus: EventStatus) => {
+      setUpdatingId(eventId);
+      setUpdateErrorId(null);
+      try {
+        const res = await fetch(
+          `/api/partner-trip/${encodeURIComponent(token)}/events/${encodeURIComponent(eventId)}/status`,
+          {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: nextStatus }),
+          }
+        );
+        if (!res.ok) {
+          setUpdateErrorId(eventId);
+          return;
+        }
+        setEvents((prev) => prev.map((e) => (e.id === eventId ? { ...e, status: nextStatus } : e)));
+      } catch {
+        setUpdateErrorId(eventId);
+      } finally {
+        setUpdatingId(null);
+      }
+    },
+    [token]
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -188,7 +234,7 @@ export default function PartnerTripPage() {
         <button
           key={opt.value}
           onClick={() => switchLocale(opt.value)}
-          className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+          className={`flex min-h-[44px] items-center rounded-full px-3 text-xs font-medium transition-colors ${
             locale === opt.value ? 'bg-primary text-white' : 'text-slate-500 hover:bg-slate-50'
           }`}
         >
@@ -360,6 +406,26 @@ export default function PartnerTripPage() {
                                 ) : null}
                               </div>
                             ) : null}
+                            {(() => {
+                              const action = PARTNER_NEXT_STATUS[ev.status];
+                              if (!action) return null;
+                              const isUpdating = updatingId === ev.id;
+                              return (
+                                <div className="mt-2">
+                                  <button
+                                    type="button"
+                                    disabled={isUpdating}
+                                    onClick={() => updateStatus(ev.id, action.next)}
+                                    className="flex min-h-[44px] items-center rounded-lg bg-primary px-3 text-[11px] font-semibold text-white disabled:opacity-50"
+                                  >
+                                    {isUpdating ? t('statusAction.updating') : t(action.labelKey)}
+                                  </button>
+                                  {updateErrorId === ev.id ? (
+                                    <p className="mt-1 text-[11px] text-rose-600">{t('statusAction.updateFailed')}</p>
+                                  ) : null}
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
                       );

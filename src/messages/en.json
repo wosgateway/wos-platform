@@ -1374,6 +1374,22 @@
     "companion": "Travel companion",
     "itineraryHeading": "Trip itinerary",
     "noEventsYet": "No events scheduled yet for this trip",
+    "journeyMap": {
+      "heading": "Journey map",
+      "stopCount": "{count} stops",
+      "pickup": "Pickup",
+      "dropoff": "Drop-off",
+      "open": "Open",
+      "openFullRoute": "Open full route in Google Maps"
+    },
+    "hero": {
+      "nowLabel": "Now",
+      "nextLabel": "Next up",
+      "completeTitle": "Your journey is complete",
+      "completeSubtitle": "Thank you for traveling with WOS",
+      "viewDetails": "View details",
+      "openMaps": "Open Maps"
+    },
     "tripStatus": {
       "planned": "Planned",
       "in_progress": "In progress",
@@ -1400,6 +1416,13 @@
     "heading": "Your assigned schedule",
     "scheduleHeading": "Schedule",
     "noEventsYet": "No events assigned to you yet for this trip",
+    "statusAction": {
+      "markConfirmed": "Confirm this task",
+      "markInProgress": "Start task",
+      "markCompleted": "Mark completed",
+      "updating": "Updating...",
+      "updateFailed": "Update failed — please try again"
+    },
     "tripStatus": {
       "planned": "Planned",
       "in_progress": "In progress",

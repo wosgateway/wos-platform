@@ -27,6 +27,19 @@ const PUBLIC_LOCALE_ROUTE_SEGMENTS = [
   'knowledge',
   'my-trip',
   'partner',
+  // Partner-scoped magic-link trip view (088_trip_partner_links.sql,
+  // see partner-trip/[token]/page.tsx's own header comment). MUST stay
+  // public, same trust model as 'my-trip' above: it authenticates via
+  // the token in the URL, not a Supabase Auth session, and partners
+  // opening this link often have no portal account at all. Without
+  // this entry, isPartnerPortalRest() doesn't match '/partner-trip/...'
+  // against the 'partner' segment either (that check requires an exact
+  // '/partner' or '/partner/...' prefix, and '/partner-trip/...' fails
+  // both), so it fell through to being treated as a protected
+  // partner-portal route — forcing a login redirect on first open, and
+  // again every time the locale switcher navigated to a new
+  // locale-prefixed URL for the same page.
+  'partner-trip',
   'partners',
   'privacy',
   'program',

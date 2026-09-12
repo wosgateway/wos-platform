@@ -472,7 +472,15 @@ export function BookingForm({
           // No partner picker anymore — transport is always
           // "let team decide" (see migration 081 / vehicleType hint).
           service_type: 'transport' as const,
-          quantity: form.transportMode === 'daily' ? form.transportDays || 1 : 1,
+          // round_trip = pickup leg + a separate return-day leg, each
+          // billed at the one-way unit rate → quantity 2. one_way (and
+          // medical_assistance) stay at 1. See WOS-20260912-00062.
+          quantity:
+            form.transportMode === 'daily'
+              ? form.transportDays || 1
+              : form.transportMode === 'round_trip'
+              ? 2
+              : 1,
           scheduled_date: form.transportPickupDate || null,
           scheduled_time: form.transportPickupTime || null,
           transport_mode: form.transportMode,

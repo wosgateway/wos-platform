@@ -1374,6 +1374,22 @@
     "companion": "ຜູ້ຮ່ວມເດີນທາງ",
     "itineraryHeading": "ກຳນົດການເດີນທາງ",
     "noEventsYet": "ຍັງບໍ່ມີກຳນົດການໃນທິບນີ້",
+    "journeyMap": {
+      "heading": "ເສັ້ນທາງການເດີນທາງ",
+      "stopCount": "{count} ຈຸດ",
+      "pickup": "ຈຸດຮັບ",
+      "dropoff": "ຈຸດສົ່ງ",
+      "open": "ເປີດ",
+      "openFullRoute": "ເປີດເສັ້ນທາງທັງໝົດໃນ Google Maps"
+    },
+    "hero": {
+      "nowLabel": "ດຽວນີ້",
+      "nextLabel": "ຕໍ່ໄປ",
+      "completeTitle": "ການເດີນທາງຂອງທ່ານສຳເລັດແລ້ວ",
+      "completeSubtitle": "ຂອບໃຈທີ່ເດີນທາງກັບ WOS",
+      "viewDetails": "ເບິ່ງລາຍລະອຽດ",
+      "openMaps": "ເປີດແຜນທີ່"
+    },
     "tripStatus": {
       "planned": "ວາງແຜນໄວ້",
       "in_progress": "ກຳລັງເດີນທາງ",
@@ -1400,6 +1416,13 @@
     "heading": "ກຳນົດການທີ່ທ່ານຮັບຜິດຊອບ",
     "scheduleHeading": "ກຳນົດການ",
     "noEventsYet": "ຍັງບໍ່ມີກຳນົດການສຳລັບທ່ານໃນທິບນີ້",
+    "statusAction": {
+      "markConfirmed": "ຢືນຢັນວຽກນີ້",
+      "markInProgress": "ເລີ່ມດຳເນີນການ",
+      "markCompleted": "ວຽກນີ້ສຳເລັດແລ້ວ",
+      "updating": "ກຳລັງອັບເດດ...",
+      "updateFailed": "ອັບເດດບໍ່ສຳເລັດ ກະລຸນາລອງໃໝ່"
+    },
     "tripStatus": {
       "planned": "ວາງແຜນໄວ້",
       "in_progress": "ກຳລັງເດີນທາງ",

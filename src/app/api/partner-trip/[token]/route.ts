@@ -58,7 +58,7 @@ export async function GET(req: NextRequest, { params }: { params: { token: strin
     .from("trip_events")
     .select(
       `
-      event_type, title, event_date, start_time, end_time, location,
+      id, event_type, title, event_date, start_time, end_time, location,
       status, contact_name, contact_phone, sort_order,
       transport_assignments (
         vehicle, pickup_location, dropoff_location, pickup_time,

@@ -82,9 +82,9 @@ export type PreferredLanguage = 'th' | 'lo' | 'en';
 // hanging indefinitely if Meta's API stalls, tying up a live
 // connection/handle for no reason. Keep this consistent with any
 // other integration's timeout rather than inventing a new value.
-const WHATSAPP_TIMEOUT_MS = 15_000;
+export const WHATSAPP_TIMEOUT_MS = 15_000;
 
-async function fetchWithTimeout(
+export async function fetchWithTimeout(
   url: string,
   options: RequestInit,
   timeoutMs: number
@@ -105,7 +105,7 @@ interface SendTemplateArgs {
   orderNumber: string;
 }
 
-function toWhatsAppRecipient(phone: string): string | null {
+export function toWhatsAppRecipient(phone: string): string | null {
   const trimmed = phone.trim();
   if (!trimmed.startsWith('+')) {
     // No confirmed country code — see PHONE FORMAT note above. Don't
