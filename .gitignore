@@ -15,3 +15,5 @@ src-tree.txt
 # temp/test files - อย่า commit
 *.zip
 test-payload.json
+
+deployment.json
