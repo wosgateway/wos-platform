@@ -70,7 +70,11 @@ export function HealthGoalFinder({
     return () => mql.removeEventListener('change', onChange);
   }, []);
 
-  const tileRefs = useRef<(HTMLDivElement | null)[]>([]);
+  // Widened from HTMLDivElement: tiles now render as <Link> (an <a>)
+  // when there's an image to link to, and only fall back to a plain
+  // <div> otherwise — HTMLElement is the common base both share, and
+  // it's all IntersectionObserver/data-tile-index actually need.
+  const tileRefs = useRef<(HTMLElement | null)[]>([]);
 
   useEffect(() => {
     // Only needed on touch devices — desktop uses hover instead.
@@ -125,17 +129,12 @@ export function HealthGoalFinder({
           {items.map((item, i) => {
             const img = HEALTH_GOAL_IMAGES[i];
             const isHovered = hasHover ? hovered === i : inView.has(i);
-            return (
-              <div
-                key={item.label}
-                ref={(node) => {
-                  tileRefs.current[i] = node;
-                }}
-                data-tile-index={i}
-                onMouseEnter={hasHover ? () => setHovered(i) : undefined}
-                onMouseLeave={hasHover ? () => setHovered(null) : undefined}
-                className="group relative flex h-72 flex-col justify-end overflow-hidden rounded-2xl border border-navy/10"
-              >
+            // Whole tile is now the tap/click target (not just the small
+            // "explore" text) — wrapped in Link instead of div. Falls back
+            // to a plain div for the rare case there's no image/slug to
+            // link to, so we never render a href-less anchor.
+            const tileContent = (
+              <>
                 {img && (
                   <Image
                     src={img.image}
@@ -158,17 +157,48 @@ export function HealthGoalFinder({
                   </p>
                   <p className="mt-1 text-sm text-white/80">{item.desc}</p>
                   {img && (
-                    <Link
-                      href={{ pathname: '/', query: { goal: img.slug }, hash: 'categories' }}
-                      className={`mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold transition-all duration-300 focus-visible:translate-y-0 focus-visible:opacity-100 max-sm:translate-y-0 max-sm:opacity-100 ${
+                    <span
+                      className={`mt-3 inline-flex items-center gap-1 text-xs font-semibold text-gold transition-all duration-300 max-sm:translate-y-0 max-sm:opacity-100 ${
                         isHovered ? 'translate-y-0 opacity-100' : 'translate-y-1 opacity-0'
                       }`}
                     >
                       {exploreCta}
                       <span aria-hidden>→</span>
-                    </Link>
+                    </span>
                   )}
                 </div>
+              </>
+            );
+
+            const tileClassName =
+              'group relative flex h-72 flex-col justify-end overflow-hidden rounded-2xl border border-navy/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-gold';
+
+            return img ? (
+              <Link
+                key={item.label}
+                ref={(node) => {
+                  tileRefs.current[i] = node;
+                }}
+                href={{ pathname: '/', query: { goal: img.slug }, hash: 'categories' }}
+                data-tile-index={i}
+                onMouseEnter={hasHover ? () => setHovered(i) : undefined}
+                onMouseLeave={hasHover ? () => setHovered(null) : undefined}
+                className={tileClassName}
+              >
+                {tileContent}
+              </Link>
+            ) : (
+              <div
+                key={item.label}
+                ref={(node) => {
+                  tileRefs.current[i] = node;
+                }}
+                data-tile-index={i}
+                onMouseEnter={hasHover ? () => setHovered(i) : undefined}
+                onMouseLeave={hasHover ? () => setHovered(null) : undefined}
+                className={tileClassName}
+              >
+                {tileContent}
               </div>
             );
           })}
