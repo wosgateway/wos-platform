@@ -3,10 +3,15 @@ import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
 import { createClient } from '@/lib/supabase/server';
 import { NextRequest, NextResponse } from 'next/server';
 
-// URL สำหรับหน้า Quotation (เปลี่ยนเป็น domain จริงตอน deploy)
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
-
 export async function POST(request: NextRequest) {
+  // Was process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001' —
+  // that env var going unset in production silently fell back to
+  // localhost, so every quotation link sent to a real customer pointed
+  // at the admin's own machine. Derived from the actual request instead
+  // (same fix as create-sign-request/route.ts), which is right in
+  // every environment with zero config needed.
+  const appUrl = new URL(request.url).origin;
+
   // Used only as a place for Supabase to write a refreshed access/refresh
   // token pair into, via requireAdmin's setAll(). Never returned directly.
   // Same pattern as every other admin route — see
@@ -98,7 +103,7 @@ export async function POST(request: NextRequest) {
   }
 
   // 4. สร้างลิงก์ใบเสนอราคา
-  const quoteUrl = `${APP_URL}/th/quote/${order.order_number}?token=${encodeURIComponent(
+  const quoteUrl = `${appUrl}/th/quote/${order.order_number}?token=${encodeURIComponent(
     order.payment_access_token
   )}`;
 

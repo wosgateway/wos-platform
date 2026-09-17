@@ -25,7 +25,15 @@ import { resolveCommercialFeeRateForOrganization } from '@/lib/mou/commercial-te
 // runtime, not Edge. Same requirement as confirm/route.ts.
 export const runtime = 'nodejs';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
+// Deliberately NOT a module-level constant read from
+// process.env.NEXT_PUBLIC_APP_URL — that env var going unset in
+// production (nothing here would have caught it) silently fell back
+// to 'http://localhost:3001', so every sign-link ever emailed to a
+// real partner pointed at the admin's own laptop instead of wos.asia.
+// Derived per-request from req.url instead, same pattern already used
+// by provision.ts's redirectTo and portal-access/route.ts's redirectTo
+// — that's the actual Host the request came in on, so it's right in
+// every environment (local, staging, prod) with zero config needed.
 
 interface CreateSignRequestBody {
   organizationId: string;
@@ -87,6 +95,8 @@ export async function POST(req: NextRequest) {
   if (!auth.authorized) {
     return NextResponse.json({ error: auth.message }, { status: auth.status });
   }
+
+  const appUrl = new URL(req.url).origin;
 
   // One sign-link creation per admin per minute is plenty for normal
   // use and stops a fat-fingered double-submit from emailing a partner
@@ -187,7 +197,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const link = `${APP_URL}/partner/mou-sign/${token}`;
+  const link = `${appUrl}/partner/mou-sign/${token}`;
 
   try {
     await sendSignLinkEmail(signerEmail.trim(), signerName.trim(), org.name, link);

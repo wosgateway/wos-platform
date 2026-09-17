@@ -230,6 +230,7 @@ export async function POST(request: Request) {
   try {
     await notifyNewConsultation({
       id: data.id,
+      appUrl: new URL(request.url).origin,
       name,
       contactChannel,
       contactValue,

@@ -40,10 +40,6 @@
 //                                   land in the same chat instead of
 //                                   needing a second bot just for this.
 
-// Matches NEXT_PUBLIC_APP_URL convention already used for outbound links
-// in src/app/api/admin/send-quotation/route.tsx.
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
-
 // Keep in sync with the label maps in ConsultationsManager.tsx and the
 // CHECK constraints in 091_consultation_requests.sql.
 const CONTACT_CHANNEL_LABEL: Record<string, string> = {
@@ -93,6 +89,14 @@ export interface NotifyConsultationPayload {
   travelPeriod: string;
   source: string;
   utmCampaign: string | null;
+  // Origin of the request that triggered this (e.g. new URL(request.url).origin
+  // from route.ts's POST handler) — used to build the "open in admin" link
+  // below. Passed in rather than read from process.env.NEXT_PUBLIC_APP_URL
+  // here, because that env var going unset in production used to make
+  // every one of these emails link to http://localhost:3001 with nothing
+  // catching it (see src/app/api/admin/mou/create-sign-request/route.ts's
+  // fix for the same bug, which is where this pattern comes from).
+  appUrl: string;
 }
 
 function escapeHtml(value: string): string {
@@ -103,8 +107,8 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function adminUrl(): string {
-  return `${APP_URL}/admin?tab=consultations`;
+function adminUrl(appUrl: string): string {
+  return `${appUrl}/admin?tab=consultations`;
 }
 
 function buildEmailSubject(payload: NotifyConsultationPayload): string {
@@ -124,7 +128,7 @@ function buildEmailText(payload: NotifyConsultationPayload): string {
     `ที่มา: ${SOURCE_LABEL[payload.source] ?? payload.source}${payload.utmCampaign ? ` (#${payload.utmCampaign})` : ''}`,
     payload.message ? `ข้อความ: ${payload.message}` : null,
     ``,
-    `เปิดดูใน Admin: ${adminUrl()}`,
+    `เปิดดูใน Admin: ${adminUrl(payload.appUrl)}`,
   ]
     .filter((line): line is string => line !== null)
     .join('\n');
@@ -162,7 +166,7 @@ function buildEmailHtml(payload: NotifyConsultationPayload): string {
       <h2 style="color:#0b1e3d">🆕 คำขอปรึกษาใหม่ — ปรึกษา WOS ฟรี</h2>
       <table style="border-collapse:collapse;width:100%">${rowsHtml}</table>
       <p style="margin-top:20px">
-        <a href="${adminUrl()}" style="background:#5b8c6e;color:#fff;padding:10px 20px;border-radius:24px;text-decoration:none;font-weight:600">
+        <a href="${adminUrl(payload.appUrl)}" style="background:#5b8c6e;color:#fff;padding:10px 20px;border-radius:24px;text-decoration:none;font-weight:600">
           เปิดดูใน Admin
         </a>
       </p>
@@ -180,7 +184,7 @@ function buildTelegramText(payload: NotifyConsultationPayload): string {
     `🗓 ช่วงเวลาเดินทาง: ${TRAVEL_PERIOD_LABEL[payload.travelPeriod] ?? payload.travelPeriod}`,
     `🔗 ที่มา: ${SOURCE_LABEL[payload.source] ?? payload.source}${payload.utmCampaign ? ` (#${payload.utmCampaign})` : ''}`,
     payload.message ? `💬 ${payload.message}` : null,
-    `👉 ${adminUrl()}`,
+    `👉 ${adminUrl(payload.appUrl)}`,
   ]
     .filter((line): line is string => line !== null)
     .join('\n');
