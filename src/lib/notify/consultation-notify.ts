@@ -189,7 +189,12 @@ function buildTelegramText(payload: NotifyConsultationPayload): string {
 async function sendTelegram(payload: NotifyConsultationPayload): Promise<void> {
   const botToken = process.env.TELEGRAM_BOT_TOKEN;
   const chatId = process.env.TELEGRAM_CHAT_ID;
-  if (!botToken || !chatId) return;
+  if (!botToken || !chatId) {
+    console.warn(
+      'sendTelegram (consultation): skipped — TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID not set in this environment.'
+    );
+    return;
+  }
 
   const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: 'POST',
@@ -198,7 +203,11 @@ async function sendTelegram(payload: NotifyConsultationPayload): Promise<void> {
   });
 
   if (!res.ok) {
-    throw new Error(`Telegram sendMessage responded ${res.status}`);
+    // Telegram's error body (e.g. "chat not found", "bot was blocked
+    // by the user") is far more useful than the bare status code for
+    // diagnosing config issues — surface it in the log.
+    const body = await res.text().catch(() => '');
+    throw new Error(`Telegram sendMessage responded ${res.status}: ${body}`);
   }
 }
 

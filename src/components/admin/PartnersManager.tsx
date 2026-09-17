@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import type { Partner } from '@/lib/data';
@@ -22,6 +22,22 @@ const CATEGORY_OPTIONS = [
 // / packages / reviews = 0); the confirm button below trusts it, but the
 // DELETE call is re-checked server-side regardless (RLS/RPC don't trust
 // this either — see sql/075_admin_hard_delete_partner.sql).
+// Latest mou_sign_requests row for one organization, as returned by
+// GET /api/admin/mou/sign-requests. status is trusted as-is for the
+// terminal states (signed/cancelled); pending/otp_verified are
+// additionally checked against token_expires_at client-side, because
+// the backend never flips a row to 'expired' at rest — see that
+// route's header comment.
+type MouSignRequestSummary = {
+  id: string;
+  status: 'pending' | 'otp_verified' | 'signed' | 'expired' | 'cancelled';
+  signer_name: string;
+  signer_email: string | null;
+  token_expires_at: string;
+  sent_at: string | null;
+  created_at: string;
+};
+
 type HardDeletePrecheck = {
   partner: { id: string; name: string; category: string; status: string };
   canDelete: boolean;
@@ -179,9 +195,90 @@ export function PartnersManager() {
     }
   }
 
+  // MOU sign-request status per partner (Founding Partner e-signature
+  // flow) — mirrors loadPortalAccounts above: one bulk fetch instead of
+  // a per-row round trip. organizationIdByPartnerId is what lets the
+  // "ส่ง MOU ให้เซ็น" button below know which organization to attach a
+  // new mou_sign_requests row to (that table only has organization_id,
+  // never partner_id — see create-sign-request/route.ts).
+  const [organizationIdByPartnerId, setOrganizationIdByPartnerId] = useState<Record<string, string>>({});
+  const [latestSignRequestByOrgId, setLatestSignRequestByOrgId] = useState<Record<string, MouSignRequestSummary>>({});
+  const [mouForm, setMouForm] = useState({ signerName: '', signerEmail: '' });
+  const [mouSending, setMouSending] = useState(false);
+  const [mouError, setMouError] = useState<string | null>(null);
+  const [mouWarning, setMouWarning] = useState<string | null>(null);
+  const [mouLink, setMouLink] = useState<string | null>(null);
+
+  async function loadMouStatus() {
+    try {
+      const res = await fetch('/api/admin/mou/sign-requests');
+      if (!res.ok) return;
+      const data = await res.json();
+      setOrganizationIdByPartnerId(data.organizationIdByPartnerId ?? {});
+      setLatestSignRequestByOrgId(data.latestSignRequestByOrgId ?? {});
+    } catch {
+      // Non-critical for the list view — silently skip.
+    }
+  }
+
+  // label/color for a partner's MOU state — used by both the table
+  // column and the modal section below. null orgId means portal access
+  // (which creates the organization) hasn't been set up yet for this
+  // partner.
+  function getMouBadge(orgId: string | undefined): { label: string; className: string } {
+    if (!orgId) {
+      return { label: 'ยังไม่มีองค์กร', className: 'bg-slate-100 text-slate-400' };
+    }
+    const req = latestSignRequestByOrgId[orgId];
+    if (!req) {
+      return { label: 'ยังไม่ส่ง MOU', className: 'bg-slate-100 text-slate-500' };
+    }
+    if (req.status === 'signed') {
+      return { label: '✅ ลงนามแล้ว', className: 'bg-emerald-100 text-emerald-700' };
+    }
+    if (req.status === 'cancelled') {
+      return { label: 'ยกเลิกแล้ว', className: 'bg-slate-100 text-slate-400' };
+    }
+    // pending / otp_verified — check expiry client-side (see type comment above)
+    if (new Date(req.token_expires_at).getTime() < Date.now()) {
+      return { label: '⚠️ ลิงก์หมดอายุ', className: 'bg-red-100 text-red-600' };
+    }
+    if (req.status === 'otp_verified') {
+      return { label: '🕒 กำลังยืนยันตัวตน', className: 'bg-amber-100 text-amber-700' };
+    }
+    return { label: '🕒 รอลงนาม', className: 'bg-amber-100 text-amber-700' };
+  }
+
   useEffect(() => {
     loadPartners();
     loadPortalAccounts();
+    loadMouStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // MOU sign-request status can change out-of-band — an admin sends a
+  // signing link, then a partner completes it in a separate tab/device
+  // minutes later while this admin tab stays open. Re-fetch on window
+  // focus / tab visibility instead of polling on a timer, so the table
+  // catches up the moment the admin actually looks at it again, without
+  // hammering the DB while the tab sits in the background unattended.
+  // Throttled to 5s so rapid focus/visibility events (both can fire for
+  // one alt-tab back) don't double up the request.
+  const lastMouRefetchRef = useRef(0);
+  useEffect(() => {
+    function revalidateMouStatus() {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastMouRefetchRef.current < 5000) return;
+      lastMouRefetchRef.current = now;
+      loadMouStatus();
+    }
+    window.addEventListener('focus', revalidateMouStatus);
+    document.addEventListener('visibilitychange', revalidateMouStatus);
+    return () => {
+      window.removeEventListener('focus', revalidateMouStatus);
+      document.removeEventListener('visibilitychange', revalidateMouStatus);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -192,6 +289,10 @@ export function PartnersManager() {
     setPortalInviteLink(null);
     setPortalExistingEmail(null);
     setImpersonateError(null);
+    setMouForm({ signerName: '', signerEmail: '' });
+    setMouError(null);
+    setMouWarning(null);
+    setMouLink(null);
     setPortalForm({
       organizationName: partner?.name ?? '',
       branchName: partner?.name ? `${partner.name} - สาขาหลัก` : '',
@@ -516,6 +617,60 @@ export function PartnersManager() {
     }
   }
 
+  // Creates a mou_sign_requests row for this partner's organization and
+  // emails the signer a link to /partner/mou-sign/[token] (OTP +
+  // signature canvas). Requires an organization to already exist —
+  // handleCreatePortalAccess above is what creates one — so the modal
+  // section below only renders this form once organizationIdByPartnerId
+  // has an entry for this partner.
+  async function handleSendMou() {
+    if (!form.id) return;
+    const organizationId = organizationIdByPartnerId[form.id];
+    if (!organizationId) return;
+    setMouError(null);
+    setMouWarning(null);
+    if (!mouForm.signerName.trim()) {
+      setMouError('กรุณากรอกชื่อผู้ลงนาม');
+      return;
+    }
+    if (!mouForm.signerEmail.trim() || !mouForm.signerEmail.includes('@')) {
+      setMouError('กรุณากรอกอีเมลผู้ลงนามที่ถูกต้อง');
+      return;
+    }
+    setMouSending(true);
+    try {
+      const res = await fetch('/api/admin/mou/create-sign-request', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationId,
+          signerName: mouForm.signerName.trim(),
+          signerEmail: mouForm.signerEmail.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (res.status === 207) {
+        // Row created, but the invite email itself failed to send —
+        // still a valid link, just needs to be copied and sent
+        // manually (same shape as create-sign-request's own comment).
+        setMouWarning(data.warning ?? 'สร้างลิงก์สำเร็จ แต่ส่งอีเมลไม่สำเร็จ — กรุณาคัดลอกลิงก์ไปส่งเอง');
+        setMouLink(data.link ?? null);
+        loadMouStatus();
+        return;
+      }
+      if (!res.ok) {
+        setMouError(data.error ?? 'สร้างคำขอลงนามไม่สำเร็จ');
+        return;
+      }
+      setMouLink(data.link);
+      loadMouStatus();
+    } catch (e) {
+      setMouError(e instanceof Error ? e.message : 'สร้างคำขอลงนามไม่สำเร็จ');
+    } finally {
+      setMouSending(false);
+    }
+  }
+
   // เปิดแท็บใหม่ล่วงหน้าก่อน await เพื่อกัน popup blocker (browser จะบล็อก
   // window.open ที่เรียกหลัง await เพราะไม่ถือเป็น user gesture อีกต่อไป)
   // แล้วค่อยตั้ง .location ของแท็บนั้นหลังได้ actionLink กลับมา
@@ -786,6 +941,7 @@ export function PartnersManager() {
                 <th className="px-4 py-2">หน้าแรก</th>
                 <th className="px-4 py-2">ตำแหน่ง</th>
                 <th className="px-4 py-2">บัญชีเข้าสู่ระบบ</th>
+                <th className="px-4 py-2">MOU</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -849,6 +1005,12 @@ export function PartnersManager() {
                           ))}
                         </div>
                       );
+                    })()}
+                  </td>
+                  <td className="px-4 py-2">
+                    {(() => {
+                      const badge = getMouBadge(organizationIdByPartnerId[p.id]);
+                      return <span className={`rounded-full px-2 py-0.5 text-xs ${badge.className}`}>{badge.label}</span>;
                     })()}
                   </td>
                   <td className="px-4 py-2 text-right">
@@ -1223,6 +1385,135 @@ export function PartnersManager() {
                   </button>
                 </>
               )}
+            </div>
+
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <label className="form-label">MOU Founding Partner (เซ็นออนไลน์)</label>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    ส่งลิงก์ให้พาร์ทเนอร์เซ็นข้อตกลงออนไลน์ (ยืนยันตัวตนด้วย OTP + วาดลายเซ็น) ไม่ต้องพิมพ์เอกสาร
+                  </p>
+                  {/* Hardcoded to the same default create-sign-request falls back
+                      to ('founding-partner-v1') — update this if/when the admin UI
+                      gains a template_version picker. ?organizationId= (when known)
+                      makes this preview show THIS partner's actual name + commercial
+                      rate filled in, not just the blank template — see
+                      /api/admin/mou/template/[templateVersion]/route.ts's header. */}
+                  {(() => {
+                    const partnerId = form.id;
+                    const organizationId = partnerId ? organizationIdByPartnerId[partnerId] : undefined;
+                    const href = organizationId
+                      ? `/api/admin/mou/template/founding-partner-v1?organizationId=${organizationId}`
+                      : '/api/admin/mou/template/founding-partner-v1';
+                    return (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-block text-xs font-medium text-emerald-700 hover:underline"
+                      >
+                        👁️ ดูฉบับร่าง MOU ก่อนส่ง (PDF)
+                      </a>
+                    );
+                  })()}
+                </div>
+                {(() => {
+                  const partnerId = form.id;
+                  const organizationId = partnerId ? organizationIdByPartnerId[partnerId] : undefined;
+                  if (!organizationId) return null;
+                  const badge = getMouBadge(organizationId);
+                  return (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs whitespace-nowrap ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {(() => {
+                const partnerId = form.id;
+                if (!partnerId) {
+                  return <p className="text-xs text-slate-400">บันทึกพาร์ทเนอร์นี้ก่อน ถึงจะส่ง MOU ให้เซ็นได้</p>;
+                }
+                const organizationId = organizationIdByPartnerId[partnerId];
+                if (!organizationId) {
+                  return (
+                    <p className="text-xs text-amber-600">
+                      ⚠️ ต้อง &quot;สร้างบัญชีเข้าสู่ระบบ&quot; ด้านบนก่อน (ระบบจะสร้างองค์กรผูกกับพาร์ทเนอร์นี้) ถึงจะส่ง MOU
+                      ให้เซ็นได้
+                    </p>
+                  );
+                }
+                const existingRequest = latestSignRequestByOrgId[organizationId];
+                if (mouLink) {
+                  return (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                      <p className="mb-1 text-emerald-700">สร้างลิงก์สำเร็จ — คัดลอกไปส่งให้พาร์ทเนอร์ได้เลย:</p>
+                      <div className="flex gap-2">
+                        <input readOnly className="form-input flex-1 text-xs" value={mouLink} />
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(mouLink)}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap"
+                        >
+                          คัดลอก
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMouLink(null)}
+                        className="mt-2 text-xs text-emerald-700 underline"
+                      >
+                        ส่งอีกฉบับ
+                      </button>
+                    </div>
+                  );
+                }
+                return (
+                  <>
+                    {mouWarning ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        {mouWarning}
+                      </div>
+                    ) : null}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="form-label">ชื่อผู้ลงนาม</label>
+                        <input
+                          className="form-input"
+                          value={mouForm.signerName}
+                          onChange={(e) => setMouForm({ ...mouForm, signerName: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label">อีเมลผู้ลงนาม</label>
+                        <input
+                          type="email"
+                          className="form-input"
+                          value={mouForm.signerEmail}
+                          onChange={(e) => setMouForm({ ...mouForm, signerEmail: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {mouError ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                        {mouError}
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={handleSendMou}
+                      disabled={mouSending}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+                    >
+                      {mouSending ? 'กำลังส่ง...' : existingRequest ? '📄 ส่ง MOU ให้เซ็น (ฉบับใหม่)' : '📄 ส่ง MOU ให้เซ็น'}
+                    </button>
+                  </>
+                );
+              })()}
             </div>
 
             <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">

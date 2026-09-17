@@ -37,8 +37,12 @@ interface PackageOption {
 }
 
 interface PackagePickerComboboxProps {
-  // Matches the partners.category / packages picker CHECK constraint
-  // value exactly, e.g. 'Transport' or 'Hotel'.
+  // One or more partners.category / packages picker CHECK constraint
+  // values, comma-separated, e.g. 'Transport', 'Hotel', or
+  // 'Hospital,Clinic,Dental' when an order_item's coarser service_type
+  // (e.g. 'clinic') maps to several partner categories — see
+  // admin_assign_order_item()'s v_service_type CASE (sql/058) for the
+  // authoritative mapping this must stay in sync with.
   category: string;
   onSelect: (packageId: string, packageLabel?: string) => void;
   disabled?: boolean;
@@ -95,6 +99,19 @@ export function PackagePickerCombobox({
   // newer one (e.g. fast typing outrunning network responses).
   const requestIdRef = useRef(0);
 
+  // `category` may be a comma-separated list ('Hospital,Clinic,Dental').
+  // The pickers API groups its response by each individual category
+  // (lowercased), not by the joined string, so every category in the
+  // list needs its own key looked up and merged.
+  const categoryKeys = useMemo(
+    () =>
+      category
+        .split(',')
+        .map((c) => c.trim())
+        .filter(Boolean),
+    [category]
+  );
+
   // Fetch partners whenever the picker is open, on step 'partner', and
   // the debounced query changes (including the initial empty query,
   // so opening the picker shows *something* before typing).
@@ -111,8 +128,8 @@ export function PackagePickerCombobox({
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error('failed to load partners'))))
       .then((result) => {
         if (requestId !== requestIdRef.current) return; // stale response
-        const key = category.toLowerCase();
-        setPartners(result[key] ?? []);
+        const merged = categoryKeys.flatMap((c) => result[c.toLowerCase()] ?? []);
+        setPartners(merged);
       })
       .catch((e) => {
         if (requestId !== requestIdRef.current) return;
@@ -122,7 +139,7 @@ export function PackagePickerCombobox({
       .finally(() => {
         if (requestId === requestIdRef.current) setPartnersLoading(false);
       });
-  }, [open, step, category, debouncedQuery]);
+  }, [open, step, category, categoryKeys, debouncedQuery]);
 
   // Close on outside click.
   useEffect(() => {
@@ -153,8 +170,8 @@ export function PackagePickerCombobox({
       const res = await fetch(`/api/admin/packages/pickers?${params.toString()}`, { cache: 'no-store' });
       if (!res.ok) throw new Error('failed to load packages');
       const result = await res.json();
-      const key = category.toLowerCase();
-      setPackages(result[key] ?? []);
+      const merged = categoryKeys.flatMap((c) => result[c.toLowerCase()] ?? []);
+      setPackages(merged);
     } catch (e) {
       console.error(e);
       setPackages([]);

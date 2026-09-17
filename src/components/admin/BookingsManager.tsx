@@ -56,6 +56,9 @@ interface OrderItem {
   service_type: ServiceType;
   price: number | null;
   deposit_required: number | null;
+  // Phase 5 (migration 102) — GENERATED, price - deposit_required.
+  // Amount owed directly to the partner; NULL until assigned.
+  partner_balance: number | null;
   scheduled_date: string | null;
   scheduled_time: string | null;
   needs_assignment: boolean;

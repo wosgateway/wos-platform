@@ -89,6 +89,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       order_items (
         id,
         price,
+        deposit_required,
         deposit_paid
       )
     `
@@ -121,8 +122,9 @@ export async function POST(request: Request, { params }: { params: { id: string 
     );
   }
 
-  const body = await request.json().catch(() => ({}));
-  const confirmOverpayment = body?.confirmOverpayment === true;
+  // Migration 104 stops the RPC from honoring an overpayment override
+  // (deposit_paid <= deposit_required is now a hard invariant — see
+  // that migration), so there's no longer a body flag to read here.
 
   // 3. Claim + validate + write, atomically, via the RPC. Called
   //    through the service-role client, so the RPC has no session of
@@ -137,7 +139,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     p_payment_id: paymentId,
     p_verified_by_user_id: user.id,
     p_partner_id: partnerId,
-    p_confirm_overpayment: confirmOverpayment,
+    p_confirm_overpayment: false,
   });
 
   if (error) {
@@ -168,12 +170,17 @@ export async function POST(request: Request, { params }: { params: { id: string 
       );
     }
     if (error.message.includes('amount_exceeds_balance')) {
-      const remainingBeforeThis = Number(orderItem.price) - Number(orderItem.deposit_paid);
+      // Migration 104 repointed partner_verify_payment's ceiling from
+      // `price` to `deposit_required` (wos_booking_fee only) — this
+      // display-only figure has to match what the RPC actually
+      // enforced, or the message would show a "remaining balance"
+      // number the RPC didn't check against.
+      const remainingBeforeThis = Number(orderItem.deposit_required) - Number(orderItem.deposit_paid);
       return withRefreshedCookies(
         NextResponse.json(
           {
             error: 'amount_exceeds_balance',
-            message: `Payment amount (${payment.amount}) exceeds the remaining balance (${remainingBeforeThis}). Resubmit with { "confirmOverpayment": true } to proceed anyway.`,
+            message: `Payment amount (${payment.amount}) exceeds the remaining WOS booking fee balance (${remainingBeforeThis}). This is the partner's own balance, not the WOS booking fee — use the balance-confirmation flow (POST /api/partner/payments/confirm-balance) to record it instead.`,
             remainingBeforeThis,
           },
           { status: 409 }

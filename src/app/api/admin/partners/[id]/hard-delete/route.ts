@@ -217,7 +217,16 @@ export async function GET(_request: Request, { params }: { params: { id: string 
       subscriptionsCount = subscriptionsRes.count ?? 0;
     }
 
-    const canDelete = (orderItemsCount ?? 0) === 0 && packagesCount === 0 && reviewsCount === 0;
+    // settlements.partner_id -> partners(id) is ON DELETE RESTRICT as of
+    // 105 (see 106_fix_hard_delete_partner_settlements.sql). Any
+    // settlement row, at any status, blocks the RPC's DELETE — so it
+    // must block canDelete here too, or this dialog tells the admin
+    // deletion is allowed when the RPC will reject it.
+    const canDelete =
+      (orderItemsCount ?? 0) === 0 &&
+      packagesCount === 0 &&
+      reviewsCount === 0 &&
+      (settlementsCount ?? 0) === 0;
     const blockingReasons: string[] = [];
     if ((orderItemsCount ?? 0) > 0) {
       blockingReasons.push(`มี order_items จริงผูกอยู่ ${orderItemsCount} รายการ`);
@@ -227,6 +236,9 @@ export async function GET(_request: Request, { params }: { params: { id: string 
     }
     if (reviewsCount > 0) {
       blockingReasons.push(`มี reviews จริงผูกอยู่ ${reviewsCount} รายการ`);
+    }
+    if ((settlementsCount ?? 0) > 0) {
+      blockingReasons.push(`มี settlements (ประวัติการเงิน) ผูกอยู่ ${settlementsCount} รายการ`);
     }
 
     return withRefreshedCookies(
@@ -318,6 +330,19 @@ export async function DELETE(_request: Request, { params }: { params: { id: stri
       return withRefreshedCookies(
         NextResponse.json(
           { error: `มีข้อมูลจริงผูกอยู่ — ลบถาวรไม่ได้ ใช้ "ระงับ" แทน (${message})` },
+          { status: 409 }
+        ),
+        cookieCarrier
+      );
+    }
+    if (message.includes('blocked_settlements')) {
+      // Settlement rows are financial records — RESTRICT, not CASCADE,
+      // by design (see 105/106). Not resolvable by retrying; the admin
+      // needs "ระงับ" (suspend) instead, same guidance as the other
+      // blocked_* cases.
+      return withRefreshedCookies(
+        NextResponse.json(
+          { error: `มี settlements (ประวัติการเงิน) ผูกอยู่ — ลบถาวรไม่ได้ ใช้ "ระงับ" แทน (${message})` },
           { status: 409 }
         ),
         cookieCarrier

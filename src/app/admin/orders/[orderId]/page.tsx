@@ -35,6 +35,11 @@ interface OrderItem {
   deposit_required: number | null;
   deposit_paid: number | null;
   balance_remaining: number | null;
+  // Phase 5 (migration 102) — GENERATED, price - deposit_required.
+  // Amount owed directly to the partner; NULL until an admin assigns
+  // a package. Not the same axis as balance_remaining (payment
+  // progress) — see that migration's column comments.
+  partner_balance: number | null;
   scheduled_date: string | null;
   scheduled_time: string | null;
   status: string;
@@ -114,6 +119,7 @@ interface Order {
   total_deposit_required: number | null;
   total_deposit_paid: number | null;
   total_balance_remaining: number | null;
+  total_partner_balance: number | null;
   cancelled_reason: string | null;
   created_at: string;
   customer: Customer | null;
@@ -343,6 +349,11 @@ export default function AdminOrderDetailPage() {
                 </td>
                 <td className="px-5 py-3 text-right font-medium text-slate-800">
                   {formatTHB(itemPrice(item))}
+                  {item.partner_balance != null ? (
+                    <div className="text-xs font-normal text-indigo-600">
+                      พาร์ทเนอร์ได้ {formatTHB(item.partner_balance)}
+                    </div>
+                  ) : null}
                 </td>
               </tr>
             ))}
@@ -368,6 +379,15 @@ export default function AdminOrderDetailPage() {
           <div className="flex justify-between border-t border-slate-100 pt-1.5 font-semibold">
             <span className="text-slate-700">ยอดคงเหลือ</span>
             <span>{formatTHB(order.total_balance_remaining ?? 0)}</span>
+          </div>
+          <div className="flex justify-between border-t border-slate-100 pt-1.5">
+            <span className="text-slate-500">
+              ยอดที่ต้องจ่ายให้พาร์ทเนอร์โดยตรง
+              <span className="ml-1 text-[11px] text-slate-400">(Partner Balance)</span>
+            </span>
+            <span className="font-semibold text-indigo-700">
+              {formatTHB(order.total_partner_balance ?? 0)}
+            </span>
           </div>
         </div>
         {order.cancelled_reason ? (

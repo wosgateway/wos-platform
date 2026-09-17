@@ -14,6 +14,7 @@ import {
   Building2,
   FileText,
   CreditCard,
+  Receipt,
   LogOut,
   type LucideIcon,
 } from 'lucide-react';
@@ -26,6 +27,7 @@ const NAV_ITEMS: { href: string; label: string; icon: LucideIcon }[] = [
   { href: '/packages', label: 'โปรแกรม', icon: Package },
   { href: '/company', label: 'ข้อมูลบริษัท', icon: Building2 },
   { href: '/documents', label: 'เอกสาร', icon: FileText },
+  { href: '/settlements', label: 'Settlement', icon: Receipt },
   { href: '/billing', label: 'บิล & ระบบสมาชิก', icon: CreditCard },
 ];
 

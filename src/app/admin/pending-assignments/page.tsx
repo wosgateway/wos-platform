@@ -22,7 +22,12 @@ import { PackagePickerCombobox } from '@/components/admin/PackagePickerCombobox'
 interface PendingItem {
   id: string;
   order_id: string;
-  service_type: 'hotel' | 'transport';
+  // Matches order_items.service_type's CHECK constraint (chk_item_service_type,
+  // sql/008) — NOT just 'hotel' | 'transport'. The API route intentionally
+  // doesn't filter by service_type (any needs_assignment row can land here),
+  // so a narrower type here just meant clinic/wellness rows got silently
+  // mis-rendered/mis-assigned as transport below.
+  service_type: 'hotel' | 'transport' | 'clinic' | 'wellness' | 'insurance';
   scheduled_date: string | null;
   scheduled_time: string | null;
   hotel_checkout_date: string | null;
@@ -72,6 +77,44 @@ export default function PendingAssignmentsPage() {
   function defaultQuantityFor(item: PendingItem): string {
     if (item.service_type === 'transport' && item.transport_mode === 'round_trip') return '2';
     return '1';
+  }
+
+  // Maps an order_item's service_type to the partners.category CHECK
+  // values PackagePickerCombobox should search across, matching the
+  // exact same v_service_type CASE admin_assign_order_item() (sql/058)
+  // uses to validate the assignment server-side — otherwise the picker
+  // lets an admin choose a package that the RPC then rejects with
+  // "category mismatch" (as happened for clinic: this used to fall
+  // into the `: 'Transport'` branch below, since only 'hotel' was
+  // special-cased).
+  function partnerCategoriesFor(item: PendingItem): string {
+    switch (item.service_type) {
+      case 'hotel':
+        return 'Hotel';
+      case 'transport':
+        return 'Transport';
+      case 'clinic':
+        return 'Hospital,Clinic,Dental';
+      case 'wellness':
+        return 'Wellness,Spa';
+      default:
+        return '';
+    }
+  }
+
+  function quantityLabel(item: PendingItem): string {
+    if (item.service_type === 'transport') {
+      if (item.transport_mode !== 'daily') {
+        return item.transport_mode === 'round_trip'
+          ? 'quantity (round trip = 2 legs, fixed)'
+          : 'quantity (one-way = 1 leg, fixed)';
+      }
+      return 'quantity (days)';
+    }
+    if (item.service_type === 'hotel') {
+      return 'quantity (nights only — rooms folded in automatically)';
+    }
+    return 'quantity';
   }
 
   function emptyDraftFor(item: PendingItem) {
@@ -174,7 +217,7 @@ export default function PendingAssignmentsPage() {
                       {item.hotel_checkout_date ?? '—'}
                       {item.room_quantity > 1 ? ` · Rooms: ${item.room_quantity}` : ''}
                     </p>
-                  ) : (
+                  ) : item.service_type === 'transport' ? (
                     <p>
                       Pickup: {item.scheduled_date ?? '—'} {item.scheduled_time ?? ''} · Mode:{' '}
                       {item.transport_mode ?? '—'}
@@ -187,6 +230,12 @@ export default function PendingAssignmentsPage() {
                       {item.pickup_location ? ` · From: ${item.pickup_location}` : ''}
                       {item.dropoff_location ? ` · To: ${item.dropoff_location}` : ''}
                     </p>
+                  ) : (
+                    // clinic/wellness/insurance: no hotel/transport-specific
+                    // fields apply — just the appointment date/time.
+                    <p>
+                      Appointment: {item.scheduled_date ?? '—'} {item.scheduled_time ?? ''}
+                    </p>
                   )}
                 </div>
 
@@ -196,7 +245,7 @@ export default function PendingAssignmentsPage() {
                       package ({item.service_type})
                     </label>
                     <PackagePickerCombobox
-                      category={item.service_type === 'hotel' ? 'Hotel' : 'Transport'}
+                      category={partnerCategoriesFor(item)}
                       disabled={assigning === item.id}
                       selectedLabel={draft.package_label}
                       onSelect={(packageId, packageLabel) =>
@@ -210,11 +259,7 @@ export default function PendingAssignmentsPage() {
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-500">
-                      {item.service_type === 'transport' && item.transport_mode !== 'daily'
-                        ? item.transport_mode === 'round_trip'
-                          ? 'quantity (round trip = 2 legs, fixed)'
-                          : 'quantity (one-way = 1 leg, fixed)'
-                        : `quantity (${item.service_type === 'hotel' ? 'nights only — rooms folded in automatically' : 'days'})`}
+                      {quantityLabel(item)}
                     </label>
                     {item.service_type === 'transport' && item.transport_mode !== 'daily' ? (
                       // one_way/round_trip transport never scales with

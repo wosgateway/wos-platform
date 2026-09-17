@@ -10,6 +10,12 @@
 // specific tab, e.g. /admin?tab=partners — see AdminGate.tsx's
 // NAV_LINKS. Wrapped in <Suspense> per this repo's existing
 // useSearchParams() convention (see src/app/login/page.tsx).
+//
+// 'commercial-terms' tab added for migration 098 (per-partner MOU
+// commission rate) — deliberately NOT in AdminGate.tsx's top-level
+// NAV_LINKS (unlike transport-pricing) since this data is confidential
+// per MOU ข้อ 7 and doesn't need one-click nav-bar prominence; still
+// reachable via /admin?tab=commercial-terms or this tab strip.
 
 import { Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -21,6 +27,8 @@ import { PartnerLeadsHub } from '@/components/admin/PartnerLeadsHub';
 import { ConsultationsManager } from '@/components/admin/ConsultationsManager';
 import { TransportPricingManager } from '@/components/admin/TransportPricingManager';
 import { PromoBannersManager } from '@/components/admin/PromoBannersManager';
+import { PartnerCommercialTermsManager } from '@/components/admin/PartnerCommercialTermsManager';
+import { SettlementsManager } from '@/components/admin/SettlementsManager';
 
 type AdminTab =
   | 'overview'
@@ -30,6 +38,8 @@ type AdminTab =
   | 'leads'
   | 'consultations'
   | 'transport-pricing'
+  | 'commercial-terms'
+  | 'settlements'
   | 'promo-banners';
 
 const VALID_TABS: AdminTab[] = [
@@ -40,6 +50,8 @@ const VALID_TABS: AdminTab[] = [
   'leads',
   'consultations',
   'transport-pricing',
+  'commercial-terms',
+  'settlements',
   'promo-banners',
 ];
 
@@ -51,6 +63,8 @@ const TAB_LABELS: Record<AdminTab, string> = {
   leads: 'พันธมิตรสมัครใหม่',
   consultations: 'ปรึกษาฟรี',
   'transport-pricing': 'ราคารถ',
+  'commercial-terms': 'ค่าคอมมิชชั่น',
+  settlements: 'Settlement',
   'promo-banners': 'แบนเนอร์',
 };
 
@@ -104,6 +118,10 @@ function AdminPageContent() {
         <ConsultationsManager />
       ) : tab === 'transport-pricing' ? (
         <TransportPricingManager />
+      ) : tab === 'commercial-terms' ? (
+        <PartnerCommercialTermsManager />
+      ) : tab === 'settlements' ? (
+        <SettlementsManager />
       ) : (
         <PromoBannersManager />
       )}

@@ -1,18 +1,22 @@
 // app/[locale]/partner/page.tsx
+//
+// Partner landing page v2 — see the redesign brief.
+// Nine sections, one primary CTA ("Become a Founding Partner"), everything
+// contractual (SLA, commission, settlement, MOU detail) moved to
+// /partner/terms so an undecided partner never has to read it here.
+
 import type { Metadata } from "next";
 import { getPartnerContent, partnerLocales } from "@/content/partner";
+import { PartnerNav } from "@/components/partner/PartnerNav";
 import {
   PartnerHero,
-  FoundingPartner,
   WhyPartner,
-  PartnerTypes,
+  JourneySection,
+  WhoCanJoin,
+  FoundingPartner,
   HowItWorks,
-  OperatingModel,
-  Benefits,
-  CommercialTermsSection,
-  MouSection,
-  ResponsibilitiesSlaSection,
-  PreparePartner,
+  CommercialModel,
+  PartnerRequirements,
   PartnerCta,
 } from "@/components/partner/sections";
 import "./partner-theme.css";
@@ -39,17 +43,15 @@ export default function PartnerPage({ params }: PageProps) {
 
   return (
     <main className="wos-partner">
+      <PartnerNav nav={content.nav} />
       <PartnerHero content={content} />
-      <FoundingPartner content={content} />
       <WhyPartner content={content} />
-      <PartnerTypes content={content} />
+      <JourneySection content={content} />
+      <WhoCanJoin content={content} />
+      <FoundingPartner content={content} />
       <HowItWorks content={content} />
-      <OperatingModel content={content} />
-      <Benefits content={content} />
-      <CommercialTermsSection content={content} />
-      <MouSection content={content} />
-      <ResponsibilitiesSlaSection content={content} />
-      <PreparePartner content={content} />
+      <CommercialModel content={content} />
+      <PartnerRequirements content={content} />
       <PartnerCta content={content} />
     </main>
   );

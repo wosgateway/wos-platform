@@ -20,6 +20,9 @@ interface OrderItemRow {
   service_type: string; // expected: 'main' | 'hotel' | 'transport'
   price: number | null;
   deposit_required: number | null;
+  // Phase 5 (migration 102) — GENERATED, price - deposit_required.
+  // Amount owed directly to the partner; NULL until assigned.
+  partner_balance: number | null;
   scheduled_date: string | null;
   scheduled_time: string | null;
   needs_assignment: boolean;
@@ -125,7 +128,7 @@ export async function GET() {
   const { data: items, error: itemsErr } = await supabase
   .from('order_items')
   .select(
-    'id, order_id, partner_id, package_id, service_type, price, deposit_required, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, quantity, vehicle_type, passenger_count'
+    'id, order_id, partner_id, package_id, service_type, price, deposit_required, partner_balance, scheduled_date, scheduled_time, needs_assignment, hotel_checkout_date, transport_mode, transport_return_date, transport_return_time, pickup_location, dropoff_location, room_quantity, quantity, vehicle_type, passenger_count'
   )
   .in('order_id', orderIds);
 
