@@ -142,6 +142,19 @@ export function PartnersManager() {
   const [portalInviteLink, setPortalInviteLink] = useState<string | null>(null);
   const [portalExistingEmail, setPortalExistingEmail] = useState<string | null>(null);
 
+  // Whether THIS partner already has a portal account — fetched fresh
+  // every time the modal opens (GET /api/admin/partners/[id]/portal-access)
+  // so the form always reflects what's actually saved, instead of the
+  // blank inputs it used to show on every open regardless of prior
+  // saves (see that route's GET handler doc comment for why this
+  // existed). 'checking' gates the create/edit UI while the lookup is
+  // in flight so the admin can't submit against a still-unknown state.
+  const [portalAccountStatus, setPortalAccountStatus] = useState<'checking' | 'none' | 'exists'>('none');
+  const [portalAccountLoadError, setPortalAccountLoadError] = useState<string | null>(null);
+  const [portalEditSaving, setPortalEditSaving] = useState(false);
+  const [portalEditError, setPortalEditError] = useState<string | null>(null);
+  const [portalEditSaved, setPortalEditSaved] = useState(false);
+
   // "ดูแทนพาร์ทเนอร์" (impersonate) — ดู /api/admin/partners/[id]/impersonate
   // route ฝั่ง backend มีครบแล้ว (audit log ครบ) แต่ไม่เคยมีปุ่มเรียกใช้จริง
   // เพิ่มตรงนี้: กดแล้วเปิดแท็บใหม่ที่ล็อกอินเป็นพาร์ทเนอร์นั้นทันที
@@ -293,6 +306,9 @@ export function PartnersManager() {
     setMouError(null);
     setMouWarning(null);
     setMouLink(null);
+    setPortalAccountLoadError(null);
+    setPortalEditError(null);
+    setPortalEditSaved(false);
     setPortalForm({
       organizationName: partner?.name ?? '',
       branchName: partner?.name ? `${partner.name} - สาขาหลัก` : '',
@@ -300,6 +316,16 @@ export function PartnersManager() {
       contactEmail: '',
       contactPhone: '',
     });
+    // Blank defaults above are only a placeholder while this loads (or
+    // the final state for a partner with no account yet) — the fetch
+    // below overwrites them with the saved contact info the moment it
+    // resolves, for a partner that already has one.
+    if (partner?.id) {
+      setPortalAccountStatus('checking');
+      loadPortalAccountStatus(partner.id);
+    } else {
+      setPortalAccountStatus('none');
+    }
     if (partner) {
       const p = partner as Partner & {
         address?: string | null;
@@ -614,6 +640,81 @@ export function PartnersManager() {
       setPortalError(e instanceof Error ? e.message : 'ขอลิงก์ใหม่ไม่สำเร็จ');
     } finally {
       setPortalCreating(false);
+    }
+  }
+
+  // Checks whether this partner already has a portal account and, if
+  // so, prefills portalForm with its saved contact info — this is what
+  // makes the modal stop showing blank inputs for a partner whose
+  // contact info was already submitted successfully in an earlier
+  // session (see GET handler's doc comment in the route file).
+  async function loadPortalAccountStatus(partnerId: string) {
+    setPortalAccountLoadError(null);
+    try {
+      const res = await fetch(`/api/admin/partners/${partnerId}/portal-access`);
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalAccountLoadError(data.error ?? 'ตรวจสอบบัญชีพอร์ทัลที่มีอยู่ไม่สำเร็จ');
+        setPortalAccountStatus('none');
+        return;
+      }
+      if (data.exists) {
+        setPortalForm({
+          organizationName: data.organizationName ?? '',
+          branchName: data.branchName ?? '',
+          contactName: data.contactName ?? '',
+          contactEmail: data.contactEmail ?? '',
+          contactPhone: data.contactPhone ?? '',
+        });
+        setPortalAccountStatus('exists');
+      } else {
+        setPortalAccountStatus('none');
+      }
+    } catch (e) {
+      setPortalAccountLoadError(e instanceof Error ? e.message : 'ตรวจสอบบัญชีพอร์ทัลที่มีอยู่ไม่สำเร็จ');
+      setPortalAccountStatus('none');
+    }
+  }
+
+  // Saves an edit to an EXISTING portal account's contact info (PATCH,
+  // as opposed to handleCreatePortalAccess's POST which only ever
+  // works once per partner). This is the fix for the actual bug: before
+  // this existed, there was no way to correct a contact's name/phone/
+  // email after the initial creation short of a manual DB edit.
+  async function handleSavePortalEdit() {
+    if (!form.id) return;
+    setPortalEditError(null);
+    setPortalEditSaved(false);
+    if (!portalForm.contactName.trim()) {
+      setPortalEditError('กรุณากรอกชื่อผู้ติดต่อ');
+      return;
+    }
+    if (!portalForm.contactEmail.trim() || !portalForm.contactEmail.includes('@')) {
+      setPortalEditError('กรุณากรอกอีเมลผู้ติดต่อที่ถูกต้อง');
+      return;
+    }
+    setPortalEditSaving(true);
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/portal-access`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactName: portalForm.contactName.trim(),
+          contactEmail: portalForm.contactEmail.trim(),
+          contactPhone: portalForm.contactPhone.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalEditError(data.error ?? 'บันทึกข้อมูลผู้ติดต่อไม่สำเร็จ');
+        return;
+      }
+      setPortalEditSaved(true);
+      loadPortalAccounts(); // refresh the list view's email column too
+    } catch (e) {
+      setPortalEditError(e instanceof Error ? e.message : 'บันทึกข้อมูลผู้ติดต่อไม่สำเร็จ');
+    } finally {
+      setPortalEditSaving(false);
     }
   }
 
@@ -1311,6 +1412,88 @@ export function PartnersManager() {
                     </button>
                   </div>
                 </div>
+              ) : portalAccountStatus === 'checking' ? (
+                <p className="text-xs text-slate-400">กำลังตรวจสอบบัญชีพอร์ทัลที่มีอยู่...</p>
+              ) : portalAccountStatus === 'exists' ? (
+                // Account already exists for this partner — POST above
+                // would just 409. This is the edit path: same fields,
+                // prefilled with what's actually saved (loadPortalAccountStatus),
+                // PATCHed instead of POSTed.
+                <>
+                  {portalAccountLoadError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalAccountLoadError}
+                    </div>
+                  ) : null}
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="text-xs text-slate-400">
+                      <span className="font-medium text-slate-600">{portalForm.organizationName}</span> ·{' '}
+                      {portalForm.branchName} — มีบัญชีพอร์ทัลอยู่แล้ว แก้ไขข้อมูลผู้ติดต่อได้ด้านล่าง
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="form-label">ชื่อผู้ติดต่อ</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactName}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">เบอร์โทร (ถ้ามี)</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactPhone}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactPhone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="form-label">อีเมลผู้ติดต่อ (ใช้ล็อกอินด้วย — เปลี่ยนแล้วมีผลกับการล็อกอินทันที)</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={portalForm.contactEmail}
+                      onChange={(e) => setPortalForm({ ...portalForm, contactEmail: e.target.value })}
+                    />
+                  </div>
+
+                  {portalEditError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalEditError}
+                    </div>
+                  ) : null}
+                  {portalEditSaved ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                      บันทึกข้อมูลผู้ติดต่อแล้ว
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSavePortalEdit}
+                      disabled={portalEditSaving}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+                    >
+                      {portalEditSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลผู้ติดต่อ'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResendPortalLink(portalForm.contactEmail.trim())}
+                      disabled={portalCreating || !portalForm.contactEmail.trim()}
+                      className="text-sm text-slate-500 underline disabled:opacity-50"
+                    >
+                      {portalCreating ? 'กำลังสร้างลิงก์...' : 'ขอลิงก์ตั้งรหัสผ่านใหม่'}
+                    </button>
+                  </div>
+                  {portalError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalError}
+                    </div>
+                  ) : null}
+                </>
               ) : (
                 <>
                   <div className="grid grid-cols-2 gap-3">
