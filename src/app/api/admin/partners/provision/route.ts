@@ -399,7 +399,17 @@ export async function POST(req: Request) {
   // locale-prefixed URL removes that hop entirely. Partner portal is
   // intentionally Thai-only (see middleware.ts), so 'th' is hardcoded
   // rather than read from routing.defaultLocale.
-  const redirectTo = `${new URL(req.url).origin}/th/set-password`;
+  //
+  // 2026-09 fix: this used to be `new URL(req.url).origin` — the origin
+  // of whatever request triggered provisioning. That's wrong whenever
+  // an admin runs this from something other than production (e.g. a
+  // local dev server), because the link mailed to the partner then
+  // points at that origin (localhost, a preview deploy, ...) instead of
+  // the real site — the partner can't reach it at all. NEXT_PUBLIC_SITE_URL
+  // is a fixed production URL (e.g. https://wos.asia) set in the
+  // environment, so the emailed link is correct no matter where the
+  // admin action was fired from.
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/th/set-password`;
   const { data: invite, error: inviteErr } = await supabase.auth.admin.inviteUserByEmail(contactEmail.trim(), {
     redirectTo,
   });

@@ -59,7 +59,12 @@ export async function POST(req: Request) {
     return fail('ไม่พบบัญชีพันธมิตรของอีเมลนี้ในระบบ (ต้องแปลงเป็นพันธมิตรก่อน)', 404);
   }
 
-  const redirectTo = `${new URL(req.url).origin}/th/set-password`;
+  // 2026-09 fix: was `new URL(req.url).origin` — the origin of whoever
+  // triggered this (could be a local dev server, a preview deploy, ...),
+  // not necessarily the real site. NEXT_PUBLIC_SITE_URL is a fixed
+  // production URL so the link handed to the partner always works. Same
+  // fix as provision/route.ts and portal-access/route.ts.
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/th/set-password`;
   const { data: linkData, error: linkErr } = await supabase.auth.admin.generateLink({
     type: 'recovery',
     email,

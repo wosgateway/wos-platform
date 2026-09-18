@@ -326,7 +326,13 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   }
 
   // 3. Mint Auth user + invite link without sending email.
-  const redirectTo = `${new URL(req.url).origin}/th/set-password`;
+  //
+  // 2026-09 fix: was `new URL(req.url).origin` — the origin of whoever
+  // triggered this (could be a local dev server, a preview deploy, ...),
+  // not necessarily the real site. NEXT_PUBLIC_SITE_URL is a fixed
+  // production URL so the link handed to the partner always works. Same
+  // fix as provision/route.ts and resend-invite-link/route.ts.
+  const redirectTo = `${process.env.NEXT_PUBLIC_SITE_URL}/th/set-password`;
 
   const { data: linkData, error: linkErr } =
     await supabase.auth.admin.generateLink({
