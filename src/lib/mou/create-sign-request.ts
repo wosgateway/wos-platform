@@ -22,7 +22,15 @@ import { generateSignToken, SIGN_LINK_TTL_DAYS } from '@/lib/mou/tokens';
 import { fillMouDraft } from '@/lib/mou/pdf';
 import { resolveCommercialFeeRateForOrganization } from '@/lib/mou/commercial-terms';
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3001';
+// 2026-09 fix: was NEXT_PUBLIC_APP_URL, a second env var that was never
+// actually set in Vercel (only NEXT_PUBLIC_SITE_URL was, for the partner
+// invite-link routes — see provision/resend-invite-link/portal-access
+// route.ts). That meant every MOU sign-link silently fell back to
+// localhost:3001 in production, same failure mode as the partner-invite
+// bug, just a second unset variable causing it. Reusing
+// NEXT_PUBLIC_SITE_URL keeps one canonical site URL for both link kinds
+// instead of two env vars that can drift out of sync.
+const APP_URL = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3001';
 
 export const DEFAULT_TEMPLATE_VERSION = 'founding-partner-v1';
 

@@ -302,7 +302,22 @@ export function PartnersManager() {
     setPortalInviteLink(null);
     setPortalExistingEmail(null);
     setImpersonateError(null);
-    setMouForm({ signerName: '', signerEmail: '' });
+    // Prefill from the latest sign request for this partner's org, if
+    // one exists and isn't a dead end (signed/cancelled) — lets the
+    // admin see who the link currently goes to and only edit the field
+    // that's actually changing (e.g. a new signer email) instead of
+    // retyping both from scratch. organizationIdByPartnerId/
+    // latestSignRequestByOrgId are already populated by the initial
+    // loadMouStatus() call on mount, so this is available synchronously
+    // here even though openModal itself doesn't fetch anything.
+    const existingOrgId = partner?.id ? organizationIdByPartnerId[partner.id] : undefined;
+    const existingMou = existingOrgId ? latestSignRequestByOrgId[existingOrgId] : undefined;
+    const mouIsLive = existingMou && existingMou.status !== 'signed' && existingMou.status !== 'cancelled';
+    setMouForm(
+      mouIsLive
+        ? { signerName: existingMou.signer_name, signerEmail: existingMou.signer_email ?? '' }
+        : { signerName: '', signerEmail: '' }
+    );
     setMouError(null);
     setMouWarning(null);
     setMouLink(null);
@@ -724,6 +739,20 @@ export function PartnersManager() {
   // handleCreatePortalAccess above is what creates one — so the modal
   // section below only renders this form once organizationIdByPartnerId
   // has an entry for this partner.
+  //
+  // 2026-09 fix: this used to always POST /create-sign-request, even
+  // when a request already existed for this org. For a still-live one
+  // (pending/otp_verified) that left TWO simultaneously valid links —
+  // exactly the failure mode /resend/route.ts's own header comment
+  // warns about, because this UI never actually called that route.
+  // Now: if latestSignRequestByOrgId has an entry, go through
+  // /sign-requests/[id]/resend instead, which cancels the old link
+  // before minting the new one (or, for an already-terminal expired/
+  // cancelled row, just creates fresh — resend handles both). Only
+  // hits /create-sign-request directly when there's no prior request
+  // at all. This is also how a signer gets changed: mouForm is
+  // pre-filled with the current signer on openModal, so editing the
+  // name/email here and sending is the "change signer" flow.
   async function handleSendMou() {
     if (!form.id) return;
     const organizationId = organizationIdByPartnerId[form.id];
@@ -738,16 +767,19 @@ export function PartnersManager() {
       setMouError('กรุณากรอกอีเมลผู้ลงนามที่ถูกต้อง');
       return;
     }
+    const existingRequest = latestSignRequestByOrgId[organizationId];
+    const url = existingRequest
+      ? `/api/admin/mou/sign-requests/${existingRequest.id}/resend`
+      : '/api/admin/mou/create-sign-request';
+    const body = existingRequest
+      ? { signerName: mouForm.signerName.trim(), signerEmail: mouForm.signerEmail.trim() }
+      : { organizationId, signerName: mouForm.signerName.trim(), signerEmail: mouForm.signerEmail.trim() };
     setMouSending(true);
     try {
-      const res = await fetch('/api/admin/mou/create-sign-request', {
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          organizationId,
-          signerName: mouForm.signerName.trim(),
-          signerEmail: mouForm.signerEmail.trim(),
-        }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (res.status === 207) {
@@ -1660,6 +1692,14 @@ export function PartnersManager() {
                         {mouWarning}
                       </div>
                     ) : null}
+                    {existingRequest &&
+                    (existingRequest.status === 'pending' || existingRequest.status === 'otp_verified') ? (
+                      <p className="text-xs text-slate-400">
+                        มีลิงก์ที่ยังไม่หมดอายุอยู่แล้ว — ฟิลด์ด้านล่างคือผู้ลงนามคนปัจจุบัน แก้ไขแล้วกดส่ง
+                        เพื่อ<span className="font-medium text-slate-500">เปลี่ยนผู้ลงนาม</span>
+                        (ลิงก์เดิมจะถูกยกเลิกทันที ใช้ไม่ได้อีก)
+                      </p>
+                    ) : null}
                     <div className="grid grid-cols-2 gap-3">
                       <div>
                         <label className="form-label">ชื่อผู้ลงนาม</label>
@@ -1692,7 +1732,14 @@ export function PartnersManager() {
                       disabled={mouSending}
                       className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
                     >
-                      {mouSending ? 'กำลังส่ง...' : existingRequest ? '📄 ส่ง MOU ให้เซ็น (ฉบับใหม่)' : '📄 ส่ง MOU ให้เซ็น'}
+                      {mouSending
+                        ? 'กำลังส่ง...'
+                        : existingRequest &&
+                            (existingRequest.status === 'pending' || existingRequest.status === 'otp_verified')
+                          ? '📄 ยกเลิกลิงก์เดิม + ส่งใหม่'
+                          : existingRequest
+                            ? '📄 ส่ง MOU ให้เซ็น (ฉบับใหม่)'
+                            : '📄 ส่ง MOU ให้เซ็น'}
                     </button>
                   </>
                 );
