@@ -14,7 +14,8 @@
       "ctaPrimary": "Find Healthcare",
       "ctaSecondary": "Become a Partner",
       "badge": "Health Journey Platform",
-      "ctaConsultation": "Free WOS Consultation"
+      "ctaConsultation": "Free WOS Consultation",
+      "ctaHint": "Not sure where to start? Get a free consultation with the WOS team."
     },
     "trustBar": {
       "items": [
@@ -31,8 +32,8 @@
           "label": "support team"
         },
         {
-          "value": "2 countries",
-          "label": "Thailand–Laos"
+          "value": "Thailand–Laos",
+          "label": ""
         }
       ],
       "headline": "Trusted Cross-Border Network"
@@ -137,10 +138,12 @@
     "categoriesTitleFiltered": "Programs for {goal}",
     "categoriesSubtitle": "Whether it's prevention, recovery, or treatment, we'll connect you with the right partner",
     "featured": {
-      "title": "Featured Programs",
-      "subtitle": "Handpicked promotions and popular programs from our partners",
+      "title": "Recommended Health Programs",
+      "subtitle": "Handpicked promotions and popular health programs from our partners",
       "prev": "Previous program",
-      "next": "Next program"
+      "next": "Next program",
+      "partnersTitle": "Hotel & Transport Partners",
+      "partnersSubtitle": "Hotels and transfer services ready to take care of your journey"
     },
     "testimonials": {
       "title": "What Our Patients Say",
@@ -244,6 +247,7 @@
   },
   "nav": {
     "home": "Home",
+    "login": "Log in",
     "services": "Services",
     "partners": "Partners",
     "contact": "Contact",

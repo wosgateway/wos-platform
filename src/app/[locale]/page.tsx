@@ -50,6 +50,18 @@ export default async function HomePage({
     console.error('fetchFeaturedPackages failed', err);
   }
 
+  // แยกการ์ด "โปรแกรมแนะนำ" ออกเป็น 2 สไลด์ตามประเภทพันธมิตร — ฝั่งสุขภาพ
+  // (Hospital/Clinic/Dental/Wellness/Spa) กับฝั่งโรงแรม/รถรับส่ง (Hotel/
+  // Transport, ดู src/lib/categories.ts) ยังใช้ query เดิมตัวเดียว แค่ filter
+  // ในหน่วยความจำ ไม่ต้องยิง query ซ้ำ
+  const HOTEL_TRANSPORT_CATEGORIES = ['Hotel', 'Transport'];
+  const featuredHealthPackages = featuredPackages.filter(
+    (pkg) => !HOTEL_TRANSPORT_CATEGORIES.includes(pkg.partners?.category ?? '')
+  );
+  const featuredHotelTransportPackages = featuredPackages.filter((pkg) =>
+    HOTEL_TRANSPORT_CATEGORIES.includes(pkg.partners?.category ?? '')
+  );
+
   // สไลด์แบนเนอร์ใต้ Hero — เช่นเดียวกับ featuredPackages ด้านบน กันพังทั้งหน้า
   // ถ้า query ล้มเหลว (เช่น ก่อนรัน 093_promo_banners.sql) ให้ fallback เป็น []
   // ซึ่ง PromoBannerSlider ที่ banners=[] จะ return null ไปเลย ไม่ fallback
@@ -166,9 +178,24 @@ export default async function HomePage({
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Mobile: horizontal snap-scroll row, one card peeking at the
+            edge to hint there's more — same pattern as GoWabi's mobile
+            category row, and the same overflow-x-auto/snap technique
+            FeaturedProgramsSliderV2 already uses below. No JS needed
+            here (no arrows/autoplay): 7 cards is short enough for a
+            plain touch swipe, and CategoryCard/CategoryCardImage stay
+            untouched — only the container + a width wrapper change.
+            sm and up: reverts to the original static grid. */}
+        <div
+          className="-mx-4 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pb-2
+                     [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden
+                     sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0
+                     lg:grid-cols-3"
+        >
           {displayedCategories.map((category) => (
-            <CategoryCard key={category.slug} category={category} label={tCat(category.slug)} />
+            <div key={category.slug} className="w-[78%] shrink-0 snap-start sm:w-auto sm:shrink">
+              <CategoryCard category={category} label={tCat(category.slug)} />
+            </div>
           ))}
         </div>
       </section>
@@ -177,7 +204,16 @@ export default async function HomePage({
           Uses the real AddToJourneyButton / lib/journey/context — adding an
           item here actually shows up in the JourneyCartBar, same as
           anywhere else on the site. Not a mock. */}
-      <FeaturedProgramsSliderV2 packages={featuredPackages} />
+      <FeaturedProgramsSliderV2
+        packages={featuredHealthPackages}
+        title={t('featured.title')}
+        subtitle={t('featured.subtitle')}
+      />
+      <FeaturedProgramsSliderV2
+        packages={featuredHotelTransportPackages}
+        title={t('featured.partnersTitle')}
+        subtitle={t('featured.partnersSubtitle')}
+      />
 
       {/* ===== KNOWLEDGE CENTER (replaces old HowItWorks 3-step block) ===== */}
       <KnowledgeCenter />

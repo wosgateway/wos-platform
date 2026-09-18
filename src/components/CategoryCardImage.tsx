@@ -61,7 +61,7 @@ export function CategoryCardImage({ src, alt }: { src: string; alt: string }) {
         className={`object-cover transition-transform duration-300 ${
           isZoomed ? 'scale-105' : 'scale-100'
         }`}
-        sizes="(max-width: 768px) 100vw, 33vw"
+        sizes="(max-width: 640px) 78vw, (max-width: 1024px) 50vw, 33vw"
       />
     </div>
   );

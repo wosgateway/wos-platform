@@ -52,6 +52,7 @@ const TRAVEL_PERIODS = [
 const SOURCES = [
   'homepage_hero',
   'homepage_bottom',
+  'header',
   'partner_page',
   'package_page',
   'knowledge_center',

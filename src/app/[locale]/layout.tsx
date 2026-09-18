@@ -6,8 +6,7 @@ import { notFound } from 'next/navigation';
 import { routing } from '@/i18n/routing';
 import { Header } from '@/components/Header';
 import { Footer } from '@/components/Footer';
-import { WhatsAppButton } from '@/components/WhatsAppButton';
-import { ChatWidget } from '@/components/ChatWidget';
+import { ContactFab } from '@/components/ContactFab';
 import { JourneyProvider } from '@/lib/journey/context';
 import { MobileJourneyBar } from '@/components/journey/MobileJourneyBar';
 import { LangSetter } from '@/components/LangSetter';
@@ -60,8 +59,16 @@ export default async function LocaleLayout({
               className="h-[calc(4.5rem+env(safe-area-inset-bottom))] md:hidden"
               aria-hidden="true"
             />
-            <WhatsAppButton />
-            <ChatWidget />
+            <ContactFab />
+            {/* ChatWidget (Crisp) removed 2026-09, and WhatsAppButton
+                replaced by ContactFab 2026-09 (see ContactFab.tsx):
+                Messenger, WhatsApp, LINE and Phone are now all reachable
+                from this one speed-dial FAB instead of a single-channel
+                button, so a separate live-chat widget stays unneeded.
+                Kept ChatWidget.tsx and its Crisp setup instructions in
+                the repo, unused, in case a chat widget is wanted again
+                later; re-add by importing it and dropping <ChatWidget />
+                back in here. */}
             <MobileJourneyBar />
           </>
         )}

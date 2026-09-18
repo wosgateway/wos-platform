@@ -8,6 +8,18 @@ import { useTranslations } from 'next-intl';
 // (+66 86 452 2644) because the Laos number (+856 20 9872 4718) currently
 // has no WhatsApp account. Switch back to the Laos number once WhatsApp is
 // reactivated on it — kept in sync with MobileStickyCta.tsx and Footer.tsx.
+//
+// Bottom offset (2026-09 fix): on mobile (< md), [locale]/layout.tsx also
+// mounts MobileJourneyBar, which always renders either <JourneyCartBar />
+// or <MobileStickyCta /> — never neither — as a full-width `fixed
+// inset-x-0 bottom-0 z-50` bar roughly 4.5rem tall. This button used to
+// sit at `bottom-5` (20px), which is well inside that bar's 0–72px
+// footprint, so the higher-z-index bar rendered on top and covered most
+// of the button — the opposite of "stays visible on every page" above.
+// `bottom-[calc(4.5rem+1.25rem+env(safe-area-inset-bottom))]` clears the
+// bar (4.5rem) plus a 1.25rem gap plus the iOS home-indicator safe area,
+// only below `md`, where that bar exists; `md:bottom-6` restores the
+// original close-to-corner position once the bar is `md:hidden`.
 const WHATSAPP_NUMBER = '66864522644';
 
 export function WhatsAppButton() {
@@ -22,7 +34,7 @@ export function WhatsAppButton() {
       rel="noopener noreferrer"
       aria-label={t('ariaLabel')}
       title={t('tooltip')}
-      className="group fixed bottom-5 right-5 z-40 flex items-center gap-0 overflow-hidden rounded-full bg-[#25D366] text-white shadow-lg shadow-black/20 transition-all duration-300 hover:gap-2 hover:pr-4 hover:shadow-xl active:scale-95 sm:bottom-6 sm:right-6"
+      className="group fixed right-5 z-40 flex items-center gap-0 overflow-hidden rounded-full bg-[#25D366] text-white shadow-lg shadow-black/20 transition-all duration-300 hover:gap-2 hover:pr-4 hover:shadow-xl active:scale-95 bottom-[calc(4.5rem+1.25rem+env(safe-area-inset-bottom))] sm:right-6 md:bottom-6"
     >
       <span className="flex h-14 w-14 shrink-0 items-center justify-center">
         <svg viewBox="0 0 32 32" className="h-7 w-7 fill-white" aria-hidden="true">
