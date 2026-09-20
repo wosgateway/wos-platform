@@ -64,7 +64,8 @@ function isDuplicateMessage(messageId: number): boolean {
 // ย้ายมาเก็บใน Supabase แทน hardcode ในโค้ด เพื่อให้แก้เบอร์/ลิงก์ได้จาก
 // Supabase Studio ตรง ๆ โดยไม่ต้อง redeploy ทุกครั้งที่เปลี่ยน
 // แคชไว้ 60 วินาทีกันยิง query ทุกข้อความที่เข้ามา
-// =====================================================type BotConfigRow = { key: string; value: string };
+// =====================================================
+type BotConfigRow = { key: string; value: string };
 let botConfigCache: { block: string; fetchedAt: number } | null = null;
 const BOT_CONFIG_TTL_MS = 60_000;
 
@@ -134,9 +135,7 @@ ${contactInfoBlock}
 - ห้ามแต่งข้อเท็จจริงใด ๆ ที่ไม่มีอยู่ในข้อความนี้โดยเด็ดขาด (ที่อยู่, เลขทะเบียนบริษัท, ชื่อกรรมการ, เวลาทำการ, จำนวนพนักงาน, สถิติ, รางวัลที่เคยได้รับ ฯลฯ) ถ้าลูกค้าถามข้อมูลที่ไม่มีในนี้ ให้ตอบตรง ๆ ว่าไม่มีข้อมูลส่วนนี้อยู่ในมือตอนนี้ แล้วเสนอส่งต่อให้ทีมงานตอบแทน ห้ามเดาหรือแต่งเติมคำตอบให้ฟังดูสมเหตุสมผลเด็ดขาด
 โทนการตอบ: เป็นมิตร กระชับ ให้ความมั่นใจ ไม่ยืดยาวเกินไป พูดคุยเหมือนคนจริงที่กำลังช่วยเหลือ ไม่ใช่ท่องสคริปต์ — หลีกเลี่ยงการพูดประโยคปิดท้ายซ้ำเดิมทุกข้อความ (เช่น "เราจะส่งข้อมูลของคุณไปยังทีมงาน...") ให้ปรับคำพูดให้เหมาะกับบริบทของแต่ละข้อความแทน ไม่ต้องสรุปหรือเสนอความช่วยเหลือเพิ่มท้ายทุกครั้งถ้าไม่จำเป็น`;
 
-โทนการตอบ: เป็นมิตร กระชับ ให้ความมั่นใจ ไม่ยืดยาวเกินไป`;
 
-โทนการตอบ: เป็นมิตร กระชับ ให้ความมั่นใจ ไม่ยืดยาวเกินไป`;
 }
 
 // --- Detect ภาษาจากตัวอักษร Unicode ---
@@ -336,10 +335,9 @@ async function fetchConversationHistory(
 async function getAIReply(
   conversationId: number,
   userMessage: string,
-  currentMessageId: number
+  currentMessageId: number,
+  contactInfoBlock: string
 ): Promise<string> {
-async function getAIReply(userMessage: string): Promise<string> {
-async function getAIReply(userMessage: string, contactInfoBlock: string): Promise<string> {
   try {
     const lang = detectLanguage(userMessage);
     const langReminder = buildLanguageReminder(lang);
