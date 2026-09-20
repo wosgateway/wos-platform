@@ -210,3 +210,101 @@ export async function fetchTransportVehiclePricing(): Promise<Record<string, num
   }
   return map;
 }
+
+type ActivePackageResult = Omit<Partial<Package>, 'partners'> & {
+  partners?: Array<
+    Pick<Partner, 'id' | 'name' | 'category' | 'status' | 'province'>
+  >;
+};
+
+export async function fetchActivePackages(
+  limit = 10
+): Promise<ActivePackageResult[]> {
+  const supabase = createAnonClient();
+
+  const safeLimit = Math.min(Math.max(limit, 1), 10);
+
+  const { data, error } = await supabase
+    .from('packages')
+    .select(
+      'id, partner_id, title, description, image_url, is_promotion, original_price, special_price, duration, status, is_active, sub_category, partners!inner(id, name, category, status, province)'
+    )
+    .eq('status', 'published')
+    .eq('is_active', true)
+    .eq('partners.status', 'active')
+    .order('title', { ascending: true })
+    .limit(safeLimit);
+
+  if (error) throw error;
+
+  return data ?? [];
+}
+
+type SearchPackageResult = Omit<Partial<Package>, 'partners'> & {
+  partners?: Array<
+    Pick<Partner, 'id' | 'name' | 'category' | 'status' | 'province'>
+  >;
+};
+
+export async function searchPackages(
+  query: string,
+  limit = 10
+): Promise<SearchPackageResult[]> {
+  const supabase = createAnonClient();
+
+  const safeQuery = query
+    .trim()
+    .replace(/[%_]/g, '')
+    .replace(/,/g, ' ');
+
+  if (!safeQuery) return [];
+
+  const safeLimit = Math.min(Math.max(limit, 1), 10);
+  const searchPattern = `%${safeQuery}%`;
+
+  const baseSelect =
+    'id, partner_id, title, description, image_url, is_promotion, original_price, special_price, duration, status, is_active, sub_category, partners!inner(id, name, category, status, province)';
+
+  const [titleResult, descriptionResult] = await Promise.all([
+    supabase
+      .from('packages')
+      .select(baseSelect)
+      .eq('status', 'published')
+      .eq('is_active', true)
+      .eq('partners.status', 'active')
+      .ilike('title', searchPattern)
+      .order('title', { ascending: true })
+      .limit(safeLimit),
+
+    supabase
+      .from('packages')
+      .select(baseSelect)
+      .eq('status', 'published')
+      .eq('is_active', true)
+      .eq('partners.status', 'active')
+      .ilike('description', searchPattern)
+      .order('title', { ascending: true })
+      .limit(safeLimit),
+  ]);
+
+  if (titleResult.error) throw titleResult.error;
+  if (descriptionResult.error) throw descriptionResult.error;
+
+  const merged = new Map<string, SearchPackageResult>();
+
+  for (const item of [
+    ...(titleResult.data ?? []),
+    ...(descriptionResult.data ?? []),
+  ]) {
+    merged.set(item.id, item);
+  }
+
+  return Array.from(merged.values())
+    .sort((a, b) =>
+      String(a.title ?? '').localeCompare(
+        String(b.title ?? ''),
+        'th'
+      )
+    )
+    .slice(0, safeLimit);
+}
