@@ -68,7 +68,7 @@ if (!order) {
   // 2. Order items
   const { data: items, error: itemsErr } = await supabase
   .from('order_items')
-  .select('id, package_id, partner_id, service_type, price, needs_assignment, room_quantity, scheduled_date, scheduled_time, transport_mode, transport_return_date, transport_return_time, hotel_checkout_date, pickup_location, dropoff_location')
+  .select('id, package_id, partner_id, service_type, status, price, needs_assignment, room_quantity, scheduled_date, scheduled_time, transport_mode, transport_return_date, transport_return_time, hotel_checkout_date, pickup_location, dropoff_location')
   .eq('order_id', order.id);
 
   if (itemsErr) {

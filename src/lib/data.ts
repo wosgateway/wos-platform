@@ -29,6 +29,12 @@ export interface Package {
   // สวิตช์เปิด/ปิดการแสดงผลของแอดมิน — แยกจาก status เพื่อให้แอดมินระงับ
   // การแสดงบนหน้าเว็บชั่วคราวได้โดยไม่ต้องรีเซ็ตสถานะอนุมัติ (ดู migration_add_package_is_active.sql)
   is_active: boolean;
+  // Free-text, scoped per partners.category — see migration 082. For
+  // Hotel packages this holds the room type (single/double/twin/deluxe/
+  // suite/other) picked from a fixed dropdown in PackagesManager.tsx;
+  // used to filter the hotel step in BookingForm.tsx/JourneyBookingForm.tsx.
+  // NULL/unused for every other category.
+  sub_category?: string | null;
   submitted_by: string | null;
   created_at: string;
   // ข้อมูลแนะนำที่พักตอนเบราส์ดูโปรแกรม — ไม่ใช่ราคาผูกมัด
@@ -142,4 +148,65 @@ export async function fetchPackagesByCategory(dbCategories: string[]): Promise<P
     .order('title', { ascending: true });
   if (error) throw error;
   return data ?? [];
+}
+
+// Starting-price hint for the transport booking step (migration 081) —
+// replaces the old per-partner package dropdown, which didn't scale
+// past a handful of transport partners and leaked partner names the
+// cross-border customer had no way to evaluate anyway (see decision:
+// vehicleType, chosen earlier in the flow, already acts as the
+// price tier). Returns vehicle_type -> starting_price; a vehicle type
+// with no row (or a 0 price) just means "no hint shown" in the UI.
+export interface PromoBanner {
+  id: string;
+  image_url: string;
+  link_url: string | null;
+  title: string;
+  display_order: number;
+  is_active: boolean;
+  start_date: string | null;
+  end_date: string | null;
+}
+
+// สไลด์แบนเนอร์ใต้ Hero หน้าแรก (093_promo_banners.sql) — filter is_active
+// และช่วงวันที่ซ้ำกับ RLS ในแอป ไม่พึ่ง RLS อย่างเดียว (เหมือน pattern
+// fetchPartnerById ที่ .eq('status','active') ซ้ำกับ policy) เผื่อวันไหน
+// RLS หลุด/เปลี่ยน ยังมี guard ชั้นแอปกันอยู่. เรียงตาม display_order
+// ให้ตรงกับลำดับที่แอดมินจัดใน PromoBannersManager.tsx
+export async function fetchActivePromoBanners(): Promise<PromoBanner[]> {
+  const supabase = createAnonClient();
+  const { data, error } = await supabase
+    .from('promo_banners')
+    .select('*')
+    .eq('is_active', true)
+    .order('display_order', { ascending: true });
+  if (error) throw error;
+
+  // start_date/end_date window applied here rather than chained as more
+  // .or() filters on the query above — this list is always tiny (a
+  // handful of promo slides), and doing it in JS avoids relying on
+  // exactly how supabase-js combines two separate .or() calls (each adds
+  // its own "or" query param; whether repeated ones AND together isn't
+  // worth staking a scheduling bug on). Still an app-level guard on top
+  // of RLS, same intent as fetchPartnerById's redundant .eq('status', ...).
+  const today = new Date().toISOString().slice(0, 10);
+  return (data ?? []).filter((b) => {
+    if (b.start_date && b.start_date > today) return false;
+    if (b.end_date && b.end_date < today) return false;
+    return true;
+  });
+}
+
+export async function fetchTransportVehiclePricing(): Promise<Record<string, number>> {
+  const supabase = createAnonClient();
+  const { data, error } = await supabase
+    .from('transport_vehicle_pricing')
+    .select('vehicle_type, starting_price')
+    .eq('is_active', true);
+  if (error) throw error;
+  const map: Record<string, number> = {};
+  for (const row of data ?? []) {
+    map[row.vehicle_type as string] = Number(row.starting_price ?? 0);
+  }
+  return map;
 }

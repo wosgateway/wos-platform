@@ -1,0 +1,1030 @@
+/* app/[locale]/partner/partner-theme.css
+ *
+ * Partner theme v2 — premium B2B / executive.
+ *
+ * Direction from the redesign brief:
+ *   Deep Navy = brand / trust, Warm Gold = highlight & CTA only,
+ *   White / soft gray = the page itself. No emoji, no heavy gradients,
+ *   no heavy shadows, no card-everywhere. Lots of breathing room.
+ *
+ * Written mobile-first (base rules = phone, min-width queries scale up),
+ * because partners typically arrive from Facebook / WhatsApp on a phone.
+ *
+ * Thai and Lao body text never drops below 16px and runs at line-height
+ * 1.7 so it stays comfortable to read.
+ *
+ * Fonts: the site already loads "Prompt" via next/font as --font-prompt in
+ * layout.tsx, so this page inherits it rather than loading a second family.
+ */
+
+.wos-partner {
+  /* palette */
+  --wos-navy: #0f2440;
+  --wos-navy-deep: #091a30;
+  --wos-navy-soft: #1c3a5e;
+  --wos-gold: #b8912f;
+  --wos-gold-soft: #d8b458;
+  --wos-white: #ffffff;
+  --wos-gray: #f5f6f8;
+  --wos-line: #e2e5ea;
+  --wos-line-navy: rgba(255, 255, 255, 0.16);
+  --wos-ink: #16202e;
+  --wos-ink-soft: #5b6676;
+  --wos-ink-light: rgba(255, 255, 255, 0.78);
+
+  /* rhythm */
+  --wos-section-y: 64px;
+  --wos-shell-x: 20px;
+
+  --wos-font: var(--font-prompt), ui-sans-serif, system-ui, sans-serif;
+  --wos-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  background: var(--wos-white);
+  color: var(--wos-ink);
+  font-family: var(--wos-font);
+  font-size: 16px;
+  line-height: 1.7;
+  -webkit-font-smoothing: antialiased;
+}
+
+.wos-partner * {
+  box-sizing: border-box;
+}
+
+.wos-shell {
+  max-width: 1120px;
+  margin: 0 auto;
+  padding: 0 var(--wos-shell-x);
+}
+
+/* ---------- sticky page nav ---------- */
+
+.wos-nav {
+  /* the global site header is sticky at top:0 and exactly 64px tall (h-16),
+     so this bar parks directly underneath it instead of behind it */
+  position: sticky;
+  top: 64px;
+  z-index: 30;
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--wos-line);
+}
+
+.wos-nav-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 56px;
+}
+
+.wos-nav-brand {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--wos-navy);
+  text-decoration: none;
+  letter-spacing: 0.01em;
+}
+
+.wos-nav-brand-full {
+  display: none;
+}
+
+.wos-nav-links {
+  display: none;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  gap: 28px;
+}
+
+.wos-nav-links a {
+  font-size: 15px;
+  color: var(--wos-ink-soft);
+  text-decoration: none;
+}
+
+.wos-nav-links a:hover {
+  color: var(--wos-navy);
+}
+
+.wos-nav-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 40px;
+  padding: 0 18px;
+  border-radius: 999px;
+  background: var(--wos-navy);
+  color: var(--wos-white);
+  font-size: 15px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.wos-nav-cta:hover {
+  background: var(--wos-navy-soft);
+}
+
+.wos-nav-cta-full {
+  display: none;
+}
+
+/* ---------- shared blocks ---------- */
+
+.wos-section {
+  padding: var(--wos-section-y) 0;
+  /* clears the site header (64px) + this page's sticky nav when jumping to
+     an in-page anchor */
+  scroll-margin-top: 124px;
+}
+
+.wos-section-alt {
+  background: var(--wos-gray);
+}
+
+.wos-section-navy {
+  background: var(--wos-navy);
+  color: var(--wos-ink-light);
+}
+
+.wos-section-navy .wos-display,
+.wos-section-navy h3,
+.wos-section-navy h4 {
+  color: var(--wos-white);
+}
+
+.wos-section-navy .wos-eyebrow {
+  color: var(--wos-gold-soft);
+}
+
+.wos-section-navy .wos-eyebrow::before {
+  background: var(--wos-gold-soft);
+}
+
+.wos-section-navy p,
+.wos-section-navy .wos-section-head p {
+  color: var(--wos-ink-light);
+}
+
+.wos-eyebrow {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--wos-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--wos-navy-soft);
+  line-height: 1.4;
+}
+
+.wos-eyebrow::before {
+  content: "";
+  width: 20px;
+  height: 1px;
+  background: var(--wos-navy-soft);
+}
+
+.wos-display {
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  line-height: 1.25;
+  color: var(--wos-navy);
+  margin: 0;
+}
+
+.wos-section-head {
+  max-width: 60ch;
+  margin-bottom: 36px;
+}
+
+.wos-section-head h2 {
+  font-size: 26px;
+  margin: 12px 0 10px;
+}
+
+.wos-section-head p {
+  margin: 0;
+  color: var(--wos-ink-soft);
+  font-size: 16px;
+}
+
+.wos-section-head .wos-badge {
+  margin-top: 20px;
+}
+
+.wos-subhead {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--wos-navy);
+  margin: 0 0 20px;
+}
+
+.wos-section-navy .wos-subhead {
+  color: var(--wos-white);
+}
+
+.wos-subhead-spaced {
+  margin-top: 48px;
+}
+
+.wos-lead {
+  font-size: 17px;
+  color: var(--wos-ink-soft);
+  max-width: 58ch;
+  margin: 0 0 28px;
+}
+
+.wos-note {
+  margin-top: 24px;
+  font-size: 14px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-label {
+  display: inline-block;
+  font-family: var(--wos-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wos-gold);
+  margin-bottom: 12px;
+}
+
+.wos-index {
+  display: block;
+  font-family: var(--wos-font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  color: var(--wos-gold);
+  margin-bottom: 14px;
+}
+
+/* ---------- buttons ---------- */
+
+.wos-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 48px;
+  padding: 0 24px;
+  border: 1px solid var(--wos-navy);
+  border-radius: 999px;
+  background: var(--wos-navy);
+  color: var(--wos-white);
+  font-family: var(--wos-font);
+  font-size: 16px;
+  font-weight: 500;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.18s ease, transform 0.18s ease;
+}
+
+.wos-btn:hover {
+  background: var(--wos-navy-soft);
+  border-color: var(--wos-navy-soft);
+}
+
+.wos-btn-gold {
+  background: var(--wos-gold);
+  border-color: var(--wos-gold);
+  color: var(--wos-navy-deep);
+  font-weight: 600;
+}
+
+.wos-btn-gold:hover {
+  background: var(--wos-gold-soft);
+  border-color: var(--wos-gold-soft);
+}
+
+.wos-btn-lg {
+  min-height: 54px;
+  padding: 0 32px;
+}
+
+.wos-btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0 22px;
+  border: 1px solid var(--wos-line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--wos-navy);
+  font-size: 16px;
+  text-decoration: none;
+}
+
+.wos-btn-ghost:hover {
+  border-color: var(--wos-navy);
+}
+
+.wos-btn-ghost-light {
+  border-color: var(--wos-line-navy);
+  color: var(--wos-white);
+}
+
+.wos-btn-ghost-light:hover {
+  border-color: var(--wos-white);
+}
+
+.wos-cta-row {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 28px;
+}
+
+.wos-arrow {
+  width: 20px;
+  height: 12px;
+  flex: none;
+}
+
+.wos-check {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--wos-gold);
+  margin-top: 5px;
+}
+
+.wos-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 28px;
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--wos-navy);
+  text-decoration: none;
+  border-bottom: 1px solid var(--wos-gold);
+  padding-bottom: 2px;
+}
+
+.wos-link:hover {
+  color: var(--wos-gold);
+}
+
+.wos-back-link {
+  display: inline-block;
+  margin-bottom: 20px;
+  font-size: 14px;
+  color: var(--wos-ink-soft);
+  text-decoration: none;
+}
+
+.wos-back-link:hover {
+  color: var(--wos-navy);
+}
+
+/* ---------- 01 hero ---------- */
+
+.wos-hero {
+  padding-top: 48px;
+}
+
+.wos-hero-grid {
+  display: grid;
+  gap: 40px;
+}
+
+.wos-hero h1 {
+  font-size: 32px;
+  margin: 16px 0 18px;
+}
+
+.wos-hero-line {
+  display: block;
+}
+
+.wos-hero-visual {
+  border: 1px solid var(--wos-line);
+  border-radius: 14px;
+  background: var(--wos-gray);
+  padding: 28px 24px;
+}
+
+.wos-hero-highlight {
+  display: block;
+  font-family: var(--wos-font-mono);
+  font-size: 13px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--wos-gold);
+  margin-bottom: 24px;
+}
+
+.wos-route {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.wos-route-node {
+  font-size: 16px;
+  color: var(--wos-navy);
+}
+
+.wos-route-node-core {
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.wos-route-line {
+  width: 1px;
+  height: 22px;
+  margin-left: 10px;
+  background: var(--wos-gold);
+}
+
+/* ---------- cards / grids ---------- */
+
+.wos-grid-3 {
+  display: grid;
+  gap: 20px;
+}
+
+.wos-card {
+  border: 1px solid var(--wos-line);
+  border-radius: 12px;
+  background: var(--wos-white);
+  padding: 28px 24px;
+}
+
+.wos-card h3 {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--wos-navy);
+  margin: 0 0 10px;
+}
+
+.wos-card p {
+  margin: 0;
+  font-size: 16px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-plain-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-ordered-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 16px;
+  color: var(--wos-ink-soft);
+}
+
+/* ---------- 03 journey ---------- */
+
+.wos-journey {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0;
+}
+
+.wos-journey-step {
+  position: relative;
+  padding: 0 0 28px 32px;
+  border-left: 1px solid var(--wos-line);
+}
+
+.wos-journey-step:last-child {
+  border-left-color: transparent;
+  padding-bottom: 0;
+}
+
+.wos-journey-step::before {
+  content: "";
+  position: absolute;
+  left: -5px;
+  top: 6px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--wos-gold);
+}
+
+.wos-journey-index {
+  font-family: var(--wos-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--wos-gold);
+}
+
+.wos-journey-step h3 {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--wos-navy);
+  margin: 4px 0 6px;
+}
+
+.wos-journey-step p {
+  margin: 0;
+  font-size: 16px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-journey-highlight {
+  margin-top: 40px;
+  padding: 28px 24px;
+  border-left: 3px solid var(--wos-gold);
+  background: var(--wos-white);
+}
+
+.wos-journey-highlight h3 {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--wos-navy);
+  margin: 0 0 8px;
+}
+
+.wos-journey-highlight p {
+  margin: 0;
+  color: var(--wos-ink-soft);
+}
+
+/* ---------- 05 founding partner ---------- */
+
+.wos-badge {
+  display: inline-block;
+  padding: 6px 14px;
+  border: 1px solid var(--wos-gold);
+  border-radius: 999px;
+  font-family: var(--wos-font-mono);
+  font-size: 12px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--wos-gold-soft);
+}
+
+.wos-grid-privileges {
+  gap: 24px;
+}
+
+.wos-privilege {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding-top: 20px;
+  border-top: 1px solid var(--wos-line-navy);
+}
+
+.wos-privilege h4 {
+  font-size: 17px;
+  font-weight: 600;
+  margin: 0 0 4px;
+}
+
+.wos-privilege p {
+  margin: 0;
+  font-size: 15px;
+  color: var(--wos-ink-light);
+}
+
+/* ---------- 06 how it works ---------- */
+
+.wos-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 24px;
+}
+
+.wos-step {
+  padding-top: 20px;
+  border-top: 1px solid var(--wos-line);
+}
+
+.wos-step h3 {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--wos-navy);
+  margin: 0 0 6px;
+}
+
+.wos-step p {
+  margin: 0;
+  font-size: 16px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-inline-cta {
+  margin-top: 44px;
+  padding-top: 32px;
+  border-top: 1px solid var(--wos-line);
+}
+
+.wos-inline-cta .wos-subhead {
+  margin-bottom: 16px;
+}
+
+/* ---------- 08 requirements ---------- */
+
+.wos-req-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+  max-width: 62ch;
+}
+
+.wos-req-list li {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 17px;
+  color: var(--wos-ink);
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--wos-line);
+}
+
+/* ---------- 09 final CTA ---------- */
+
+.wos-final-cta {
+  text-align: left;
+}
+
+.wos-final-cta .wos-display {
+  font-size: 28px;
+  margin: 14px 0 10px;
+}
+
+.wos-final-cta .wos-lead {
+  color: var(--wos-ink-light);
+}
+
+/* ---------- supporting page: documents & tables ---------- */
+
+.wos-terms-hero {
+  border-bottom: 1px solid var(--wos-line);
+}
+
+.wos-terms-hero h1 {
+  font-size: 30px;
+  margin: 14px 0 16px;
+}
+
+.wos-doc {
+  border: 1px solid var(--wos-line);
+  border-radius: 12px;
+  background: var(--wos-white);
+  padding: 28px 22px;
+  margin-bottom: 24px;
+}
+
+/* legacy alias kept so the apply form keeps rendering its stamp label */
+.wos-doc-stamp {
+  display: inline-block;
+  font-family: var(--wos-font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--wos-gold);
+  margin-bottom: 12px;
+}
+
+.wos-pass-headline {
+  font-size: 19px;
+  font-weight: 600;
+  color: var(--wos-navy);
+  margin: 0 0 14px;
+}
+
+.wos-stub-desc {
+  font-size: 15px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-two-col {
+  display: grid;
+  gap: 20px;
+}
+
+.wos-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.wos-term-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.wos-term-table td {
+  padding: 14px 0;
+  border-top: 1px solid var(--wos-line);
+  vertical-align: top;
+}
+
+.wos-term-table tr:first-child td {
+  border-top: none;
+}
+
+.wos-term-table td:first-child {
+  width: 40%;
+  color: var(--wos-ink-soft);
+  padding-right: 16px;
+}
+
+.wos-term-note {
+  display: block;
+  font-size: 13.5px;
+  color: var(--wos-ink-soft);
+  margin-top: 4px;
+}
+
+.wos-fee-table,
+.wos-resp-table {
+  width: 100%;
+  min-width: 520px;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+
+.wos-fee-table th,
+.wos-resp-table th {
+  text-align: left;
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--wos-ink-soft);
+  font-weight: 600;
+  padding: 0 16px 12px 0;
+  border-bottom: 1px solid var(--wos-line);
+}
+
+.wos-fee-table td,
+.wos-resp-table td {
+  padding: 14px 16px 14px 0;
+  border-bottom: 1px solid var(--wos-line);
+  vertical-align: top;
+  color: var(--wos-ink-soft);
+}
+
+.wos-fee-value {
+  font-weight: 600;
+  color: var(--wos-navy);
+  white-space: nowrap;
+}
+
+.wos-disclaimer {
+  font-size: 14px;
+  color: var(--wos-ink-soft);
+  margin-top: 16px;
+}
+
+/* ---------- apply form ---------- */
+
+.wos-form-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px 20px;
+  margin-top: 16px;
+}
+
+.wos-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 14px;
+  color: var(--wos-ink-soft);
+}
+
+.wos-field-wide {
+  grid-column: 1 / -1;
+}
+
+.wos-field input,
+.wos-field select {
+  font-family: var(--wos-font);
+  font-size: 16px;
+  color: var(--wos-ink);
+  background: var(--wos-white);
+  border: 1px solid var(--wos-line);
+  border-radius: 8px;
+  padding: 12px 14px;
+  min-height: 46px;
+}
+
+.wos-field input:focus,
+.wos-field select:focus {
+  outline: none;
+  border-color: var(--wos-navy);
+}
+
+.wos-field-required span::after {
+  content: " *";
+  color: var(--wos-gold);
+}
+
+.wos-field-invalid input,
+.wos-field-invalid select {
+  border-color: #b4342f;
+}
+
+.wos-checkbox-invalid {
+  color: #b4342f;
+}
+
+.wos-consent-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.wos-checkbox {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 15px;
+  color: var(--wos-ink-soft);
+  cursor: pointer;
+}
+
+.wos-checkbox input {
+  margin-top: 5px;
+}
+
+/* ---------- scale up ---------- */
+
+@media (min-width: 720px) {
+  .wos-partner {
+    --wos-section-y: 88px;
+    --wos-shell-x: 32px;
+    font-size: 17px;
+  }
+
+  .wos-cta-row {
+    flex-direction: row;
+    align-items: center;
+    gap: 16px;
+  }
+
+  .wos-grid-3 {
+    grid-template-columns: repeat(3, 1fr);
+    gap: 24px;
+  }
+
+  .wos-two-col {
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+  }
+
+  .wos-steps {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 32px;
+  }
+
+  .wos-section-head h2 {
+    font-size: 32px;
+  }
+
+  .wos-hero h1 {
+    font-size: 40px;
+  }
+
+  .wos-terms-hero h1 {
+    font-size: 36px;
+  }
+
+  .wos-final-cta .wos-display {
+    font-size: 34px;
+  }
+
+  .wos-form-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .wos-nav-brand-full {
+    display: inline;
+  }
+
+  .wos-nav-brand-short {
+    display: none;
+  }
+
+  .wos-nav-cta-full {
+    display: inline;
+  }
+
+  .wos-nav-cta-short {
+    display: none;
+  }
+
+  .wos-nav-links {
+    display: flex;
+  }
+
+  .wos-nav-inner {
+    min-height: 64px;
+  }
+}
+
+@media (min-width: 1024px) {
+  .wos-partner {
+    --wos-section-y: 104px;
+  }
+
+  .wos-hero {
+    padding-top: 72px;
+  }
+
+  .wos-hero-grid {
+    grid-template-columns: 1.1fr 0.9fr;
+    gap: 64px;
+    align-items: center;
+  }
+
+  .wos-hero h1 {
+    font-size: 46px;
+  }
+
+  .wos-hero-visual {
+    padding: 40px 36px;
+  }
+
+  .wos-route {
+    gap: 12px;
+  }
+
+  .wos-section-head h2 {
+    font-size: 34px;
+  }
+
+  .wos-doc {
+    padding: 36px 32px;
+  }
+
+  /* Journey: horizontal on desktop, vertical timeline below */
+  .wos-journey {
+    grid-template-columns: repeat(5, 1fr);
+    gap: 24px;
+  }
+
+  .wos-journey-step {
+    padding: 28px 16px 0 0;
+    border-left: none;
+    border-top: 1px solid var(--wos-line);
+  }
+
+  .wos-journey-step:last-child {
+    border-top-color: var(--wos-line);
+  }
+
+  .wos-journey-step::before {
+    left: 0;
+    top: -5px;
+  }
+
+  .wos-journey-highlight {
+    margin-top: 56px;
+    padding: 36px 32px;
+  }
+
+  .wos-steps {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .wos-req-list {
+    gap: 16px;
+  }
+
+  .wos-final-cta .wos-display {
+    font-size: 42px;
+    max-width: 22ch;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wos-btn,
+  .wos-nav-cta {
+    transition: none;
+  }
+}

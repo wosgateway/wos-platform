@@ -68,18 +68,12 @@ export function MobileNavDrawer({ links }: MobileNavDrawerProps) {
           </div>
 
           <nav className="flex flex-1 flex-col gap-1 px-2 py-3 text-base font-medium text-slate-700">
-            {/* Home is always first — same ordering as desktop nav */}
-            <Link
-              href="/"
-              onClick={() => setOpen(false)}
-              className="rounded-lg px-3 py-2.5 transition-colors hover:bg-slate-50 hover:text-primary-dark"
-            >
-              {tNav('home')}
-            </Link>
-
-            {/* Services accordion — mirrors ServicesNavMenu's CATEGORIES list
-                and /#categories view-all link, expand/collapse instead of
-                hover since this is a touch surface. */}
+            {/* Home link removed (2026-09) — same reasoning as Header.tsx:
+                the logo in this drawer's own title bar above already
+                links nowhere useful on its own, but closing the drawer
+                and tapping the header logo covers "go home", so a
+                duplicate text link here was redundant. Services accordion
+                is now the first item. */}
             <div>
               <button
                 type="button"
@@ -119,9 +113,11 @@ export function MobileNavDrawer({ links }: MobileNavDrawerProps) {
               )}
             </div>
 
-            {/* Remaining plain links: knowledge, myTrip, partners, contact —
-                same order as Header.tsx's navLinks (minus home/services,
-                already handled above). */}
+            {/* Remaining plain links: knowledge, myTrip, partners — same
+                order as Header.tsx's navLinks (minus services, already
+                handled above as its own accordion). Contact was removed
+                from navLinks entirely (2026-09); it's still reachable at
+                "/#contact" from Footer's "Connect" column. */}
             {links
               .filter((link) => link.href !== '/' && link.href !== '/#categories')
               .map((link) => (

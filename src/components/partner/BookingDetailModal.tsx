@@ -82,6 +82,14 @@ function itemDetailLine(item: PartnerOrderItem): string | null {
   return null;
 }
 
+const CONFIRM_METHODS = [
+  { value: 'cash_at_clinic', label: 'เงินสดที่คลินิก' },
+  { value: 'cash_at_hotel', label: 'เงินสดที่โรงแรม' },
+  { value: 'bank_transfer', label: 'โอนเข้าบัญชี' },
+  { value: 'other', label: 'อื่นๆ' },
+] as const;
+type ConfirmMethod = (typeof CONFIRM_METHODS)[number]['value'];
+
 interface BookingDetailModalProps {
   orderId: string;
   onClose: () => void;
@@ -94,6 +102,15 @@ export function BookingDetailModal({ orderId, onClose, onUpdate }: BookingDetail
   const [error, setError] = useState<string | null>(null);
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+  // Phase 1 balance-confirm form state, keyed by order_item id — a
+  // partner can only have one confirmation form open per item at a
+  // time (same "one active edit per row" pattern as notesDraft).
+  const [confirmOpenId, setConfirmOpenId] = useState<string | null>(null);
+  const [confirmAmount, setConfirmAmount] = useState('');
+  const [confirmMethod, setConfirmMethod] = useState<ConfirmMethod>('cash_at_clinic');
+  const [confirmReference, setConfirmReference] = useState('');
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  const [confirmSubmitting, setConfirmSubmitting] = useState(false);
 
   async function loadOrder() {
     setLoading(true);
@@ -188,6 +205,70 @@ export function BookingDetailModal({ orderId, onClose, onUpdate }: BookingDetail
       alert('บันทึกหมายเหตุไม่สำเร็จ: ' + (err instanceof Error ? err.message : String(err)));
     } finally {
       setSavingItemId(null);
+    }
+  }
+
+  function openConfirmForm(item: PartnerOrderItem) {
+    const remaining = (item.partner_balance ?? 0) - item.partner_balance_confirmed;
+    setConfirmOpenId(item.id);
+    setConfirmAmount(remaining > 0 ? String(remaining) : '');
+    setConfirmMethod('cash_at_clinic');
+    setConfirmReference('');
+    setConfirmError(null);
+  }
+
+  function closeConfirmForm() {
+    setConfirmOpenId(null);
+    setConfirmError(null);
+  }
+
+  // POST /api/partner/payments/confirm-balance (migration 104) — see
+  // that route for the full validation contract (amount_exceeds_balance
+  // returns remainingBeforeThis, which we surface as-is).
+  async function submitConfirmBalance(itemId: string) {
+    setConfirmError(null);
+    const amount = Number(confirmAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setConfirmError('กรุณาระบุจำนวนเงินให้ถูกต้อง');
+      return;
+    }
+
+    setConfirmSubmitting(true);
+    try {
+      const res = await fetch('/api/partner/payments/confirm-balance', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          orderItemId: itemId,
+          amount,
+          paymentMethod: confirmMethod,
+          reference: confirmReference.trim() || undefined,
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json?.message || json?.error || 'ยืนยันการรับเงินไม่สำเร็จ');
+      }
+
+      setOrder((prev) =>
+        prev
+          ? {
+              ...prev,
+              items: prev.items.map((item) =>
+                item.id === itemId
+                  ? { ...item, partner_balance_confirmed: item.partner_balance_confirmed + amount }
+                  : item
+              ),
+            }
+          : prev
+      );
+      setConfirmOpenId(null);
+      if (onUpdate) onUpdate();
+    } catch (err) {
+      setConfirmError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setConfirmSubmitting(false);
     }
   }
 
@@ -288,6 +369,102 @@ export function BookingDetailModal({ orderId, onClose, onUpdate }: BookingDetail
                           ))}
                       </select>
                     </div>
+
+                    {item.partner_balance !== null && (
+                      <div className="mt-3 rounded-lg border border-slate-100 bg-slate-50 p-3 text-xs">
+                        <div className="flex justify-between text-slate-500">
+                          <span>ราคาแพ็กเกจ</span>
+                          <span>{formatTHB(item.price)}</span>
+                        </div>
+                        <div className="flex justify-between text-slate-500">
+                          <span>ค่าธรรมเนียม WOS</span>
+                          <span>{formatTHB(item.deposit_required)}</span>
+                        </div>
+                        <div className="mt-1.5 flex justify-between font-medium text-slate-700">
+                          <span>ยอด Partner ต้องได้รับ</span>
+                          <span>{formatTHB(item.partner_balance)}</span>
+                        </div>
+                        <div className="flex justify-between text-emerald-600">
+                          <span>ยืนยันรับแล้ว</span>
+                          <span>{formatTHB(item.partner_balance_confirmed)}</span>
+                        </div>
+                        <div className="flex justify-between font-medium text-amber-600">
+                          <span>คงเหลือ</span>
+                          <span>
+                            {formatTHB((item.partner_balance ?? 0) - item.partner_balance_confirmed)}
+                          </span>
+                        </div>
+                        {item.commission_amount !== null && (
+                          <div className="mt-1.5 flex justify-between text-slate-400">
+                            <span>
+                              Commission
+                              {item.commission_rate_snapshot !== null
+                                ? ` (${item.commission_rate_snapshot}%)`
+                                : ''}
+                            </span>
+                            <span>{formatTHB(item.commission_amount)}</span>
+                          </div>
+                        )}
+
+                        {(item.partner_balance ?? 0) - item.partner_balance_confirmed > 0 &&
+                          (confirmOpenId === item.id ? (
+                            <div className="mt-3 space-y-2 border-t border-slate-200 pt-3">
+                              <div className="grid grid-cols-2 gap-2">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  value={confirmAmount}
+                                  onChange={(e) => setConfirmAmount(e.target.value)}
+                                  placeholder="จำนวนเงิน"
+                                  className="form-input text-sm"
+                                />
+                                <select
+                                  value={confirmMethod}
+                                  onChange={(e) => setConfirmMethod(e.target.value as ConfirmMethod)}
+                                  className="form-input text-sm"
+                                >
+                                  {CONFIRM_METHODS.map((m) => (
+                                    <option key={m.value} value={m.value}>
+                                      {m.label}
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <input
+                                type="text"
+                                value={confirmReference}
+                                onChange={(e) => setConfirmReference(e.target.value)}
+                                placeholder="เลขอ้างอิง / หมายเหตุ (ถ้ามี)"
+                                className="form-input text-sm"
+                              />
+                              {confirmError && <p className="text-red-600">{confirmError}</p>}
+                              <div className="flex gap-2">
+                                <button
+                                  onClick={() => submitConfirmBalance(item.id)}
+                                  disabled={confirmSubmitting}
+                                  className="rounded-lg bg-emerald-600 px-3 py-1.5 font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                                >
+                                  {confirmSubmitting ? 'กำลังบันทึก...' : 'ยืนยัน'}
+                                </button>
+                                <button
+                                  onClick={closeConfirmForm}
+                                  disabled={confirmSubmitting}
+                                  className="rounded-lg border border-slate-200 px-3 py-1.5 font-medium text-slate-600 hover:bg-slate-100"
+                                >
+                                  ยกเลิก
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => openConfirmForm(item)}
+                              className="mt-3 w-full rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-1.5 font-medium text-emerald-700 hover:bg-emerald-100"
+                            >
+                              ยืนยันว่าได้รับเงินแล้ว
+                            </button>
+                          ))}
+                      </div>
+                    )}
 
                     <div className="mt-3">
                       <label className="mb-1 block text-xs text-slate-400">หมายเหตุ (รายการนี้)</label>

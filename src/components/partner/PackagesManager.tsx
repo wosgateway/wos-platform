@@ -27,6 +27,9 @@ interface Package {
   is_active: boolean;
   image_url: string | null;
   created_at: string;
+  // ดู migration 082 — ใช้เป็นประเภทห้องสำหรับพาร์ทเนอร์หมวดโรงแรมเท่านั้น
+  // (partnerCategory === 'Hotel'); หมวดอื่นไม่ใช้ฟิลด์นี้
+  sub_category: string | null;
 }
 
 interface PackageFormData {
@@ -38,6 +41,7 @@ interface PackageFormData {
   is_promotion: boolean;
   duration: string;
   image_url: string;
+  sub_category: string;
 }
 
 const emptyForm: PackageFormData = {
@@ -49,7 +53,21 @@ const emptyForm: PackageFormData = {
   is_promotion: false,
   duration: '',
   image_url: '',
+  sub_category: '',
 };
+
+// ตัวเลือกประเภทห้องมาตรฐาน — free-text ที่ฝั่ง DB (ไม่มี CHECK constraint
+// เหมือน vehicleType ของฝั่ง Transport) แต่ dropdown นี้คือ source of truth
+// ของค่าที่ควรใช้จริง ดู migration 082 สำหรับเหตุผลเต็ม
+const ROOM_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'ไม่ระบุ' },
+  { value: 'single', label: 'ห้องเดี่ยว (Single)' },
+  { value: 'double', label: 'เตียงใหญ่ 2 ท่าน (Double)' },
+  { value: 'twin', label: 'เตียงคู่ 2 ท่าน (Twin)' },
+  { value: 'deluxe', label: 'ห้องดีลักซ์ (Deluxe)' },
+  { value: 'suite', label: 'ห้องสวีท (Suite)' },
+  { value: 'other', label: 'อื่นๆ' },
+];
 
 const STATUS_LABEL: Record<Package['status'], { text: string; className: string }> = {
   pending: { text: '⏳ รอตรวจสอบ', className: 'bg-amber-100 text-amber-700' },
@@ -74,9 +92,14 @@ const STATUS_LABEL: Record<Package['status'], { text: string; className: string 
 export function PackagesManager({
   partnerId,
   organizationId,
+  partnerCategory,
 }: {
   partnerId: string;
   organizationId: string;
+  // ค่า partners.category ('Hotel' | 'Transport' | 'Hospital' | ...) —
+  // คุมว่าจะโชว์ dropdown ประเภทห้องหรือไม่ (เฉพาะ 'Hotel') ดึงมาจาก
+  // page.tsx ที่ join ตาราง partners ผ่าน branch.partner_id
+  partnerCategory: string | null;
 }) {
   const supabase = createClient();
   const [packages, setPackages] = useState<Package[]>([]);
@@ -125,6 +148,7 @@ export function PackagesManager({
         is_promotion: pkg.is_promotion,
         duration: pkg.duration || '',
         image_url: pkg.image_url || '',
+        sub_category: pkg.sub_category || '',
       });
     } else {
       setForm(emptyForm);
@@ -189,6 +213,9 @@ export function PackagesManager({
       is_promotion: form.is_promotion,
       duration: form.duration.trim() || null,
       image_url: form.image_url.trim() || null,
+      // ส่งเฉพาะพาร์ทเนอร์หมวดโรงแรม — หมวดอื่นไม่มี dropdown นี้ให้กรอก
+      // อยู่แล้ว จึง sub_category จะเป็น '' -> null เสมอ
+      sub_category: partnerCategory === 'Hotel' ? form.sub_category.trim() || null : null,
     };
 
     let result;
@@ -280,6 +307,11 @@ export function PackagesManager({
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-800">{pkg.title}</div>
                     {pkg.duration && <div className="text-xs text-slate-400">⏱️ {pkg.duration}</div>}
+                    {partnerCategory === 'Hotel' && pkg.sub_category ? (
+                      <div className="text-xs text-slate-400">
+                        🛏️ {ROOM_TYPE_OPTIONS.find((o) => o.value === pkg.sub_category)?.label ?? pkg.sub_category}
+                      </div>
+                    ) : null}
                   </td>
                   <td className="px-4 py-3">
                     {pkg.special_price ? (
@@ -371,6 +403,26 @@ export function PackagesManager({
                   placeholder="เช่น 2 ชั่วโมง, 1 วัน"
                 />
               </div>
+
+              {partnerCategory === 'Hotel' ? (
+                <div>
+                  <label className="form-label">ประเภทห้อง</label>
+                  <select
+                    className="form-input"
+                    value={form.sub_category}
+                    onChange={(e) => setForm({ ...form, sub_category: e.target.value })}
+                  >
+                    {ROOM_TYPE_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="mt-1 text-xs text-slate-400">
+                    ใช้กรองในหน้าจองของลูกค้า — ช่วยให้ลูกค้าหาห้องที่ต้องการเจอง่ายขึ้น
+                  </p>
+                </div>
+              ) : null}
 
               <div>
                 <label className="form-label">ราคาปกติ (บาท) *</label>

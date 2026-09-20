@@ -74,7 +74,7 @@ export async function GET(
   const { data: order, error: orderError } = await supabase
     .from('orders')
     .select(
-      'id, order_number, patient_id, status, notes, attachment_url, total_amount, total_deposit_required, total_deposit_paid, total_balance_remaining, currency, created_at, cancelled_reason, payment_access_token',
+      'id, order_number, patient_id, status, notes, attachment_url, total_amount, total_deposit_required, total_deposit_paid, total_balance_remaining, total_partner_balance, currency, created_at, cancelled_reason, payment_access_token',
     )
     .eq('id', orderId)
     .single();
@@ -135,6 +135,7 @@ export async function GET(
     deposit_required,
     deposit_paid,
     balance_remaining,
+    partner_balance,
     scheduled_date,
     scheduled_time,
     status,

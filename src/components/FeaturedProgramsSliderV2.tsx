@@ -17,8 +17,23 @@ const AUTOPLAY_INTERVAL_MS = 3000;
  * Autoplay: เลื่อนไปทีละการ์ดทุก AUTOPLAY_INTERVAL_MS และวนกลับไปเริ่มต้น
  * เมื่อถึงการ์ดสุดท้าย หยุดชั่วคราวเมื่อผู้ใช้ hover หรือกำลังลาก/ปัดอยู่
  */
-export function FeaturedProgramsSliderV2({ packages }: { packages: Package[] }) {
+export function FeaturedProgramsSliderV2({
+  packages,
+  title,
+  subtitle,
+}: {
+  packages: Package[];
+  // เดิม slider ตัวนี้ดึงหัวข้อจาก t('featured.title'/'featured.subtitle')
+  // ตรงๆ ในตัวเอง — ตอนนี้แยกการ์ด "โปรแกรมสุขภาพแนะนำ" กับ "พันธมิตรโรงแรม/
+  // รถรับส่ง" ออกเป็นสองสไลด์ ใช้ component เดียวกันแต่หัวข้อไม่เหมือนกัน
+  // เลยรับ title/subtitle เป็น prop ได้ ถ้าไม่ส่งมาก็ fallback ไปใช้ค่าเดิม
+  // (featured.title/subtitle) เพื่อไม่ให้จุดเรียกใช้เดิมพัง
+  title?: string;
+  subtitle?: string;
+}) {
   const t = useTranslations('home');
+  const resolvedTitle = title ?? t('featured.title');
+  const resolvedSubtitle = subtitle ?? t('featured.subtitle');
   const trackRef = useRef<HTMLDivElement>(null);
   const [isPaused, setIsPaused] = useState(false);
 
@@ -26,7 +41,8 @@ export function FeaturedProgramsSliderV2({ packages }: { packages: Package[] }) 
     const track = trackRef.current;
     if (!track) return;
     const card = track.querySelector<HTMLElement>('[data-slide]');
-    const step = (card?.offsetWidth ?? 280) + 20; // การ์ด + gap
+    const gap = parseFloat(getComputedStyle(track).columnGap || '20') || 20;
+    const step = (card?.offsetWidth ?? 280) + gap; // การ์ด + gap
 
     // ถ้าเลื่อนไปทางขวาแล้วจะเลยขอบสุดท้าย ให้วนกลับไปเริ่มต้น
     const atEnd = track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
@@ -52,9 +68,9 @@ export function FeaturedProgramsSliderV2({ packages }: { packages: Package[] }) 
         <div className="mb-8 flex items-end justify-between gap-4">
           <div>
             <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">
-              {t('featured.title')}
+              {resolvedTitle}
             </h2>
-            <p className="mt-2 text-slate-500">{t('featured.subtitle')}</p>
+            <p className="mt-2 text-slate-500">{resolvedSubtitle}</p>
           </div>
           <div className="hidden shrink-0 gap-2 sm:flex">
             <button
@@ -80,13 +96,13 @@ export function FeaturedProgramsSliderV2({ packages }: { packages: Package[] }) 
           onMouseLeave={() => setIsPaused(false)}
           onTouchStart={() => setIsPaused(true)}
           onTouchEnd={() => setIsPaused(false)}
-          className="flex snap-x snap-mandatory gap-5 overflow-x-auto pb-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          className="-mx-4 flex snap-x gap-3 overflow-x-auto px-4 pb-4 [scroll-padding-inline:1rem] [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:gap-5 sm:px-0 [&::-webkit-scrollbar]:hidden"
         >
           {packages.map((pkg) => (
             <div
               key={pkg.id}
               data-slide
-              className="w-[75%] shrink-0 snap-start sm:w-[45%] lg:w-[31%]"
+              className="w-[60%] shrink-0 snap-start sm:w-[45%] lg:w-[31%]"
             >
               <ProgramCardV2 pkg={pkg} />
             </div>

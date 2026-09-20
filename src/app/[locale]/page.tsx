@@ -1,6 +1,6 @@
 import { getTranslations } from 'next-intl/server';
 import { CATEGORIES } from '@/lib/categories';
-import { fetchFeaturedPackages } from '@/lib/data';
+import { fetchFeaturedPackages, fetchActivePromoBanners } from '@/lib/data';
 import { CategoryCard } from '@/components/CategoryCard';
 import { PartnerLogos } from '@/components/PartnerLogos';
 import { WOSHealthJourney } from '@/components/WOSHealthJourney';
@@ -17,10 +17,15 @@ import { TestimonialsV2 } from '@/components/TestimonialsV2';
 import { FAQ } from '@/components/FAQ';
 import { KnowledgeCenter } from '@/components/KnowledgeCenter';
 import HeroV2 from '@/components/HeroV2';
+import { ConsultationCTA } from '@/components/ConsultationCTA';
+import { PromoBannerSlider } from '@/components/PromoBannerSlider';
+import { HomeStructuredData } from '@/components/seo/HomeStructuredData';
 
 export default async function HomePage({
+  params: { locale },
   searchParams,
 }: {
+  params: { locale: string };
   searchParams: { goal?: string };
 }) {
   const t = await getTranslations('home');
@@ -45,6 +50,29 @@ export default async function HomePage({
     console.error('fetchFeaturedPackages failed', err);
   }
 
+  // แยกการ์ด "โปรแกรมแนะนำ" ออกเป็น 2 สไลด์ตามประเภทพันธมิตร — ฝั่งสุขภาพ
+  // (Hospital/Clinic/Dental/Wellness/Spa) กับฝั่งโรงแรม/รถรับส่ง (Hotel/
+  // Transport, ดู src/lib/categories.ts) ยังใช้ query เดิมตัวเดียว แค่ filter
+  // ในหน่วยความจำ ไม่ต้องยิง query ซ้ำ
+  const HOTEL_TRANSPORT_CATEGORIES = ['Hotel', 'Transport'];
+  const featuredHealthPackages = featuredPackages.filter(
+    (pkg) => !HOTEL_TRANSPORT_CATEGORIES.includes(pkg.partners?.category ?? '')
+  );
+  const featuredHotelTransportPackages = featuredPackages.filter((pkg) =>
+    HOTEL_TRANSPORT_CATEGORIES.includes(pkg.partners?.category ?? '')
+  );
+
+  // สไลด์แบนเนอร์ใต้ Hero — เช่นเดียวกับ featuredPackages ด้านบน กันพังทั้งหน้า
+  // ถ้า query ล้มเหลว (เช่น ก่อนรัน 093_promo_banners.sql) ให้ fallback เป็น []
+  // ซึ่ง PromoBannerSlider ที่ banners=[] จะ return null ไปเลย ไม่ fallback
+  // กลับไปโชว์ placeholder gradient (นั่นมีไว้แค่ตอน dev ก่อน backend เสร็จ)
+  let promoBanners: Awaited<ReturnType<typeof fetchActivePromoBanners>> = [];
+  try {
+    promoBanners = await fetchActivePromoBanners();
+  } catch (err) {
+    console.error('fetchActivePromoBanners failed', err);
+  }
+
   // "Find Your Health Goal" → Categories wiring: ?goal=<slug> from the
   // HealthGoalFinder "Explore" CTA narrows the Categories grid down to the
   // categories mapped in HEALTH_GOAL_CATEGORY_MAP, instead of showing all 6.
@@ -56,9 +84,16 @@ export default async function HomePage({
     ? HEALTH_GOAL_IMAGES.findIndex((g) => g.slug === activeGoal)
     : -1;
   const activeGoalLabel = activeGoalIndex >= 0 ? goalItems[activeGoalIndex]?.label : null;
+  // Reuse the goal's own one-line description (already shown on its tile in
+  // HealthGoalFinder, e.g. "รักษาและฟื้นฟู") as the Categories subtitle when
+  // filtered — ties the two sections together instead of repeating a
+  // generic "choose your goal" line right under a "find your goal" section.
+  const activeGoalDesc = activeGoalIndex >= 0 ? goalItems[activeGoalIndex]?.desc : null;
 
   return (
-    <main>
+    <>
+      <HomeStructuredData locale={locale} />
+      <main>
       {/* ===== HERO (WOS.os rebrand, network diagram slotted in) =====
           Pass 2–3 images to crossfade automatically (see
           HeroBackgroundSlideshow). All images should share the same
@@ -82,6 +117,20 @@ export default async function HomePage({
         ]}
       />
 
+      {/* ===== PROMO BANNER SLIDER =====
+          Real banners from `promo_banners` (093_promo_banners.sql), managed
+          via PromoBannersManager.tsx in /admin. Empty array (no active rows,
+          or fetch failure above) → PromoBannerSlider returns null, so the
+          section just doesn't render — no placeholder fallback in prod. */}
+      <PromoBannerSlider
+        banners={promoBanners.map((b) => ({
+          id: b.id,
+          imageUrl: b.image_url,
+          alt: b.title || 'โปรโมชั่น',
+          linkUrl: b.link_url,
+        }))}
+      />
+
       {/* ===== PARTNER LOGOS ===== */}
       <PartnerLogos />
 
@@ -103,26 +152,50 @@ export default async function HomePage({
         items={goalItems}
       />
 
-      {/* ===== CATEGORIES ===== */}
+      {/* ===== CATEGORIES =====
+          Title/subtitle switch when a goal filter is active (see
+          categoriesTitleFiltered + activeGoalDesc above) so this reads as
+          "here are the results for what you picked" rather than a second,
+          near-identical "choose your goal" prompt right under
+          HealthGoalFinder. */}
       <section id="categories" className="section-padding mx-auto max-w-5xl scroll-mt-16 px-4">
         <div className="mb-10 text-center">
-          <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">{t('categoriesTitle')}</h2>
-          <p className="mt-2 text-slate-500">{t('categoriesSubtitle')}</p>
-          {activeGoal && activeGoalLabel && (
-            <div className="mt-4 flex items-center justify-center gap-2 text-sm">
-              <span className="rounded-full bg-navy/5 px-4 py-1.5 font-semibold text-navy">
-                {t('healthGoals.filteredBy', { goal: activeGoalLabel })}
-              </span>
-              <Link href="/#categories" className="text-slate-500 underline hover:text-navy">
-                {t('healthGoals.clearFilter')}
-              </Link>
-            </div>
+          <h2 className="text-2xl font-bold text-slate-900 md:text-3xl">
+            {activeGoal && activeGoalLabel
+              ? t('categoriesTitleFiltered', { goal: activeGoalLabel })
+              : t('categoriesTitle')}
+          </h2>
+          <p className="mt-2 text-slate-500">
+            {activeGoal && activeGoalDesc ? activeGoalDesc : t('categoriesSubtitle')}
+          </p>
+          {activeGoal && (
+            <Link
+              href="/#categories"
+              className="mt-3 inline-block text-sm text-slate-500 underline hover:text-navy"
+            >
+              {t('healthGoals.clearFilter')}
+            </Link>
           )}
         </div>
 
-        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
+        {/* Mobile: horizontal snap-scroll row, one card peeking at the
+            edge to hint there's more — same pattern as GoWabi's mobile
+            category row, and the same overflow-x-auto/snap technique
+            FeaturedProgramsSliderV2 already uses below. No JS needed
+            here (no arrows/autoplay): 7 cards is short enough for a
+            plain touch swipe, and CategoryCard/CategoryCardImage stay
+            untouched — only the container + a width wrapper change.
+            sm and up: reverts to the original static grid. */}
+        <div
+          className="-mx-4 flex snap-x snap-mandatory gap-5 overflow-x-auto px-4 pb-2
+                     [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden
+                     sm:mx-0 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0
+                     lg:grid-cols-3"
+        >
           {displayedCategories.map((category) => (
-            <CategoryCard key={category.slug} category={category} label={tCat(category.slug)} />
+            <div key={category.slug} className="w-[78%] shrink-0 snap-start sm:w-auto sm:shrink">
+              <CategoryCard category={category} label={tCat(category.slug)} />
+            </div>
           ))}
         </div>
       </section>
@@ -131,7 +204,16 @@ export default async function HomePage({
           Uses the real AddToJourneyButton / lib/journey/context — adding an
           item here actually shows up in the JourneyCartBar, same as
           anywhere else on the site. Not a mock. */}
-      <FeaturedProgramsSliderV2 packages={featuredPackages} />
+      <FeaturedProgramsSliderV2
+        packages={featuredHealthPackages}
+        title={t('featured.title')}
+        subtitle={t('featured.subtitle')}
+      />
+      <FeaturedProgramsSliderV2
+        packages={featuredHotelTransportPackages}
+        title={t('featured.partnersTitle')}
+        subtitle={t('featured.partnersSubtitle')}
+      />
 
       {/* ===== KNOWLEDGE CENTER (replaces old HowItWorks 3-step block) ===== */}
       <KnowledgeCenter />
@@ -143,6 +225,16 @@ export default async function HomePage({
 
       {/* ===== FAQ ===== */}
       <FAQ />
+
+      {/* ===== FREE CONSULTATION CTA (Phase 3 of "ปรึกษา WOS ฟรี") =====
+          Last section on the page on purpose: a visitor who scrolled this
+          far without converting on a category/package still gets one more
+          low-friction option before hitting the footer. See
+          ConsultationCTA.tsx for why this shares the `consultation` i18n
+          namespace with the form page itself, and HeroV2's third CTA link
+          for the ?source=homepage_hero counterpart at the top of the page. */}
+      <ConsultationCTA />
     </main>
+    </>
   );
 }

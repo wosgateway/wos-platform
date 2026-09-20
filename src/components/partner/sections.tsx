@@ -1,399 +1,439 @@
 // components/partner/sections.tsx
 //
-// Presentational sections for the /partner overview page. Pure, content-driven,
-// no data fetching — pass in the resolved PartnerPageContent for the current locale.
+// Partner landing page sections, image-led (visual brief v2).
+//
+// Rule the layouts are built around:
+//   "Every major section should have either a strong image or strong
+//    typography — never a wall of text."
+//
+// 01 Hero            big image right + LAOS → WOS → THAILAND overlay
+// 02 Why WOS         image left / three short points right
+// 03 Journey         wide panorama + journey rail underneath
+// 04 Who Can Join    three-image grid
+// 05 Founding        navy split: type one side, image the other
+// 06 How It Works    four small "moments" with numbers
+// 07 Commercial      pure editorial typography, no photography
+// 08 Requirements    checklist left / image right
+// 09 Final CTA       full-bleed image with a navy scrim
+//
+// No emoji, no icon library — a hairline arrow and a hairline check only.
 
-import Link from "next/link";
 import Image from "next/image";
+import { Link } from "@/i18n/navigation";
 import type { PartnerPageContent } from "@/content/partner/types";
+import { getPartnerImages } from "@/content/partner/images";
+import { Reveal } from "./Reveal";
+
+/* ---------- hairline marks ---------- */
+
+function ArrowRight() {
+  return (
+    <svg className="wos-arrow" viewBox="0 0 20 12" aria-hidden="true" focusable="false">
+      <path d="M0 6h17M12 1l5 5-5 5" fill="none" stroke="currentColor" strokeWidth="1.4" />
+    </svg>
+  );
+}
+
+function CheckMark() {
+  return (
+    <svg className="wos-check" viewBox="0 0 16 16" aria-hidden="true" focusable="false">
+      <path d="M3 8.5l3.2 3.2L13 5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+/* ---------- 01 — Hero ---------- */
 
 export function PartnerHero({ content }: { content: PartnerPageContent }) {
   const { hero } = content;
+  const img = getPartnerImages(content.locale);
+
   return (
-    <section className="wos-section wos-hero">
+    <section className="wos-section wos-hero" id="top">
       <div className="wos-shell wos-hero-grid">
-        <div>
+        <div className="wos-hero-copy">
           <span className="wos-eyebrow">{hero.eyebrow}</span>
-          <h1 className="wos-display">{hero.headline}</h1>
-          <p>{hero.subheadline}</p>
-          <Link href={hero.ctaLink} className="wos-btn">
-            {hero.ctaText}
-          </Link>
-        </div>
-
-        <div className="wos-pass" role="img" aria-label={hero.boardingLabel}>
-          <div className="wos-pass-row">
-            <span className="wos-pass-code">WOS · {hero.boardingLabel}</span>
-            <span className="wos-seal-badge">Trust Standard</span>
-          </div>
-          <div className="wos-pass-cut" />
-          <p className="wos-pass-headline">Medical Tourism Network</p>
-          <p className="wos-pass-sub">Thailand ‡„ Laos ‡„ Asia</p>
-          <div className="wos-pass-cut" />
-          <div className="wos-pass-row">
-            <span className="wos-pass-code">GATE / PARTNER</span>
-            <span className="wos-pass-code">STATUS / OPEN</span>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function FoundingPartner({ content }: { content: PartnerPageContent }) {
-  const { foundingPartner } = content;
-  return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">{foundingPartner.eyebrow}</span>
-          <h2 className="wos-display">{foundingPartner.headline}</h2>
-          <p>{foundingPartner.intro}</p>
-        </div>
-        <div className="wos-doc">
-          <span className="wos-doc-stamp">{foundingPartner.benefitsHeadline}</span>
-          <ul className="wos-doc-list">
-            {foundingPartner.benefits.map((b) => (
-              <li key={b}>{b}</li>
+          <h1 className="wos-display">
+            {hero.headlineLines.map((line, i) => (
+              <span className="wos-hero-line" key={i}>
+                {line}
+              </span>
             ))}
-          </ul>
+          </h1>
+          <p className="wos-lead">{hero.description}</p>
+          <div className="wos-cta-row">
+            <Link href={hero.primaryCta.href} className="wos-btn wos-btn-gold">
+              {hero.primaryCta.label}
+              <ArrowRight />
+            </Link>
+            <a href={hero.secondaryCta.href} className="wos-btn-ghost">
+              {hero.secondaryCta.label}
+            </a>
+          </div>
+        </div>
+
+        <div className="wos-hero-media">
+          <figure className="wos-figure wos-ratio-16x9">
+            <Image
+              src={img.hero.src}
+              alt={img.hero.alt}
+              fill
+              priority
+              sizes="(max-width: 1023px) 100vw, 55vw"
+              className="wos-img"
+            />
+          </figure>
+          <div className="wos-route-overlay" aria-hidden="true">
+            <span>{hero.visual.from}</span>
+            <span className="wos-route-dash" />
+            <span className="wos-route-core">{hero.visual.via}</span>
+            <span className="wos-route-dash" />
+            <span>{hero.visual.to}</span>
+          </div>
+          <span className="wos-hero-highlight">{hero.highlight}</span>
         </div>
       </div>
     </section>
   );
 }
+
+/* ---------- 02 — Why WOS ---------- */
 
 export function WhyPartner({ content }: { content: PartnerPageContent }) {
+  const { whyPartner } = content;
+  const img = getPartnerImages(content.locale);
+
   return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">01 — Partner Overview</span>
-          <h2 className="wos-display">{content.whyPartner.headline}</h2>
-        </div>
-        <div className="wos-reason-grid">
-          {content.whyPartner.reasons.map((reason) => (
-            <div className="wos-reason" key={reason.code}>
-              <span className="wos-pass-code">{reason.code}</span>
-              <div className="wos-reason-icon">{reason.icon}</div>
-              <h3>{reason.title}</h3>
-              <p>{reason.description}</p>
-            </div>
-          ))}
+    <section className="wos-section wos-section-beige" id="why-partner">
+      <div className="wos-shell wos-split">
+        <Reveal className="wos-split-media">
+          <figure className="wos-figure wos-ratio-4x3">
+            <Image
+              src={img.whyPartner.src}
+              alt={img.whyPartner.alt}
+              fill
+              sizes="(max-width: 1023px) 100vw, 45vw"
+              className="wos-img"
+            />
+          </figure>
+        </Reveal>
+
+        <div className="wos-split-copy">
+          <span className="wos-eyebrow">{whyPartner.eyebrow}</span>
+          <h2 className="wos-display wos-display-lg">{whyPartner.headline}</h2>
+          <p className="wos-lead">{whyPartner.subheadline}</p>
+
+          <div className="wos-point-list">
+            {whyPartner.cards.map((card, i) => (
+              <Reveal className="wos-point" key={card.index} delay={i * 60}>
+                <span className="wos-index">{card.index}</span>
+                <h3>{card.title}</h3>
+                <p>{card.description}</p>
+              </Reveal>
+            ))}
+          </div>
         </div>
       </div>
     </section>
   );
 }
 
-export function PartnerTypes({ content }: { content: PartnerPageContent }) {
-  return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">02 — Partner Types</span>
-          <h2 className="wos-display">
-            {content.locale === "th"
-              ? "ประเภทพันธมิตร"
-              : content.locale === "lo"
-                ? "ປະເພດຄູ່ຮ່ວມທຸລະກິດ"
-                : "Partner Types"}
-          </h2>
-        </div>
-        <div className="wos-doc" style={{ marginBottom: 24 }}>
-          <span className="wos-doc-stamp">{content.phaseFocus.label}</span>
-          <h3 className="wos-pass-headline">{content.phaseFocus.headline}</h3>
-          <p>{content.phaseFocus.description}</p>
-        </div>
-        <div className="wos-stub-grid">
-          {content.partnerTypes.map((type) => (
-            <article className="wos-stub" key={type.code}>
-              <div className="wos-stub-top">
-                <div className="wos-pass-row">
-                  <span className="wos-stub-icon">{type.icon}</span>
-                  <span className="wos-pass-code">{type.code}</span>
-                </div>
-                <h3>{type.name}</h3>
-                <p className="wos-stub-desc">{type.description}</p>
-              </div>
-              <div className="wos-stub-perf" />
-              <div className="wos-stub-bottom">
-                <div className="wos-tag-list">
-                  {type.subTypes.map((sub) => (
-                    <span className="wos-tag" key={sub}>
-                      {sub}
-                    </span>
-                  ))}
-                </div>
-                <ul className="wos-req-list">
-                  {type.requirements.map((req) => (
-                    <li key={req}>{req}</li>
-                  ))}
-                </ul>
-              </div>
-            </article>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
+/* ---------- 03 — One complete journey ---------- */
 
-export function HowItWorks({ content }: { content: PartnerPageContent }) {
+export function JourneySection({ content }: { content: PartnerPageContent }) {
+  const { journey } = content;
+  const img = getPartnerImages(content.locale);
+
   return (
-    <section className="wos-section">
+    <section className="wos-section" id="journey">
       <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">03 — Partnership Process</span>
-          <h2 className="wos-display">
-            {content.locale === "th"
-              ? "ขั้นตอนการเป็นพันธมิตร"
-              : content.locale === "lo"
-                ? "ຂັ້ນຕອນການເປັນຄູ່ຮ່ວມທຸລະກິດ"
-                : "How Partnership Works"}
-          </h2>
-        </div>
-        <div className="wos-itinerary">
-          {content.howItWorks.map((step) => (
-            <div className="wos-leg" key={step.stepNumber}>
-              <div className="wos-leg-num">{String(step.stepNumber).padStart(2, "0")}</div>
+        <header className="wos-section-head wos-section-head-center">
+          <span className="wos-eyebrow">{journey.eyebrow}</span>
+          <h2 className="wos-display wos-display-lg">{journey.headline}</h2>
+          <p className="wos-subhead">{journey.subheadline}</p>
+        </header>
+      </div>
+
+      <Reveal className="wos-shell">
+        <figure className="wos-figure wos-ratio-21x9 wos-figure-wide">
+          <Image
+            src={img.journey.src}
+            alt={img.journey.alt}
+            fill
+            sizes="100vw"
+            className="wos-img"
+          />
+          <div className="wos-figure-scrim" />
+          <figcaption className="wos-figure-caption">{journey.highlightTitle}</figcaption>
+        </figure>
+      </Reveal>
+
+      <div className="wos-shell">
+        <ol className="wos-journey">
+          {journey.steps.map((step, i) => (
+            <Reveal as="li" className="wos-journey-step" key={step.index} delay={i * 50}>
+              <span className="wos-journey-index">{step.index}</span>
               <h3>{step.title}</h3>
               <p>{step.description}</p>
-              <span className="wos-leg-duration">{step.duration}</span>
-            </div>
+            </Reveal>
           ))}
-        </div>
+        </ol>
+
+        <p className="wos-journey-note">{journey.highlightText}</p>
       </div>
     </section>
   );
 }
 
-export function OperatingModel({ content }: { content: PartnerPageContent }) {
-  const { operatingModel } = content;
+/* ---------- 04 — Who can join ---------- */
+
+export function WhoCanJoin({ content }: { content: PartnerPageContent }) {
+  const { whoCanJoin } = content;
+  const img = getPartnerImages(content.locale);
+  const media = [img.healthcare, img.wellness, img.hospitality];
+
   return (
-    <section className="wos-section">
+    <section className="wos-section wos-section-beige" id="who-can-join">
       <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">Operating Model</span>
-          <h2 className="wos-display">{operatingModel.headline}</h2>
-        </div>
-        <div className="wos-flow-strip">
-          {operatingModel.flowSteps.map((node) => (
-            <div className="wos-flow-node" key={node}>
-              {node}
-            </div>
+        <header className="wos-section-head">
+          <span className="wos-eyebrow">{whoCanJoin.eyebrow}</span>
+          <h2 className="wos-display wos-display-lg">{whoCanJoin.headline}</h2>
+          <p className="wos-lead">{whoCanJoin.intro}</p>
+        </header>
+
+        <div className="wos-image-grid">
+          {whoCanJoin.groups.map((group, i) => (
+            <Reveal as="article" className="wos-image-card" key={group.name} delay={i * 70}>
+              <figure className="wos-figure wos-ratio-4x3">
+                <Image
+                  src={media[i].src}
+                  alt={media[i].alt}
+                  fill
+                  sizes="(max-width: 719px) 100vw, (max-width: 1023px) 50vw, 33vw"
+                  className="wos-img"
+                />
+              </figure>
+              <h3>{group.name}</h3>
+              <p>{group.items.join(" · ")}</p>
+            </Reveal>
           ))}
         </div>
-        <ul className="wos-keypoints">
-          {operatingModel.keyPoints.map((point) => (
-            <li key={point}>{point}</li>
+
+        <p className="wos-note">{whoCanJoin.note}</p>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 05 — Founding partner ---------- */
+
+export function FoundingPartner({ content }: { content: PartnerPageContent }) {
+  const { foundingPartner: fp } = content;
+  const img = getPartnerImages(content.locale);
+
+  return (
+    <section className="wos-section wos-section-navy wos-founding" id="founding-partner">
+      <div className="wos-shell wos-split wos-split-reverse">
+        <div className="wos-split-copy">
+          <span className="wos-eyebrow">{fp.eyebrow}</span>
+          <h2 className="wos-display wos-display-xl">
+            <span className="wos-hero-line">WOS</span>
+            <span className="wos-hero-line wos-display-gold">FOUNDING PARTNER</span>
+          </h2>
+          <p className="wos-subhead">{fp.headline}</p>
+          <p className="wos-lead">{fp.intro}</p>
+          <span className="wos-badge">{fp.badge}</span>
+        </div>
+
+        <Reveal className="wos-split-media">
+          <figure className="wos-figure wos-ratio-4x5">
+            <Image
+              src={img.founding.src}
+              alt={img.founding.alt}
+              fill
+              sizes="(max-width: 1023px) 100vw, 45vw"
+              className="wos-img"
+            />
+          </figure>
+        </Reveal>
+      </div>
+
+      <div className="wos-shell">
+        <ul className="wos-privilege-list">
+          {fp.privileges.map((item) => (
+            <li key={item.title}>
+              <CheckMark />
+              <span>
+                <strong>{item.title}</strong>
+                <em>{item.description}</em>
+              </span>
+            </li>
           ))}
         </ul>
+
+        <div className="wos-cta-row">
+          <Link href={fp.cta.href} className="wos-btn wos-btn-gold">
+            {fp.cta.label}
+            <ArrowRight />
+          </Link>
+        </div>
       </div>
     </section>
   );
 }
 
-export function Benefits({ content }: { content: PartnerPageContent }) {
+/* ---------- 06 — How it works ---------- */
+
+export function HowItWorks({ content }: { content: PartnerPageContent }) {
+  const { howItWorks } = content;
+  const img = getPartnerImages(content.locale);
+  const media = [img.step01, img.step02, img.step03, img.step04];
+
   return (
-    <section className="wos-section">
+    <section className="wos-section" id="how-it-works">
       <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">04 — Benefits</span>
-          <h2 className="wos-display">
-            {content.locale === "th"
-              ? "สิทธิประโยชน์ของพันธมิตร"
-              : content.locale === "lo"
-                ? "ຜົນປະໂຫຍດຂອງຄູ່ຮ່ວມທຸລະກິດ"
-                : "Partner Benefits"}
+        <header className="wos-section-head">
+          <span className="wos-eyebrow">{howItWorks.eyebrow}</span>
+          <h2 className="wos-display wos-display-lg">{howItWorks.headline}</h2>
+        </header>
+
+        <ol className="wos-moments">
+          {howItWorks.steps.map((step, i) => (
+            <Reveal as="li" className="wos-moment" key={step.index} delay={i * 60}>
+              <figure className="wos-figure wos-ratio-4x3">
+                <Image
+                  src={media[i].src}
+                  alt={media[i].alt}
+                  fill
+                  sizes="(max-width: 719px) 100vw, (max-width: 1023px) 50vw, 25vw"
+                  className="wos-img"
+                />
+              </figure>
+              <span className="wos-index">{step.index}</span>
+              <h3>{step.title}</h3>
+              <p>{step.description}</p>
+            </Reveal>
+          ))}
+        </ol>
+
+        <div className="wos-inline-cta">
+          <p className="wos-subhead">{howItWorks.ctaHeadline}</p>
+          <Link href={howItWorks.cta.href} className="wos-btn">
+            {howItWorks.cta.label}
+            <ArrowRight />
+          </Link>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 07 — Commercial model (typography only) ---------- */
+
+export function CommercialModel({ content }: { content: PartnerPageContent }) {
+  const { commercialModel: cm } = content;
+
+  return (
+    <section className="wos-section wos-commercial" id="commercial-model">
+      <div className="wos-shell">
+        <header className="wos-section-head">
+          <span className="wos-eyebrow">{cm.eyebrow}</span>
+          <h2 className="wos-display wos-display-xl">
+            <span className="wos-hero-line">Simple &amp;</span>
+            <span className="wos-hero-line">Performance-Based</span>
           </h2>
-        </div>
-        <div className="wos-benefit-grid">
-          {content.benefits.map((benefit) => (
-            <div className="wos-benefit" key={benefit.title}>
-              <div className="wos-benefit-icon">{benefit.icon}</div>
-              <h3>{benefit.title}</h3>
-              <p>{benefit.description}</p>
-              <div className="wos-tag-list">
-                {benefit.features.map((f) => (
-                  <span className="wos-tag" key={f}>
-                    {f}
-                  </span>
-                ))}
-              </div>
-            </div>
+          <p className="wos-lead">{cm.subheadline}</p>
+        </header>
+
+        <div className="wos-terms-row">
+          {cm.cards.map((card, i) => (
+            <Reveal className="wos-term-block" key={card.term} delay={i * 60}>
+              <span className="wos-term-lead">{card.lead}</span>
+              <h3 className="wos-term-word">{card.term}</h3>
+              <p>{card.note}</p>
+            </Reveal>
           ))}
         </div>
-      </div>
-    </section>
-  );
-}
 
-export function CommercialTermsSection({ content }: { content: PartnerPageContent }) {
-  const { commercialTerms } = content;
-  return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">05 — Commercial Terms</span>
-          <h2 className="wos-display">{commercialTerms.headline}</h2>
-          <p>{commercialTerms.intro}</p>
-        </div>
-        <div className="wos-doc">
-          <span className="wos-doc-stamp">{commercialTerms.docStamp}</span>
-          <table className="wos-term-table">
-            <tbody>
-              {commercialTerms.terms.map((term) => (
-                <tr key={term.label}>
-                  <td>{term.label}</td>
-                  <td>
-                    {term.value}
-                    {term.note ? <span className="wos-term-note">{term.note}</span> : null}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          <p className="wos-disclaimer">{commercialTerms.disclaimer}</p>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function MouSection({ content }: { content: PartnerPageContent }) {
-  const { mou } = content;
-  return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">06 — MOU / Agreement</span>
-          <h2 className="wos-display">{mou.headline}</h2>
-          <p>{mou.intro}</p>
-        </div>
-        <div className="wos-two-col">
-          <div className="wos-doc">
-            <span className="wos-doc-stamp">Contents</span>
-            <h3 className="wos-pass-headline">
-              {content.locale === "th" ? "เอกสารประกอบด้วย" : content.locale === "lo" ? "ເອກະສານປະກອບດ້ວຍ" : "Document includes"}
-            </h3>
-            <ul className="wos-doc-list">
-              {mou.documentIncludes.map((item) => (
-                <li key={item}>{item}</li>
-              ))}
-            </ul>
-          </div>
-          <div className="wos-doc">
-            <span className="wos-doc-stamp">Process</span>
-            <h3 className="wos-pass-headline">
-              {content.locale === "th" ? "ขั้นตอนการลงนาม" : content.locale === "lo" ? "ຂັ້ນຕອນການລົງນາມ" : "Signing steps"}
-            </h3>
-            <ol className="wos-doc-steps">
-              {mou.signingSteps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function ResponsibilitiesSlaSection({ content }: { content: PartnerPageContent }) {
-  const { responsibilitiesSla: r } = content;
-  const colWos = content.locale === "th" ? "WOS" : content.locale === "lo" ? "WOS" : "WOS";
-  const colPartner = content.locale === "th" ? "พันธมิตร" : content.locale === "lo" ? "ຄູ່ຮ່ວມທຸລະກິດ" : "Partner";
-  const colArea = content.locale === "th" ? "หัวข้อ" : content.locale === "lo" ? "ຫົວຂໍ້" : "Area";
-  return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">07 — Responsibilities & SLA</span>
-          <h2 className="wos-display">{r.headline}</h2>
-          <p>{r.intro}</p>
-        </div>
-        <table className="wos-resp-table">
-          <thead>
-            <tr>
-              <th>{colArea}</th>
-              <th>{colWos}</th>
-              <th>{colPartner}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {r.responsibilities.map((row) => (
-              <tr key={row.area}>
-                <td>{row.area}</td>
-                <td>{row.wos}</td>
-                <td>{row.partner}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        <h3 className="wos-pass-headline" style={{ marginTop: 32 }}>
-          {r.slaHeadline}
-        </h3>
-        <div className="wos-sla-grid">
-          {r.slaItems.map((item) => (
-            <div className="wos-sla-item" key={item.label}>
-              <span className="wos-pass-code">{item.label}</span>
-              <div className="wos-sla-target">{item.target}</div>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-export function PreparePartner({ content }: { content: PartnerPageContent }) {
-  const { prepare } = content;
-  return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-section-head">
-          <span className="wos-eyebrow">{prepare.eyebrow}</span>
-          <h2 className="wos-display">{prepare.headline}</h2>
-        </div>
-        <div className="wos-tag-list" style={{ marginBottom: 32 }}>
-          {prepare.items.map((item) => (
-            <span className="wos-tag" key={item}>
-              {item}
-            </span>
-          ))}
-        </div>
-        <Link href={prepare.ctaLink} className="wos-btn">
-          {prepare.ctaText}
+        <Link href={cm.termsLink.href} className="wos-link">
+          {cm.termsLink.label}
+          <ArrowRight />
         </Link>
       </div>
     </section>
   );
 }
 
+/* ---------- 08 — Partner requirements ---------- */
+
+export function PartnerRequirements({ content }: { content: PartnerPageContent }) {
+  const { requirements } = content;
+  const img = getPartnerImages(content.locale);
+
+  return (
+    <section className="wos-section wos-section-beige" id="requirements">
+      <div className="wos-shell wos-split wos-split-reverse">
+        <div className="wos-split-copy">
+          <span className="wos-eyebrow">{requirements.eyebrow}</span>
+          <h2 className="wos-display">{requirements.headline}</h2>
+          <ul className="wos-req-list">
+            {requirements.items.map((item) => (
+              <li key={item}>
+                <CheckMark />
+                {item}
+              </li>
+            ))}
+          </ul>
+          <p className="wos-note">{requirements.note}</p>
+        </div>
+
+        <Reveal className="wos-split-media">
+          <figure className="wos-figure wos-ratio-4x3">
+            <Image
+              src={img.step02.src}
+              alt={img.step02.alt}
+              fill
+              sizes="(max-width: 1023px) 100vw, 45vw"
+              className="wos-img"
+            />
+          </figure>
+        </Reveal>
+      </div>
+    </section>
+  );
+}
+
+/* ---------- 09 — Final CTA (full-bleed) ---------- */
+
 export function PartnerCta({ content }: { content: PartnerPageContent }) {
   const { cta } = content;
+  const img = getPartnerImages(content.locale);
+
   return (
-    <section className="wos-section">
-      <div className="wos-shell">
-        <div className="wos-cta">
-          <Image
-            src="/images/handshake-partner.webp"
-            alt=""
-            fill
-            sizes="(max-width: 860px) 100vw, 1120px"
-            className="wos-cta-photo"
-            priority={false}
-          />
-          <div className="wos-cta-scrim" />
-          <div className="wos-cta-content">
-            <span className="wos-eyebrow">{cta.gateLabel}</span>
-            <h2>{cta.headline}</h2>
-            <p>{cta.subtext}</p>
-          </div>
-          <Link href={cta.buttonLink} className="wos-btn wos-cta-content">
-            {cta.buttonText}
+    <section className="wos-final-cta" id="apply">
+      <Image
+        src={img.finalCta.src}
+        alt=""
+        fill
+        sizes="100vw"
+        aria-hidden="true"
+        className="wos-img wos-final-cta-img"
+      />
+      <div className="wos-final-cta-scrim" />
+      <div className="wos-shell wos-final-cta-content">
+        <span className="wos-eyebrow">{cta.eyebrow}</span>
+        <h2 className="wos-display wos-display-xl">
+          <span className="wos-hero-line">{cta.headline}</span>
+        </h2>
+        <p className="wos-subhead">{cta.subheadline}</p>
+        <p className="wos-lead">{cta.description}</p>
+        <div className="wos-cta-row">
+          <Link href={cta.primaryCta.href} className="wos-btn wos-btn-gold wos-btn-lg">
+            {cta.primaryCta.label}
+            <ArrowRight />
+          </Link>
+          <Link href={cta.secondaryCta.href} className="wos-btn-ghost wos-btn-ghost-light">
+            {cta.secondaryCta.label}
           </Link>
         </div>
       </div>

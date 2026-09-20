@@ -23,8 +23,8 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
 import { formatTHB } from '@/lib/format';
+import { PackagePickerCombobox } from './PackagePickerCombobox';
 
 // Matches public.orders.status CHECK constraint (migration 008,
 // chk_order_status) exactly.
@@ -56,6 +56,9 @@ interface OrderItem {
   service_type: ServiceType;
   price: number | null;
   deposit_required: number | null;
+  // Phase 5 (migration 102) — GENERATED, price - deposit_required.
+  // Amount owed directly to the partner; NULL until assigned.
+  partner_balance: number | null;
   scheduled_date: string | null;
   scheduled_time: string | null;
   needs_assignment: boolean;
@@ -95,13 +98,6 @@ interface Order {
   items: OrderItem[];
 }
 
-interface PickerPackage {
-  id: string;
-  title: string;
-  original_price: number | null;
-  special_price: number | null;
-  partners: { id: string; name: string } | null;
-}
 
 const STATUS_LABEL: Record<OrderStatus, string> = {
   draft: '📝 ฉบับร่าง',
@@ -280,8 +276,8 @@ function buildOrderSummaryText(order: Order): string {
   lines.push(`ราคารวม: ${formatTHB(order.total_amount ?? 0)}`);
   lines.push(`สถานะ: ${statusLabel}`);
   lines.push('');
-  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/message/BVJXBWDYR2UHN1');
-  lines.push('TH 085-590-7666 · LA +856 20 9872 4718');
+  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/66864522644');
+  lines.push('TH 086-452-2644 · LA +856 20 9872 4718');
   return lines.join('\n');
 }
 
@@ -321,8 +317,8 @@ function buildPaymentLinkMessage(order: Order, link: string): string {
   lines.push('ชำระเงิน/ดูรายละเอียดการจองได้ที่ลิงก์นี้:');
   lines.push(link);
   lines.push('');
-  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/message/BVJXBWDYR2UHN1');
-  lines.push('TH 085-590-7666 · LA +856 20 9872 4718');
+  lines.push('ติดต่อ WOS.os: LINE @vlf9996z | WhatsApp wa.me/66864522644');
+  lines.push('TH 086-452-2644 · LA +856 20 9872 4718');
   return lines.join('\n');
 }
 
@@ -350,7 +346,18 @@ function sendOrderViaWhatsApp(order: Order) {
 
 function sendOrderViaLine(order: Order) {
   const text = buildOrderSummaryText(order);
-  const url = `https://line.me/R/msg/text/?${encodeURIComponent(text)}`;
+  // https://line.me/R/share?text= is LINE's officially documented URL
+  // scheme for sending plain text (see developers.line.biz "Using LINE
+  // features with the LINE URL scheme"). The old /R/msg/text/ path used
+  // here before is undocumented/legacy — LINE URL schemes only work
+  // from inside the LINE app on iOS/Android to begin with (NOT
+  // supported on LINE for PC), so opening this from a desktop browser
+  // with no LINE app will still just prompt to install LINE, per
+  // LINE's own documented desktop fallback — it will no longer fall
+  // through to the old "LineIt" web share widget, which is what was
+  // auto-injecting the current page's URL (localhost in dev, but this
+  // was never reliable in production either) and showing a blank page.
+  const url = `https://line.me/R/share?text=${encodeURIComponent(text)}`;
   window.open(url, '_blank');
 }
 
@@ -447,8 +454,8 @@ function printOrderSummary(order: Order) {
         </tbody>
       </table>
       <div class="footer">
-        WOS.os by หจก. รอยัล บริตจ์ 99 · LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1<br>
-        TH 085-590-7666 · LA +856 20 9872 4718 · hello@wos.asia
+        WOS.os by หจก. รอยัล บริตจ์ 99 · LINE @vlf9996z · WhatsApp wa.me/66864522644<br>
+        TH 086-452-2644 · LA +856 20 9872 4718 · hello@wos.asia
       </div>
     </body>
     </html>
@@ -465,7 +472,6 @@ function printOrderSummary(order: Order) {
 }
 
 export function BookingsManager() {
-  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -474,9 +480,6 @@ export function BookingsManager() {
   const [rangePreset, setRangePreset] = useState<DateRangePreset>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
-
-  const [hotelPackages, setHotelPackages] = useState<PickerPackage[]>([]);
-  const [transportPackages, setTransportPackages] = useState<PickerPackage[]>([]);
 
   const [savingId, setSavingId] = useState<string | null>(null);
   // Separate from savingId (which is keyed by order.id, e.g.
@@ -518,22 +521,12 @@ export function BookingsManager() {
   const [savingSchedule, setSavingSchedule] = useState(false);
   const [scheduleError, setScheduleError] = useState<string | null>(null);
 
-  // Hotel/transport packages still live in the public `packages` table
-  // (see PROJECT_STRUCTURE.md decision: `packages` is the single source
-  // of truth for programs), so this picker query is unchanged from the
-  // old BookingsManager.
-  async function loadHotelTransportPackages() {
-    try {
-      const res = await fetch('/api/admin/packages/pickers?categories=Hotel,Transport', { cache: 'no-store' });
-      if (!res.ok) throw new Error('failed to load hotel/transport packages');
-      const result = await res.json();
-      setHotelPackages(result.hotel ?? []);
-      setTransportPackages(result.transport ?? []);
-    } catch (e) {
-      // Non-fatal — reassignment dropdowns will just be empty.
-      console.error(e);
-    }
-  }
+  // Hotel/transport reassignment no longer preloads every published
+  // package up front — PackagePickerCombobox (two-step: pick partner,
+  // then pick that partner's package) fetches on demand instead, via
+  // /api/admin/partners/pickers and /api/admin/packages/pickers. That
+  // keeps this page's initial load small regardless of how many
+  // partners/packages exist nationwide.
 
   async function loadOrders() {
     setLoading(true);
@@ -551,7 +544,7 @@ export function BookingsManager() {
   }
 
   async function refreshAll() {
-    await Promise.all([loadHotelTransportPackages(), loadOrders()]);
+    await loadOrders();
   }
 
   useEffect(() => {
@@ -658,9 +651,14 @@ export function BookingsManager() {
   // instead of guessing — financial data must never silently fall
   // back to a made-up "1".
   //
-  // round_trip/one_way transport never scales with quantity (always
-  // 1) — no ambiguity there. 'daily' transport relies on the
-  // persisted column; for bookings made before migration 057 shipped,
+  // one_way transport is always quantity 1 (single leg) — no
+  // ambiguity there. round_trip transport is TWO one-way legs done on
+  // two separate days (pickup day + a separate return day) priced at
+  // the one-way unit rate, so it is always quantity 2 (fixed in
+  // migration 059 — previously hard-coded to 1, which silently halved
+  // every round-trip transport charge; see WOS-20260912-00062).
+  // 'daily' transport relies on the persisted column; for bookings
+  // made before migration 057 shipped,
   // that column defaults to 1 and there is no way to recover the real
   // day-count after the fact (it was never stored anywhere). We
   // surface the current value for confirmation rather than assume
@@ -685,8 +683,13 @@ export function BookingsManager() {
       const parsed = input ? Number(input) : NaN;
       if (!input || Number.isNaN(parsed) || parsed <= 0) return;
       quantity = parsed;
+    } else if (item.service_type === 'transport' && item.transport_mode === 'round_trip') {
+      // Round trip = pickup leg + return leg on a separate day, each
+      // billed at the one-way unit rate → quantity 2, always.
+      quantity = 2;
     } else {
-      // one_way / round_trip transport — never scales with quantity.
+      // one_way transport (and medical_assistance) — single leg,
+      // quantity always 1.
       quantity = 1;
     }
 
@@ -900,14 +903,7 @@ export function BookingsManager() {
                 return (
                   <tr
                     key={order.id}
-                    onClick={(e) => {
-                      // อย่า navigate ถ้าคลิกโดน select/button/a ในแถว
-                      // (dropdown เลือกโรงแรม, ปุ่มพิมพ์/ส่ง WhatsApp/LINE ฯลฯ)
-                      const target = e.target as HTMLElement;
-                      if (target.closest('select, button, a')) return;
-                      router.push(`/admin/orders/${order.id}`);
-                    }}
-                    className="cursor-pointer border-b border-slate-50 align-top hover:bg-slate-50"
+                    className="border-b border-slate-50 align-top hover:bg-slate-50"
                   >
                     <td className="whitespace-nowrap px-4 py-3">
                       <Link
@@ -996,19 +992,12 @@ export function BookingsManager() {
                                   {formatTHB(itemPrice(transportItem))}
                                 </div>
                               ) : null}
-                              <select
+                              <PackagePickerCombobox
+                                category="Transport"
                                 disabled={busy || savingItemId === transportItem.id}
-                                value=""
-                                onChange={(e) => reassignItem(transportItem, e.target.value)}
-                                className="mt-0.5 rounded border border-slate-200 px-1.5 py-1 text-xs"
-                              >
-                                <option value="">-- เปลี่ยน/เลือกแพ็กเกจรถ --</option>
-                                {transportPackages.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {(p.partners ? p.partners.name + ' — ' : '') + p.title}
-                                  </option>
-                                ))}
-                              </select>
+                                onSelect={(packageId) => reassignItem(transportItem, packageId)}
+                                placeholder="-- เปลี่ยน/เลือกแพ็กเกจรถ (พิมพ์ค้นหาร้าน) --"
+                              />
                             </div>
                           ) : null}
                           {hotelItem ? (
@@ -1042,19 +1031,12 @@ export function BookingsManager() {
                               {itemPrice(hotelItem) ? (
                                 <div className="ml-4 text-xs text-slate-400">{formatTHB(itemPrice(hotelItem))}</div>
                               ) : null}
-                              <select
+                              <PackagePickerCombobox
+                                category="Hotel"
                                 disabled={busy || savingItemId === hotelItem.id}
-                                value=""
-                                onChange={(e) => reassignItem(hotelItem, e.target.value)}
-                                className="mt-0.5 rounded border border-slate-200 px-1.5 py-1 text-xs"
-                              >
-                                <option value="">-- เปลี่ยน/เลือกแพ็กเกจโรงแรม --</option>
-                                {hotelPackages.map((p) => (
-                                  <option key={p.id} value={p.id}>
-                                    {(p.partners ? p.partners.name + ' — ' : '') + p.title}
-                                  </option>
-                                ))}
-                              </select>
+                                onSelect={(packageId) => reassignItem(hotelItem, packageId)}
+                                placeholder="-- เปลี่ยน/เลือกแพ็กเกจโรงแรม (พิมพ์ค้นหาร้าน) --"
+                              />
                             </div>
                           ) : null}
                         </>

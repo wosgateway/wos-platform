@@ -17,12 +17,42 @@ const PUBLIC_LOCALE_ROUTE_SEGMENTS = [
   'become-partner',
   'booking',
   'category',
+  'consultation',
+  // Landing page for the admin "ดูแทนพาร์ทเนอร์" (impersonation) magic
+  // link — see /api/admin/partners/[id]/impersonate/route.ts and
+  // impersonate-consume/page.tsx. Same reasoning as 'set-password'
+  // below: the session lives in the URL hash fragment on first load,
+  // which never reaches this middleware, only client-side JS.
+  'impersonate-consume',
   'knowledge',
   'my-trip',
   'partner',
+  // Partner-scoped magic-link trip view (088_trip_partner_links.sql,
+  // see partner-trip/[token]/page.tsx's own header comment). MUST stay
+  // public, same trust model as 'my-trip' above: it authenticates via
+  // the token in the URL, not a Supabase Auth session, and partners
+  // opening this link often have no portal account at all. Without
+  // this entry, isPartnerPortalRest() doesn't match '/partner-trip/...'
+  // against the 'partner' segment either (that check requires an exact
+  // '/partner' or '/partner/...' prefix, and '/partner-trip/...' fails
+  // both), so it fell through to being treated as a protected
+  // partner-portal route — forcing a login redirect on first open, and
+  // again every time the locale switcher navigated to a new
+  // locale-prefixed URL for the same page.
+  'partner-trip',
   'partners',
+  'privacy',
   'program',
   'quote',
+  // Invite-link landing page for newly provisioned partners (see
+  // /api/admin/partners/provision/route.ts's inviteUserByEmail redirectTo).
+  // MUST stay public: the session from the invite link is only in the URL
+  // hash fragment on first load, which never reaches this middleware (the
+  // browser never sends fragments to the server) — only client-side JS via
+  // supabase-js's detectSessionInUrl can read it. If this were gated as a
+  // portal route, the very first request would 401/redirect to /login
+  // before that client JS ever ran, since middleware would see no cookie.
+  'set-password',
 ];
 
 function isNonLocaleRoute(pathname: string): boolean {
@@ -115,6 +145,10 @@ export async function middleware(request: NextRequest) {
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       {
+        // Isolated from the admin cookie (see src/lib/supabase/client.ts's
+        // comment) — must match login/page.tsx and set-password/page.tsx's
+        // createClient('partner') exactly.
+        cookieOptions: { name: 'sb-wos-partner' },
         cookies: {
           get(name: string) {
             return request.cookies.get(name)?.value;

@@ -5,13 +5,9 @@
 // Minimal admin screen for resolving "let team decide" order_items
 // (needs_assignment = true — see migration 013/014). Lists every
 // pending row with its order/customer context, and lets an admin
-// type a package_id + quantity to assign.
-//
-// This intentionally does NOT include a package picker (autocomplete
-// searching `packages` by title/partner) — that's a nice-to-have on
-// top of this, not required for the flow to work. Swap the raw
-// package_id input for a proper picker whenever you're ready; the
-// PATCH call underneath doesn't change.
+// search a partner then pick one of that partner's packages
+// (PackagePickerCombobox — same two-step picker BookingsManager uses
+// for reassignment) plus a quantity, to assign.
 //
 // Assumes this route already sits behind your existing admin
 // layout/auth guard (e.g. an app/admin/layout.tsx that redirects
@@ -21,11 +17,17 @@
 // missing.
 
 import { useEffect, useState } from 'react';
+import { PackagePickerCombobox } from '@/components/admin/PackagePickerCombobox';
 
 interface PendingItem {
   id: string;
   order_id: string;
-  service_type: 'hotel' | 'transport';
+  // Matches order_items.service_type's CHECK constraint (chk_item_service_type,
+  // sql/008) — NOT just 'hotel' | 'transport'. The API route intentionally
+  // doesn't filter by service_type (any needs_assignment row can land here),
+  // so a narrower type here just meant clinic/wellness rows got silently
+  // mis-rendered/mis-assigned as transport below.
+  service_type: 'hotel' | 'transport' | 'clinic' | 'wellness' | 'insurance';
   scheduled_date: string | null;
   scheduled_time: string | null;
   hotel_checkout_date: string | null;
@@ -45,9 +47,9 @@ export default function PendingAssignmentsPage() {
   const [items, setItems] = useState<PendingItem[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [assigning, setAssigning] = useState<string | null>(null);
-  const [drafts, setDrafts] = useState<Record<string, { package_id: string; quantity: string }>>(
-    {}
-  );
+  const [drafts, setDrafts] = useState<
+    Record<string, { package_id: string; package_label: string; quantity: string }>
+  >({});
 
   async function load() {
     setError(null);
@@ -65,16 +67,85 @@ export default function PendingAssignmentsPage() {
     load();
   }, []);
 
-  function draftFor(id: string) {
-    return drafts[id] ?? { package_id: '', quantity: '1' };
+  // Default quantity depends on transport_mode: round_trip is always
+  // TWO one-way legs (pickup day + a separate return day), each
+  // billed at the one-way unit rate. Previously this defaulted to '1'
+  // for every service_type, which meant an admin who just clicked
+  // "Assign" without touching the field would silently halve every
+  // round-trip transport charge (see WOS-20260912-00062, fixed
+  // alongside BookingsManager.tsx's reassignItem in migration 059).
+  function defaultQuantityFor(item: PendingItem): string {
+    if (item.service_type === 'transport' && item.transport_mode === 'round_trip') return '2';
+    return '1';
   }
 
-  function updateDraft(id: string, field: 'package_id' | 'quantity', value: string) {
-    setDrafts((prev) => ({ ...prev, [id]: { ...draftFor(id), [field]: value } }));
+  // Maps an order_item's service_type to the partners.category CHECK
+  // values PackagePickerCombobox should search across, matching the
+  // exact same v_service_type CASE admin_assign_order_item() (sql/058)
+  // uses to validate the assignment server-side — otherwise the picker
+  // lets an admin choose a package that the RPC then rejects with
+  // "category mismatch" (as happened for clinic: this used to fall
+  // into the `: 'Transport'` branch below, since only 'hotel' was
+  // special-cased).
+  function partnerCategoriesFor(item: PendingItem): string {
+    switch (item.service_type) {
+      case 'hotel':
+        return 'Hotel';
+      case 'transport':
+        return 'Transport';
+      case 'clinic':
+        return 'Hospital,Clinic,Dental';
+      case 'wellness':
+        return 'Wellness,Spa';
+      default:
+        return '';
+    }
+  }
+
+  function quantityLabel(item: PendingItem): string {
+    if (item.service_type === 'transport') {
+      if (item.transport_mode !== 'daily') {
+        return item.transport_mode === 'round_trip'
+          ? 'quantity (round trip = 2 legs, fixed)'
+          : 'quantity (one-way = 1 leg, fixed)';
+      }
+      return 'quantity (days)';
+    }
+    if (item.service_type === 'hotel') {
+      return 'quantity (nights only — rooms folded in automatically)';
+    }
+    return 'quantity';
+  }
+
+  function emptyDraftFor(item: PendingItem) {
+    return { package_id: '', package_label: '', quantity: defaultQuantityFor(item) };
+  }
+
+  function draftFor(item: PendingItem) {
+    return drafts[item.id] ?? emptyDraftFor(item);
+  }
+
+  // Merges one or more field updates into a draft atomically off
+  // `prev` (the up-to-date state inside the functional updater), not
+  // off draftFor(id)/the outer `drafts` closure. Two updateDraft
+  // calls fired back-to-back in the same handler (see onSelect below)
+  // both get batched by React into the same render — reading the
+  // outer `drafts` in either updater sees the SAME stale snapshot,
+  // so the second call's spread silently overwrites whatever the
+  // first call just set. Reading off `prev` instead means each
+  // updater sees the previous one's result.
+  function updateDraft(
+    item: PendingItem,
+    fields: Partial<{ package_id: string; package_label: string; quantity: string }>
+  ) {
+    setDrafts((prev) => ({
+      ...prev,
+      [item.id]: { ...(prev[item.id] ?? emptyDraftFor(item)), ...fields },
+    }));
   }
 
   async function assign(item: PendingItem) {
-    const draft = draftFor(item.id);
+    const draft = draftFor(item);
     if (!draft.package_id.trim()) {
       setError(`item ${item.id}: package_id is required`);
       return;
@@ -122,7 +193,7 @@ export default function PendingAssignmentsPage() {
       ) : (
         <div className="space-y-4">
           {items.map((item) => {
-            const draft = draftFor(item.id);
+            const draft = draftFor(item);
             return (
               <div key={item.id} className="rounded-xl border border-slate-200 p-4">
                 <div className="mb-3 flex items-center justify-between">
@@ -146,7 +217,7 @@ export default function PendingAssignmentsPage() {
                       {item.hotel_checkout_date ?? '—'}
                       {item.room_quantity > 1 ? ` · Rooms: ${item.room_quantity}` : ''}
                     </p>
-                  ) : (
+                  ) : item.service_type === 'transport' ? (
                     <p>
                       Pickup: {item.scheduled_date ?? '—'} {item.scheduled_time ?? ''} · Mode:{' '}
                       {item.transport_mode ?? '—'}
@@ -159,33 +230,55 @@ export default function PendingAssignmentsPage() {
                       {item.pickup_location ? ` · From: ${item.pickup_location}` : ''}
                       {item.dropoff_location ? ` · To: ${item.dropoff_location}` : ''}
                     </p>
+                  ) : (
+                    // clinic/wellness/insurance: no hotel/transport-specific
+                    // fields apply — just the appointment date/time.
+                    <p>
+                      Appointment: {item.scheduled_date ?? '—'} {item.scheduled_time ?? ''}
+                    </p>
                   )}
                 </div>
 
                 <div className="flex flex-wrap items-end gap-3">
-                  <div>
+                  <div className="w-80">
                     <label className="mb-1 block text-xs font-medium text-slate-500">
-                      package_id ({item.service_type})
+                      package ({item.service_type})
                     </label>
-                    <input
-                      type="text"
-                      className="form-input w-80"
-                      placeholder="paste the packages.id UUID"
-                      value={draft.package_id}
-                      onChange={(e) => updateDraft(item.id, 'package_id', e.target.value)}
+                    <PackagePickerCombobox
+                      category={partnerCategoriesFor(item)}
+                      disabled={assigning === item.id}
+                      selectedLabel={draft.package_label}
+                      onSelect={(packageId, packageLabel) =>
+                        updateDraft(item, {
+                          package_id: packageId,
+                          package_label: packageLabel ?? packageId,
+                        })
+                      }
+                      placeholder="-- ค้นหาร้าน แล้วเลือกแพ็กเกจ --"
                     />
                   </div>
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-500">
-                      quantity ({item.service_type === 'hotel' ? 'nights only — rooms folded in automatically' : 'days'})
+                      {quantityLabel(item)}
                     </label>
-                    <input
-                      type="number"
-                      min={1}
-                      className="form-input w-24"
-                      value={draft.quantity}
-                      onChange={(e) => updateDraft(item.id, 'quantity', e.target.value)}
-                    />
+                    {item.service_type === 'transport' && item.transport_mode !== 'daily' ? (
+                      // one_way/round_trip transport never scales with
+                      // quantity — it's fixed by mode (1 leg / 2 legs),
+                      // not admin-editable, so it can't be mis-typed
+                      // back down to 1 for a round trip (see
+                      // WOS-20260912-00062).
+                      <div className="form-input flex w-24 items-center justify-center bg-slate-50 text-slate-500">
+                        {draft.quantity}
+                      </div>
+                    ) : (
+                      <input
+                        type="number"
+                        min={1}
+                        className="form-input w-24"
+                        value={draft.quantity}
+                        onChange={(e) => updateDraft(item, { quantity: e.target.value })}
+                      />
+                    )}
                   </div>
                   <button
                     type="button"

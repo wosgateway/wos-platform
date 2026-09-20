@@ -1,7 +1,6 @@
 // content/partner/lo.ts
 //
 // ⚠️ TRANSLATION REVIEW NOTE:
-// The original DeepSeek export only contained Thai and English content.
 // The Lao text below is a best-effort translation produced for this build —
 // it has NOT been proofread by a native Lao speaker. Please have someone on
 // your Lao-market team (or a professional translator) review this file
@@ -11,148 +10,148 @@ import type { PartnerPageContent } from "./types";
 
 export const lo: PartnerPageContent = {
   locale: "lo",
+  nav: {
+    brand: "WOS Partner",
+    mobileBrand: "WOS Partner",
+    links: [
+      { label: "Partner Benefits", href: "#why-partner" },
+      { label: "How It Works", href: "#how-it-works" },
+      { label: "Founding Partner", href: "#founding-partner" },
+    ],
+    cta: { label: "Apply Now", href: "/partner/apply" },
+    mobileCtaLabel: "Apply",
+  },
   hero: {
     eyebrow: "WOS PARTNER NETWORK",
-    boardingLabel: "PARTNER PASS",
-    headline: "ເຂົ້າເຖິງລູກຄ້າສຸຂະພາບ ແລະ Wellness ຈາກລາວ ຜ່ານ WOS",
-    subheadline:
-      "WOS ຊ່ວຍເຊື່ອມຕໍ່ໂຮງໝໍ ຄລີນິກ Wellness ແລະ ບໍລິການທີ່ກ່ຽວຂ້ອງໃນປະເທດໄທກັບລູກຄ້າຈາກລາວ ພ້ອມຊ່ວຍຈັດການ Journey ຕັ້ງແຕ່ການຄົ້ນຫາບໍລິການ ການຈອງ ຈົນເຖິງການປະສານງານກ່ອນ ແລະ ຫຼັງຮັບບໍລິການ",
-    ctaText: "ເປັນຄູ່ຮ່ວມທຸລະກິດກັບພວກເຮົາ",
-    ctaLink: "/partner/apply",
-  },
-  foundingPartner: {
-    eyebrow: "WOS FOUNDING PARTNER PROGRAM",
-    headline: "ເປັນໜຶ່ງໃນ WOS Founding Partners",
-    intro:
-      "WOS ກຳລັງເປີດຮັບຄູ່ຮ່ວມທຸລະກິດຮຸ່ນທຳອິດ ເພື່ອຮ່ວມສ້າງເຄືອຂ່າຍ Healthcare & Wellness ລະຫວ່າງປະເທດໄທ ແລະ ລາວ ຄູ່ຮ່ວມທຸລະກິດຮຸ່ນທຳອິດຈະໄດ້ຮັບການ Onboarding ແລະ ຊ່ວຍຈັດທຳ Cross-border Service Packages ຮ່ວມກັບທີມ WOS",
-    benefitsHeadline: "ສິດທິປະໂຫຍດ",
-    benefits: [
-      "ບໍ່ມີຄ່າ Setup ໃນຊ່ວງ Pilot",
-      "ບໍ່ມີ Monthly Platform Fee ໃນຊ່ວງ Pilot",
-      "Priority Onboarding",
-      "ຊ່ວຍຈັດທຳ Service Packages ສຳລັບລູກຄ້າລາວ",
-      "Partner Profile ຢູ່ໃນ WOS",
-      "ໂອກາດຮັບ Cross-border Leads",
-      "ເຂົ້າຮ່ວມເຄືອຂ່າຍ WOS",
-    ],
+    headlineLines: ["ເຊື່ອມຕໍ່ທຸລະກິດຂອງທ່ານ", "ກັບລູກຄ້າຈາກລາວ"],
+    description:
+      "WOS ເຊື່ອມຕໍ່ລູກຄ້າຈາກລາວກັບ Healthcare & Wellness ໃນປະເທດໄທ ພ້ອມດູແລຕັ້ງແຕ່ການວາງແຜນ ການຈອງ ການເດີນທາງ ຈົນເຖິງຫຼັງຮັບບໍລິການ",
+    highlight: "Thailand × Laos",
+    primaryCta: { label: "Become a Founding Partner", href: "/partner/apply" },
+    secondaryCta: { label: "ເບິ່ງລາຍລະອຽດ Partnership", href: "#why-partner" },
+    visual: { from: "Laos Customer", via: "WOS", to: "Thai Partner" },
   },
   whyPartner: {
-    headline: "ເປັນຫຍັງການຮ່ວມມືກັບ WOS ຈຶ່ງເປີດໂອກາດທຸລະກິດຫຼາຍກວ່າ",
-    reasons: [
+    eyebrow: "WHY PARTNER WITH WOS",
+    headline: "ເຂົ້າເຖິງລູກຄ້າໃໝ່",
+    subheadline: "ພ້ອມບໍລິການທີ່ຫຼາຍກວ່າການຈອງ",
+    cards: [
       {
-        code: "ACC",
-        title: "ເຂົ້າເຖິງຕະຫຼາດລູກຄ້າຈາກລາວ",
-        description: "WOS ກຳລັງສ້າງເຄືອຂ່າຍຄູ່ຮ່ວມທຸລະກິດສຳລັບລູກຄ້າທີ່ຕ້ອງການເດີນທາງມາຮັບບໍລິການສຸຂະພາບ ແລະ Wellness ໃນປະເທດໄທ",
-        icon: "🎯",
+        index: "01",
+        title: "Reach New Customers",
+        description: "ເຂົ້າເຖິງລູກຄ້າຈາກລາວທີ່ຊອກຫາ Healthcare & Wellness ໃນປະເທດໄທ",
       },
       {
-        code: "REV",
-        title: "ເພີ່ມລາຍຮັບດ້ວຍລະບົບທີ່ໂປ່ງໃສ",
-        description: "ຄ່າທຳນຽມທີ່ຊັດເຈນ ບໍ່ມີຄ່າແອບແຝງ ຈ່າຍເງິນຕົງເວລາທຸກເດືອນ",
-        icon: "💰",
+        index: "02",
+        title: "One Complete Journey",
+        description: "WOS ຊ່ວຍປະສານຕັ້ງແຕ່ Booking, Transport, Hotel ຈົນເຖິງການເຂົ້າຮັບບໍລິການ",
       },
       {
-        code: "TRU",
-        title: "ສ້າງຄວາມໜ້າເຊື່ອຖືດ້ວຍ WOS Trust Standard",
-        description: "ໄດ້ຮັບການຮັບຮອງຈາກ WOS Trust Standard ປາກົດຢູ່ໃນ Partner Directory ທີ່ຜູ້ໃຊ້ໄວ້ວາງໃຈ",
-        icon: "⭐",
-      },
-      {
-        code: "MGT",
-        title: "ບໍລິຫານຈັດການງ່າຍດ້ວຍ Partner Dashboard",
-        description: "ຈັດການການຈອງ ອັບເດດຕາຕະລາງເວລາ ເບິ່ງລາຍງານຍ້ອນຫຼັງ ຮອງຮັບທັງເດັສທັອບ ແລະ ມືຖື",
-        icon: "📊",
+        index: "03",
+        title: "Performance-Based",
+        description: "ບໍ່ມີ Setup Fee ແລະ Monthly Platform Fee ໃນຊ່ວງ Founding Pilot",
       },
     ],
   },
-  partnerTypes: [
-    {
-      code: "HSP",
-      name: "ໂຮງໝໍ",
-      icon: "🏥",
-      description: "ໂຮງໝໍທົ່ວໄປ / ໂຮງໝໍສະເພາະທາງ / ສູນການແພດ",
-      subTypes: ["ໂຮງໝໍທົ່ວໄປ", "ໂຮງໝໍສະເພາະທາງ", "ສູນການແພດ"],
-      requirements: ["ມີໃບອະນຸຍາດດຳເນີນການ", "ມີທ່ານໝໍຊ່ຽວຊານ", "ຜ່ານມາດຕະຖານຄວາມປອດໄພ"],
-    },
-    {
-      code: "CLN",
-      name: "ຄລີນິກສະເພາະທາງ",
-      icon: "🏪",
-      description: "ຄລີນິກແຂ້ວ / ຄລີນິກຄວາມງາມ / ຄລີນິກຕາ ແລະ ອື່ນໆ",
-      subTypes: ["ແຂ້ວ", "ຄວາມງາມ", "ຕາ", "ກາຍະພາບບຳບັດ"],
-      requirements: ["ມີທ່ານໝໍປະຈຳ", "ອຸປະກອນມາດຕະຖານ", "ໃບອະນຸຍາດດຳເນີນກິດຈະການ"],
-    },
-    {
-      code: "HTL",
-      name: "ໂຮງແຮມ ແລະ ທີ່ພັກ",
-      icon: "🏨",
-      description: "ໂຮງແຮມ 3-5 ດາວ / ເຊີວິດອາພາດເມັນ",
-      subTypes: ["ໂຮງແຮມ 3 ດາວ", "ໂຮງແຮມ 4 ດາວ", "ໂຮງແຮມ 5 ດາວ", "ເຊີວິດອາພາດເມັນ"],
-      requirements: ["ສິ່ງອຳນວຍຄວາມສະດວກຄົບຖ້ວນ", "ຮອງຮັບຄົນເຈັບ ແລະ ຍາດພີ່ນ້ອງ", "ມີມາດຕະຖານຄວາມສະອາດ"],
-    },
-    {
-      code: "TRN",
-      name: "ບໍລິການຮັບສົ່ງ",
-      icon: "🚗",
-      description: "ລົດໂຮງໝໍ / ລົດຮັບສົ່ງຄົນເຈັບ / ລົດຕູ້ VIP",
-      subTypes: ["ລົດໂຮງໝໍ", "ລົດຮັບສົ່ງຄົນເຈັບ", "ລົດຕູ້ VIP", "ລົດລີມູຊີນ"],
-      requirements: ["ມີປະກັນໄພ", "ພະນັກງານຂັບລົດມືອາຊີບ", "ລົດສະພາບດີພ້ອມໃຊ້ງານ"],
-    },
-    {
-      code: "COR",
-      name: "ອົງກອນ ແລະ ນັກລົງທຶນ",
-      icon: "🏢",
-      description: "ບໍລິສັດປະກັນໄພ / DMC / ຜູ້ພັດທະນາໂຄງການ",
-      subTypes: ["ບໍລິສັດປະກັນໄພ", "DMC", "ຜູ້ພັດທະນາໂຄງການ", "ທີ່ປຶກສາທາງການແພດ"],
-      requirements: ["ມີປະສົບການໃນອຸດສາຫະກຳ", "ຖານະການເງິນໝັ້ນຄົງ", "ພ້ອມສະໜັບສະໜູນການຂະຫຍາຍເຄືອຂ່າຍ"],
-    },
-    {
-      code: "WEL",
-      name: "ບໍລິການ Wellness ແລະ ສະປາ",
-      icon: "🌿",
-      description: "ສະປາ / ນວດແຜນໄທ / ສູນສຸຂະພາບລວມ / ດີທັອກ ແລະ ຟື້ນຟູຮ່າງກາຍ",
-      subTypes: ["ສະປາ", "ນວດແຜນໄທ", "ສູນເວວເນສ", "ດີທັອກ/ຟື້ນຟູຮ່າງກາຍ"],
-      requirements: ["ມີໃບອະນຸຍາດດຳເນີນກິດຈະການສະປາ/ນວດ", "ພະນັກງານຜ່ານການຝຶກອົບຮົມມາດຕະຖານ", "ສະຖານທີ່ສະອາດຖືກສຸຂະລັກສະນະ"],
-    },
-  ],
-  phaseFocus: {
-    label: "WOS Founding Partner Focus",
-    headline: "Phase 1: Clinic & Wellness",
-    description: "WOS ກຳລັງໃຫ້ຄວາມສຳຄັນກັບ Clinic, Wellness ແລະ Healthcare Providers ທີ່ມີສັກກະຍະພາບໃນການໃຫ້ບໍລິການລູກຄ້າຈາກລາວ",
-  },
-  howItWorks: [
-    { stepNumber: 1, title: "Apply", description: "ສົ່ງຂໍ້ມູນທຸລະກິດ ແລະ ບໍລິການໃຫ້ທີມ WOS", duration: "48 ຊົ່ວໂມງ" },
-    { stepNumber: 2, title: "Partner Review", description: "WOS ກວດສອບຄຸນສົມບັດ ແລະ ເວົ້າລົມຮູບແບບທຸລະກິດຮ່ວມກັນ", duration: "3-5 ວັນ" },
-    { stepNumber: 3, title: "Package Setup", description: "ຮ່ວມກັນຈັດທຳ Service / Package ສຳລັບລູກຄ້າຈາກລາວ", duration: "3-5 ວັນ" },
-    { stepNumber: 4, title: "Pilot Agreement", description: "ຕົກລົງ Commercial Terms ແລະ SLA ຮ່ວມກັນ", duration: "1-2 ວັນ" },
-    { stepNumber: 5, title: "Go Live", description: "ເປີດບໍລິການເທິງ WOS ແລະ ເລີ່ມຮັບ Lead / Booking", duration: "ທັນທີ" },
-  ],
-  operatingModel: {
-    headline: "WOS ເຮັດວຽກແນວໃດ",
-    flowSteps: [
-      "ນັກທ່ອງທ່ຽວ",
-      "ຄົ້ນຫາບໍລິການ",
-      "ປຽບທຽບຄູ່ຮ່ວມທຸລະກິດ",
-      "ຈອງຜ່ານ WOS",
-      "ຮັບບໍລິການຈາກຄູ່ຮ່ວມທຸລະກິດ",
-      "WOS ກວດສອບຄຸນນະພາບ",
-      "ຈ່າຍເງິນ",
-      "ຕິດຕາມຜົນ",
+  journey: {
+    eyebrow: "ONE COMPLETE JOURNEY",
+    headline: "ຈາກລາວສູ່ໄທ",
+    subheadline: "WOS ດູແລຕະຫຼອດ Journey",
+    steps: [
+      { index: "01", title: "Discover", description: "ລູກຄ້າຈາກລາວຄົ້ນພົບບໍລິການທີ່ເໝາະສົມກັບຄວາມຕ້ອງການ" },
+      { index: "02", title: "Plan", description: "WOS ຊ່ວຍເລືອກໂປຣແກຣມ ແລະ ວາງແຜນການເດີນທາງ" },
+      { index: "03", title: "Travel", description: "ປະສານ Transport / Hotel / Appointment" },
+      { index: "04", title: "Care", description: "ລູກຄ້າເຂົ້າຮັບບໍລິການກັບ WOS Partner" },
+      { index: "05", title: "Return", description: "WOS ຊ່ວຍດູແລ ແລະ ປະສານງານຈົນລູກຄ້າກັບປະເທດ" },
     ],
-    keyPoints: [
-      "WOS ເຮັດໜ້າທີ່ເປັນຕົວກາງທີ່ເຊື່ອຖືໄດ້ (Trusted Intermediary)",
-      "WOS ມີຂັ້ນຕອນກວດສອບຂໍ້ມູນ ແລະ ຄຸນສົມບັດຂອງຄູ່ຮ່ວມທຸລະກິດກ່ອນເຂົ້າຮ່ວມເຄືອຂ່າຍ ແລະ ຕິດຕາມ Feedback ຈາກລູກຄ້າ",
-      "ປະສານການຈ່າຍເງິນຕາມຮອບບິນທີ່ຕົກລົງຮ່ວມກັນ",
-      "ເກັບຂໍ້ມູນ ແລະ Feedback ເພື່ອພັດທະນາຄຸນນະພາບຢ່າງຕໍ່ເນື່ອງ",
-    ],
+    highlightTitle: "One Complete Journey",
+    highlightText: "ບໍ່ແມ່ນພຽງແຕ່ Booking ແຕ່ແມ່ນການດູແລ Customer Journey ຕັ້ງແຕ່ຕົ້ນຈົນຈົບ",
   },
-  benefits: [
-    { title: "ລະບົບບໍລິຫານຈັດການຄົບວົງຈອນ", description: "Partner Dashboard ໃຊ້ງານງ່າຍ ຈັດການຕາຕະລາງເວລາ ລາຄາ ແລະ ໂປຣໂມຊັນໄດ້ເອງ", icon: "✅", features: ["ຈັດການຕາຕະລາງເວລາ", "ປັບລາຄາໄດ້ເອງ", "ສ້າງໂປຣໂມຊັນ", "ເບິ່ງປະຫວັດການຈອງ"] },
-    { title: "ການຕະຫຼາດ ແລະ ໂປຣໂມດ", description: "ປາກົດຢູ່ໃນ Partner Directory ໄດ້ຮັບການໂປຣໂມດຜ່ານ Social Media ແລະ Newsletter", icon: "📢", features: ["Partner Directory", "ໂປຣໂມດຜ່ານ Social Media", "ຂຶ້ນ Newsletter", "ຕາ WOS Trusted Partner"] },
-    { title: "WOS Partner Support", description: "ທີມ WOS ຊ່ວຍປະສານງານດ້ານການຈອງ ແລະ ການໃຫ້ບໍລິການຕາມຂອບເຂດທີ່ຕົກລົງກັບຄູ່ຮ່ວມທຸລະກິດ", icon: "💬", features: ["ປະສານງານການຈອງ", "ໄທ/ອັງກິດ", "ຕິດຕໍ່ຜ່ານ Line / WhatsApp"] },
-    { title: "ລາຍງານທຸລະກິດ ແລະ ຂໍ້ມູນການຈອງ", description: "ເບິ່ງພຶດຕິກຳ ແລະ ຄວາມຕ້ອງການຂອງລູກຄ້າ ພ້ອມລາຍງານຍອດຂາຍ ແລະ ແນວໂນ້ມການຈອງ", icon: "📊", features: ["ຂໍ້ມູນພຶດຕິກຳລູກຄ້າ", "ລາຍງານຍອດຂາຍ", "ວິເຄາະແນວໂນ້ມ"] },
-    { title: "ການຕໍ່ຍອດທຸລະກິດ", description: "ໂອກາດຮ່ວມໂຄງການກັບຄູ່ຮ່ວມທຸລະກິດລາຍອື່ນ ເຂົ້າຮ່ວມກິດຈະກຳ ແລະ ເຄືອຂ່າຍລະດັບພາກພື້ນ", icon: "🤝", features: ["ໂຄງການຮ່ວມຄູ່ຮ່ວມທຸລະກິດ", "ກິດຈະກຳລະດັບພາກພື້ນ", "ສ້າງເຄືອຂ່າຍ", "ຈັບຄູ່ທຸລະກິດ"] },
-  ],
+  whoCanJoin: {
+    eyebrow: "WHO CAN JOIN",
+    headline: "WOS Partner Network",
+    intro: "ພວກເຮົາກຳລັງສ້າງເຄືອຂ່າຍ Healthcare, Wellness ແລະ Hospitality ສຳລັບລູກຄ້າຈາກລາວ",
+    groups: [
+      { name: "Healthcare", items: ["ໂຮງໝໍ", "ຄລີນິກ", "ທັນຕະກຳ", "ສູນສະເພາະທາງ"] },
+      { name: "Wellness", items: ["Wellness Center", "Longevity", "Spa", "Recovery"] },
+      { name: "Hospitality & Travel", items: ["Hotel", "Transport", "Travel Support"] },
+    ],
+    note: "Additional partner categories will be added as the network expands.",
+  },
+  foundingPartner: {
+    eyebrow: "WOS FOUNDING PARTNER",
+    headline: "Join the First Partner Network",
+    intro:
+      "ຮ່ວມເປັນໜຶ່ງໃນ Partner ຮຸ່ນທຳອິດຂອງ WOS ແລະ ຮ່ວມອອກແບບບໍລິການສຳລັບຕະຫຼາດລາວໄປກັບທີມ WOS",
+    privilegesHeadline: "Founding Partner Privileges",
+    privileges: [
+      { title: "No Setup Fee", description: "ບໍ່ມີຄ່າ Setup" },
+      { title: "No Monthly Platform Fee", description: "ບໍ່ມີຄ່າລາຍເດືອນໃນຊ່ວງ Pilot" },
+      { title: "Priority Onboarding", description: "ໄດ້ຮັບສິດໃນການ Onboarding ກ່ອນ" },
+      { title: "Package Co-Design", description: "ຮ່ວມອອກແບບ Package ສຳລັບຕະຫຼາດລາວ" },
+      { title: "Partner Profile on WOS", description: "ນຳສະເໜີທຸລະກິດຜ່ານ WOS" },
+      { title: "Cross-border Customer Opportunities", description: "ໂອກາດຮັບລູກຄ້າຈາກຕະຫຼາດລາວ" },
+    ],
+    badge: "LIMITED FIRST COHORT",
+    cta: { label: "Become a Founding Partner", href: "/partner/apply" },
+  },
+  howItWorks: {
+    eyebrow: "HOW IT WORKS",
+    headline: "ເລີ່ມຕົ້ນກັບ WOS ງ່າຍໆ",
+    steps: [
+      { index: "01", title: "Apply", description: "ສົ່ງຂໍ້ມູນ Partner" },
+      { index: "02", title: "Review", description: "ທີມ WOS ລົມກັນ ແລະ ກວດສອບຂໍ້ມູນ" },
+      { index: "03", title: "Build", description: "ຮ່ວມອອກແບບ Package / Service ສຳລັບຕະຫຼາດລາວ" },
+      { index: "04", title: "Launch", description: "ເລີ່ມຮັບ Customer Journey ຜ່ານ WOS" },
+    ],
+    ctaHeadline: "Ready to grow with WOS?",
+    cta: { label: "Become a Founding Partner", href: "/partner/apply" },
+  },
+  commercialModel: {
+    eyebrow: "COMMERCIAL MODEL",
+    headline: "Simple & Performance-Based",
+    subheadline: "ໂຄງສ້າງຄ່າໃຊ້ຈ່າຍທີ່ເຂົ້າໃຈງ່າຍ ແລະ ເກີດຂຶ້ນເມື່ອມີທຸລະກຳຈິງ",
+    cards: [
+      { lead: "NO", term: "SETUP FEE", note: "ບໍ່ມີຄ່າ Setup ໃນຊ່ວງ Founding Pilot" },
+      { lead: "NO", term: "MONTHLY FEE", note: "ບໍ່ມີຄ່າລາຍເດືອນໃນຊ່ວງ Pilot" },
+      {
+        lead: "PAY",
+        term: "WHEN BUSINESS HAPPENS",
+        note: "ເກີດຄ່າບໍລິການເມື່ອເກີດທຸລະກຳ — ຮູບແບບ Commercial ແລະ Commission ຕົກລົງຕາມປະເພດ Partner ແລະ ຮູບແບບບໍລິການ",
+      },
+    ],
+    termsLink: { label: "View Partnership Terms", href: "/partner/terms" },
+  },
+  requirements: {
+    eyebrow: "PARTNER REQUIREMENTS",
+    headline: "ສິ່ງທີ່ Partner ຕ້ອງກຽມ",
+    items: [
+      "Business / Service Information",
+      "Price & Package",
+      "Availability / Booking Conditions",
+      "Contact Person",
+      "Supporting Documents",
+    ],
+    note: "ທີມ WOS ຈະຊ່ວຍແນະນຳ ແລະ ປະສານຂັ້ນຕອນການ Onboarding",
+  },
+  cta: {
+    eyebrow: "JOIN THE NETWORK",
+    headline: "ພ້ອມເຕີບໂຕໄປກັບຕະຫຼາດລາວບໍ?",
+    subheadline: "ຮ່ວມເປັນ WOS Founding Partner",
+    description:
+      "WOS ກຳລັງເປີດຮັບ Partner ຮຸ່ນທຳອິດ ສຳລັບການຂະຫຍາຍຕະຫຼາດ Healthcare & Wellness ລະຫວ່າງລາວ ແລະ ປະເທດໄທ",
+    primaryCta: { label: "Become a Founding Partner", href: "/partner/apply" },
+    secondaryCta: { label: "Talk to WOS Team", href: "/consultation" },
+  },
+  termsPage: {
+    eyebrow: "PARTNERSHIP TERMS",
+    headline: "ລາຍລະອຽດຄວາມຮ່ວມມື",
+    intro:
+      "ລາຍລະອຽດເຊິງພານິດ ຂໍ້ຕົກລົງ MOU ຄວາມຮັບຜິດຊອບ ແລະ ມາດຕະຖານການໃຫ້ບໍລິການ ສຳລັບ Partner ທີ່ຕ້ອງການສຶກສາເງື່ອນໄຂກ່ອນຕັດສິນໃຈ",
+    backLabel: "ກັບໄປໜ້າ Partner",
+    ctaHeadline: "ພ້ອມເລີ່ມຕົ້ນກັບ WOS ແລ້ວບໍ?",
+    cta: { label: "Become a Founding Partner", href: "/partner/apply" },
+  },
   commercialTerms: {
     headline: "Commercial Model",
     intro:
@@ -166,6 +165,20 @@ export const lo: PartnerPageContent = {
       { label: "ໄລຍະເວລາສັນຍາ", value: "1 ປີ ຕໍ່ອາຍຸອັດຕະໂນມັດ ເວັ້ນເສຍແຕ່ແຈ້ງຍົກເລີກລ່ວງໜ້າ" },
       { label: "ສະກຸນເງິນທີ່ຈ່າຍ", value: "THB / USD (ຕາມຂໍ້ຕົກລົງ)" },
     ],
+    feeScheduleHeadline: "ອັດຕາຄ່າທຳນຽມຕາມປະເພດຄູ່ຮ່ວມທຸລະກິດ",
+    feeSchedule: [
+      { icon: "🏥", category: "Clinic / Medical Provider", fee: "15%", principle: "ຄິດຈາກບໍລິການທີ່ເກີດຈາກ WOS" },
+      { icon: "🌿", category: "Wellness / Spa", fee: "15%", principle: "ຂຶ້ນກັບບໍລິການ ແລະ margin" },
+      { icon: "🏨", category: "Hotel / Resort", fee: "12%", principle: "ເໝາະກັບໂຮງແຮມທີ່ມີ volume" },
+      { icon: "🚐", category: "Transport", fee: "15%", principle: "Sedan/SUV/Van/ລົດ VIP" },
+      { icon: "🧘", category: "Fitness / Yoga / Activity", fee: "15%", principle: "Package / Activity" },
+      { icon: "🥗", category: "Healthy Food", fee: "10%", principle: "margin ຄ່ອນຂ້າງຕ່ຳ" },
+      { icon: "🥊", category: "Muay Thai / Training", fee: "15%", principle: "Package ໄລຍະສັ້ນ/ຍາວ" },
+      { icon: "👨‍⚕️", category: "Specialist / Consultant", fee: "10%", principle: "ຄ່າບໍລິການວິຊາຊີບ" },
+      { icon: "📦", category: "WOS Bundled Journey", fee: "20%+", principle: "WOS ລວມຫຼາຍບໍລິການ ແລະ ບໍລິຫານ Journey" },
+    ],
+    feeScheduleNote:
+      "ອັດຕາຄ່າທຳນຽມອາດປັບຕາມປະລິມານການຈອງ ໄລຍະເວລາສັນຍາ ແລະ ຮູບແບບຄວາມຮ່ວມມື — ຕິດຕໍ່ທີມ WOS ເພື່ອຮັບຂໍ້ສະເໜີທີ່ເໝາະສົມກັບທຸລະກິດຂອງທ່ານ",
     disclaimer: "ລາຍລະອຽດຄ່າຄອມມິຊັນ ແລະ ເງື່ອນໄຂສະບັບສົມບູນຈະລະບຸໄວ້ໃນ Pilot Agreement / MOU ທີ່ລົງນາມຮ່ວມກັນ",
   },
   mou: {
@@ -206,31 +219,6 @@ export const lo: PartnerPageContent = {
       { label: "ຮອບການຈ່າຍເງິນຄູ່ຮ່ວມທຸລະກິດ", target: "ພາຍໃນ 30 ວັນຫຼັງປິດຮອບບິນ" },
     ],
   },
-  prepare: {
-    eyebrow: "PARTNER CHECKLIST",
-    headline: "ຄູ່ຮ່ວມທຸລະກິດຕ້ອງກຽມຫຍັງແດ່",
-    items: [
-      "ຂໍ້ມູນບໍລິສັດ / ທຸລະກິດ",
-      "ໃບອະນຸຍາດທີ່ກ່ຽວຂ້ອງ",
-      "ລາຍການບໍລິການ",
-      "ລາຄາ",
-      "ຮູບພາບບໍລິການ / ສະຖານທີ່",
-      "ຕາຕະລາງເວລາທີ່ໃຫ້ບໍລິການໄດ້",
-      "ນະໂຍບາຍການຍົກເລີກ",
-      "ຜູ້ຕິດຕໍ່ຫຼັກ",
-      "ຂໍ້ມູນການຮັບຊຳລະເງິນ",
-      "Service Package ສຳລັບລູກຄ້າຕ່າງປະເທດ",
-    ],
-    ctaText: "ເລີ່ມສະໝັກເປັນ WOS Founding Partner",
-    ctaLink: "/partner/apply",
-  },
-  cta: {
-    headline: "ພ້ອມທີ່ຈະເຕີບໂຕໄປນຳກັນແລ້ວບໍ?",
-    subtext: "ເລີ່ມຕົ້ນຄວາມຮ່ວມມືກັບ WOS ມື້ນີ້ ພຽງແຕ່ກົດປຸ່ມຂ້າງລຸ່ມ ທີມງານຂອງພວກເຮົາຈະຕິດຕໍ່ຫາທ່ານພາຍໃນ 48 ຊົ່ວໂມງ",
-    buttonText: "ເລີ່ມຕົ້ນເປັນຄູ່ຮ່ວມທຸລະກິດ →",
-    buttonLink: "/partner/apply",
-    gateLabel: "BOARDING NOW",
-  },
   seo: {
     title: "ເປັນຄູ່ຮ່ວມທຸລະກິດກັບ WOS | Medical Tourism Partner Network",
     description: "ຮ່ວມເປັນຄູ່ຮ່ວມທຸລະກິດກັບ WOS ລະບົບນິເວດການທ່ອງທ່ຽວເຊີງການແພດທີ່ໂປ່ງໃສ ປອດໄພ ແລະ ເຕີບໂຕຢ່າງຍືນຍົງ",
@@ -238,7 +226,7 @@ export const lo: PartnerPageContent = {
   },
   applyForm: {
     eyebrow: "PARTNER APPLICATION",
-    headline: "ສະໝັກເປັນຄູ່ຮ່ວມທຸລະກິດກັບ WOS",
+    headline: "Apply to Become a Founding Partner",
     subheadline: "ປ້ອນຂໍ້ມູນຂ້າງລຸ່ມ ທີມງານຈະກວດສອບ ແລະ ຕິດຕໍ່ກັບພາຍໃນ 48 ຊົ່ວໂມງ",
     sections: {
       company: "ຂໍ້ມູນອົງກອນ",

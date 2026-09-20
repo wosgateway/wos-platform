@@ -1,8 +1,26 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
+import { usePathname, useSearchParams } from 'next/navigation';
 import type { Session } from '@supabase/supabase-js';
 import { createClient } from '@/lib/supabase/client';
+import { NewActivityAlert } from '@/components/admin/NewActivityAlert';
+
+const NAV_LINKS = [
+  { href: '/admin', label: 'ภาพรวม' },
+  // ลิงก์ตรงไปแท็บ "พาร์ทเนอร์" ใน /admin (ดู page.tsx — แท็บนั้นอ่าน/เขียน
+  // ผ่าน ?tab= แล้ว) เพิ่มกลับเข้ามาเพราะก่อน PHASE 5, /admin เองคือหน้า
+  // พาร์ทเนอร์อยู่แล้ว ตอนเปลี่ยน default tab เป็น "ภาพรวม" ลืมเพิ่มทางลัด
+  // ตรงนี้ไว้ ทำให้ดูเหมือนหน้าดูข้อมูลพาร์ทเนอร์หายไปจาก nav
+  { href: '/admin?tab=partners', label: 'พาร์ทเนอร์' },
+  { href: '/admin?tab=consultations', label: 'ปรึกษาฟรี' },
+  { href: '/admin?tab=transport-pricing', label: 'ราคารถ' },
+  { href: '/admin/journeys', label: 'ทริป' },
+  { href: '/admin/drivers', label: 'คนขับ' },
+  { href: '/admin/orders', label: 'คำสั่งจอง' },
+  { href: '/admin/pending-assignments', label: 'รอมอบหมาย' },
+];
 
 // Real Supabase Auth session gate. Team accounts must be created ahead of
 // time in the Supabase Dashboard (Authentication > Users) — this only
@@ -21,7 +39,12 @@ import { createClient } from '@/lib/supabase/client';
 // เรียกผ่าน .rpc() ได้ตรงจาก client เพราะฟังก์ชันเป็น SECURITY DEFINER
 // อยู่แล้ว ไม่ต้องเปิด table เพิ่ม
 export function AdminGate({ children }: { children: React.ReactNode }) {
-  const supabase = createClient();
+  const pathname = usePathname();
+  // ใช้เช็คว่าอยู่แท็บไหนของ /admin (?tab=partners ฯลฯ) เพื่อไฮไลต์ปุ่ม nav
+  // ให้ถูก — ต้องมี <Suspense> ครอบ AdminGate อยู่ (ดู admin/layout.tsx)
+  // ไม่งั้น useSearchParams() จะพังตอน build
+  const searchParams = useSearchParams();
+  const supabase = createClient('admin');
   const [session, setSession] = useState<Session | null | undefined>(undefined);
   const [isPlatformAdmin, setIsPlatformAdmin] = useState<boolean | undefined>(undefined);
   const [email, setEmail] = useState('');
@@ -138,9 +161,34 @@ export function AdminGate({ children }: { children: React.ReactNode }) {
     <div>
       <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
         <span className="text-sm text-slate-500">เข้าสู่ระบบเป็น {session.user.email}</span>
-        <button onClick={handleLogout} className="text-sm font-medium text-slate-500 hover:text-red-600">
-          ออกจากระบบ
-        </button>
+        <div className="flex items-center gap-1">
+          <NewActivityAlert />
+          <button onClick={handleLogout} className="text-sm font-medium text-slate-500 hover:text-red-600">
+            ออกจากระบบ
+          </button>
+        </div>
+      </div>
+      <div className="flex gap-1 overflow-x-auto border-b border-slate-100 px-4 py-1.5">
+        {NAV_LINKS.map((link) => {
+          const [linkPath, linkQuery] = link.href.split('?');
+          const linkTab = new URLSearchParams(linkQuery ?? '').get('tab');
+          const currentTab = searchParams.get('tab');
+          const active =
+            linkPath === '/admin'
+              ? pathname === '/admin' && currentTab === linkTab
+              : pathname?.startsWith(linkPath);
+          return (
+            <Link
+              key={link.href}
+              href={link.href}
+              className={`shrink-0 rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                active ? 'bg-primary/10 text-primary-dark' : 'text-slate-500 hover:text-slate-700'
+              }`}
+            >
+              {link.label}
+            </Link>
+          );
+        })}
       </div>
       {children}
     </div>

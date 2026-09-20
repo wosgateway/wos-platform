@@ -13,3 +13,4 @@ export function getPartnerContent(locale: string): PartnerPageContent {
 export const partnerLocales: Locale[] = ["th", "en", "lo"];
 
 export * from "./types";
+export * from "./images";

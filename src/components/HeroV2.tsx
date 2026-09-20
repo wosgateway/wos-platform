@@ -1,7 +1,5 @@
 import { getTranslations } from 'next-intl/server';
-import { ArrowRight } from 'lucide-react';
 import { Link } from '@/i18n/navigation';
-import WOSNetworkDiagram from '@/components/WOSNetworkDiagram';
 import HeroBackgroundSlideshow, { type HeroImage } from '@/components/HeroBackgroundSlideshow';
 import { TrustBar } from '@/components/TrustBar';
 import { fetchActivePartnerCount } from '@/lib/data';
@@ -29,6 +27,18 @@ import { fetchActivePartnerCount } from '@/lib/data';
  *
  * Copy (eyebrow/title/subtitle/CTAs) lives entirely in home.heroV2.* per
  * locale (th/en/lo) — no hardcoded text in this component.
+ *
+ * FINAL (2026-09) — this is the version to ship. Replaces the older
+ * src/components/HeroV2.tsx that rendered <WOSNetworkDiagram /> in a
+ * right-hand grid column: that diagram was explicitly dropped per the
+ * TrustBar Step 12/13 review ("ไม่ต้องใส่ diagram กลับมาแล้วครับ" — Hero
+ * structure agreed as photo → short copy → CTA → trust signal, nothing
+ * else). CTA row here is a 2-button pairing (consultation = solid
+ * primary, browse-programs = outline secondary) matching the pairing
+ * Header.tsx's own consultation CTA comment describes, instead of the
+ * old 3-button row. All t() keys used below (including `ctaHint`) exist
+ * in th/en/lo.json home.heroV2 — verified against the live message
+ * files before this was finalized.
  */
 export default async function HeroV2({ images }: { images: HeroImage[] }) {
   const t = await getTranslations('home.heroV2');
@@ -95,58 +105,59 @@ export default async function HeroV2({ images }: { images: HeroImage[] }) {
 
         {/* ===== Left: copy ===== */}
         <div className="min-w-0 max-w-xl">
-          <span className="inline-block break-words rounded-full border border-gold/30 bg-gold/10 px-4 py-1.5 text-xs font-semibold uppercase tracking-wider text-gold">
-            {t('eyebrow')}
-          </span>
+          <div className="flex items-center gap-3.5">
+            <span aria-hidden="true" className="h-px w-11 shrink-0 bg-gold/75" />
+            <span className="break-words text-xs font-semibold uppercase tracking-[0.22em] text-gold">
+              {t('eyebrow')}
+            </span>
+          </div>
 
           <h1 className="mt-6 break-words text-h1 text-white">{t('title')}</h1>
 
           <p className="mt-5 max-w-lg break-words text-body-lg text-white/80">{t('subtitle')}</p>
 
           <div className="mt-9 flex flex-wrap items-center gap-4">
+            {/* Primary CTA — promoted to solid gold (2026-09 redesign) so the
+                consultation path reads as the default next step, not a
+                footnote. Same route/query as before (?source=homepage_hero
+                still matches the SOURCES allowlist in
+                src/app/api/consultation/route.ts), just re-ranked visually. */}
+            <Link
+              href="/consultation?source=homepage_hero"
+              className="inline-flex items-center justify-center rounded-full bg-gold px-8 py-[0.85rem] font-semibold text-navy-dark transition-all duration-200 hover:bg-gold-dark hover:-translate-y-px"
+            >
+              {t('ctaConsultation')}
+            </Link>
+            {/* Secondary CTA — demoted to outline; still the "browse programs
+                yourself" path for people who don't want to talk to anyone
+                first. Copy comes from home.heroV2.ctaPrimary (unchanged). */}
             <a
               href="#categories"
-              className="group inline-flex items-center justify-center gap-2 rounded-full bg-gold px-8 py-[0.85rem] font-semibold text-navy-dark transition-all duration-200 hover:bg-gold-dark hover:scale-[1.01]"
+              className="inline-flex items-center justify-center rounded-full border-2 border-white/70 px-8 py-[0.8rem] font-semibold text-white transition-all duration-200 hover:bg-white hover:text-navy"
             >
               {t('ctaPrimary')}
-              <ArrowRight
-                className="h-4 w-4 transition-transform duration-200 ease-out group-hover:translate-x-1"
-                strokeWidth={2.25}
-                aria-hidden="true"
-              />
             </a>
-            <Link
-              href="/partner"
-              className="inline-flex items-center justify-center gap-2 rounded-full border-2 border-white/70 px-8 py-[0.8rem] font-semibold text-white transition-all duration-200 hover:bg-white hover:text-navy"
-            >
-              {t('ctaSecondary')}
-            </Link>
           </div>
+
+          {/* Small reassurance line under the CTA row, nudging undecided
+              visitors toward the (now-primary) consultation CTA above. */}
+          <p className="mt-3 text-sm text-white/60">{t('ctaHint')}</p>
+
+          {/* Partner CTA — demoted from a full-size pill to a small inline
+              text link (brief: de-emphasize, don't remove or change href). */}
+          <Link
+            href="/partner"
+            className="mt-2 inline-block text-sm font-medium text-white/70 underline decoration-white/30 underline-offset-4 transition-colors hover:text-gold hover:decoration-gold/60"
+          >
+            {t('ctaSecondary')}
+          </Link>
 
           <TrustBar align="left" partnerCount={partnerCount} />
         </div>
-
-        {/* ===== Right: WOS network diagram =====
-            Gentle float on the whole diagram — motion-safe only (skipped
-            automatically under prefers-reduced-motion) — layered on top of
-            the diagram's own internal pulse/line-flow motion. Positioned
-            (mt-10) so it sits clear of the subject's head in the photo
-            behind it. */}
-        <div
-          data-network-slot
-          className="relative mx-auto mt-10 hidden w-full max-w-md items-center justify-center lg:flex"
-          style={{ aspectRatio: '1 / 1' }}
-        >
-          <style>{`
-            @keyframes wos-hero-float {
-              0%, 100% { transform: translateY(0); }
-              50% { transform: translateY(-8px); }
-            }
-          `}</style>
-          <div className="h-full w-full motion-safe:animate-[wos-hero-float_6s_ease-in-out_infinite]">
-            <WOSNetworkDiagram centerSubLabel={t('badge')} />
-          </div>
-        </div>
+        {/* No right-column element on desktop anymore — the background
+            photo (absolutely positioned above) fills that half of the
+            section on its own. The grid's second track is intentionally
+            left empty so the copy column keeps its half-width measure. */}
       </div>
     </section>
   );

@@ -39,13 +39,15 @@ export function WhyWosV2({
       <div className="mx-auto max-w-6xl px-4">
         <h2 className="text-h2 text-center text-navy">{title}</h2>
 
-        <div className="mt-8 grid grid-cols-2 gap-3 sm:mt-14 sm:gap-5 lg:grid-cols-4 lg:gap-6">
+        <div
+          className="-mx-4 mt-8 flex snap-x gap-3 overflow-x-auto px-4 pb-2 [scroll-padding-inline:1rem] [-ms-overflow-style:none] [scrollbar-width:none] sm:mx-0 sm:mt-14 sm:grid sm:grid-cols-2 sm:gap-5 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4 lg:gap-6 [&::-webkit-scrollbar]:hidden"
+        >
           {items.map((item, i) => {
             const Icon = ICONS[i] ?? ShieldCheck;
             return (
               <div
                 key={i}
-                className="group relative rounded-2xl p-[1.5px] transition-transform duration-300 hover:-translate-y-1"
+                className="group relative w-[70%] shrink-0 snap-start rounded-2xl p-[1.5px] transition-transform duration-300 hover:-translate-y-1 sm:w-auto sm:shrink sm:snap-none"
                 style={{
                   backgroundImage:
                     'linear-gradient(120deg, #C9974A 0%, #1D63A6 35%, #C9974A 70%, #1D63A6 100%)',

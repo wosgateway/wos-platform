@@ -41,6 +41,24 @@ export interface PartnerOrderItem {
   deposit_required: number;
   deposit_paid: number;
   balance_remaining: number;
+  // Phase 5 (migration 102) — GENERATED, price - deposit_required.
+  // The amount owed directly to THIS partner, fixed regardless of
+  // payment status. NULL until an admin assigns a package to a
+  // "let team decide" item. Not the same thing as balance_remaining
+  // (a payment-progress figure) — see migration 102's column
+  // comments for the full distinction.
+  partner_balance: number | null;
+  // Phase 1 partner-portal balance confirmation (migration 104) — how
+  // much of partner_balance the partner has already confirmed
+  // receiving directly from the customer. Always <= partner_balance
+  // (enforced by partner_confirm_balance_payment(), not by this app).
+  partner_balance_confirmed: number;
+  // 098 + 103 — WOS's commission on this item, computed as
+  // partner_balance * commission_rate_snapshot / 100 by a DB trigger.
+  // NULL until an admin assigns a package (same lifecycle as
+  // partner_balance itself — see 103's column comments).
+  commission_amount: number | null;
+  commission_rate_snapshot: number | null;
   status: string;
   scheduled_date: string | null;
   scheduled_time: string | null;
@@ -63,6 +81,8 @@ export interface PartnerOrder {
   total_deposit_required: number;
   total_deposit_paid: number;
   total_balance_remaining: number;
+  // Phase 5 (migration 102) — GENERATED, total_amount - total_deposit_required.
+  total_partner_balance: number;
   notes: string | null;
   attachment_url: string | null;
   created_at: string;
@@ -92,6 +112,7 @@ interface RawOrder {
   total_deposit_required: number;
   total_deposit_paid: number;
   total_balance_remaining: number;
+  total_partner_balance: number;
   notes: string | null;
   attachment_url: string | null;
   created_at: string;
@@ -140,6 +161,10 @@ export async function getPartnerOrderById(
         deposit_required,
         deposit_paid,
         balance_remaining,
+        partner_balance,
+        partner_balance_confirmed,
+        commission_amount,
+        commission_rate_snapshot,
         status,
         scheduled_date,
         scheduled_time,
@@ -187,6 +212,7 @@ export async function getPartnerOrderById(
     total_deposit_required: order.total_deposit_required,
     total_deposit_paid: order.total_deposit_paid,
     total_balance_remaining: order.total_balance_remaining,
+    total_partner_balance: order.total_partner_balance,
     notes: order.notes,
     attachment_url: order.attachment_url,
     created_at: order.created_at,
@@ -201,6 +227,10 @@ export async function getPartnerOrderById(
       deposit_required: item.deposit_required,
       deposit_paid: item.deposit_paid,
       balance_remaining: item.balance_remaining,
+      partner_balance: item.partner_balance,
+      partner_balance_confirmed: item.partner_balance_confirmed,
+      commission_amount: item.commission_amount,
+      commission_rate_snapshot: item.commission_rate_snapshot,
       status: item.status,
       scheduled_date: item.scheduled_date,
       scheduled_time: item.scheduled_time,
@@ -238,6 +268,10 @@ export interface PartnerOrderListItem {
   service_type: string;
   status: string; // order_items status: pending | confirmed | checked_in | completed | cancelled | refunded
   price: number;
+  // Phase 5 (migration 102) — the amount owed directly to this
+  // partner (price minus WOS's own booking-fee cut), NOT the same
+  // number as `price`. NULL until an admin assigns a package.
+  partner_balance: number | null;
   quantity: number | null;
   room_quantity: number | null;
   scheduled_date: string | null;
@@ -258,6 +292,7 @@ interface RawOrderListRow {
   package_id: string | null;
   service_type: string;
   price: number;
+  partner_balance: number | null;
   quantity: number | null;
   room_quantity: number | null;
   status: string;
@@ -295,6 +330,7 @@ export async function getPartnerOrders(
       package_id,
       service_type,
       price,
+      partner_balance,
       quantity,
       room_quantity,
       status,
@@ -343,6 +379,7 @@ export async function getPartnerOrders(
       service_type: row.service_type,
       status: row.status,
       price: row.price,
+      partner_balance: row.partner_balance,
       quantity: row.quantity,
       room_quantity: row.room_quantity,
       scheduled_date: row.scheduled_date,

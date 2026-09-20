@@ -23,6 +23,7 @@
 import { NextResponse } from 'next/server';
 import { requireAdmin } from '@/lib/admin/require-admin';
 import { withRefreshedCookies } from '@/lib/admin/with-refreshed-cookies';
+import { logAdminAction } from '@/lib/admin/audit-log';
 import { createServiceClient } from '@/lib/supabase/service';
 import { safeUrlFetch, SafeFetchError } from '@/lib/security/safe-url-fetch';
 import { simpleRateLimit } from '@/lib/rate-limit';
@@ -124,7 +125,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
 
   const { data: partner, error: fetchErr } = await supabase
     .from('partners')
-    .select('id')
+    .select('id, name, latitude, longitude, location_status')
     .eq('id', partnerId)
     .single();
 
@@ -192,7 +193,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
       location_resolved_at: new Date().toISOString(),
     })
     .eq('id', partnerId)
-    .select('id, latitude, longitude, location_status, location_resolved_at')
+    .select('id, latitude, longitude, location_status, location_source, location_resolved_at')
     .single();
 
   if (updateErr || !updated) {
@@ -204,6 +205,31 @@ export async function POST(request: Request, { params }: { params: { id: string 
       cookieCarrier
     );
   }
+
+  // Resolving writes real coordinates to a partner row, same as
+  // suspend/verify-location — logged for the same reason: recoverable
+  // "who set what, when" ahead of anything reaching the public map.
+  await logAdminAction({
+    actorUserId: auth.user.id,
+    actorEmail: auth.user.email,
+    action: 'partner.location_resolve',
+    entityType: 'partner',
+    entityId: partnerId,
+    before: {
+      latitude: partner.latitude,
+      longitude: partner.longitude,
+      location_status: partner.location_status,
+    },
+    after: {
+      latitude: updated.latitude,
+      longitude: updated.longitude,
+      location_status: updated.location_status,
+    },
+    metadata: {
+      name: partner.name,
+      google_maps_url: googleMapsUrl,
+    },
+  });
 
   return withRefreshedCookies(NextResponse.json({ success: true, partner: updated }), cookieCarrier);
 }

@@ -13,7 +13,9 @@
       "subtitle": "Connecting every step of your healthcare journey between Laos and Thailand.",
       "ctaPrimary": "Find Healthcare",
       "ctaSecondary": "Become a Partner",
-      "badge": "Health Journey Platform"
+      "badge": "Health Journey Platform",
+      "ctaConsultation": "Free WOS Consultation",
+      "ctaHint": "Not sure where to start? Get a free consultation with the WOS team."
     },
     "trustBar": {
       "items": [
@@ -30,8 +32,8 @@
           "label": "support team"
         },
         {
-          "value": "2 countries",
-          "label": "Thailand–Laos"
+          "value": "Thailand–Laos",
+          "label": ""
         }
       ],
       "headline": "Trusted Cross-Border Network"
@@ -132,34 +134,16 @@
       "filteredBy": "Filtered by: {goal}",
       "clearFilter": "Show all categories"
     },
-    "categoriesTitle": "Choose Your Health Goal",
+    "categoriesTitle": "Health Program Categories",
+    "categoriesTitleFiltered": "Programs for {goal}",
     "categoriesSubtitle": "Whether it's prevention, recovery, or treatment, we'll connect you with the right partner",
     "featured": {
-      "title": "Featured Programs",
-      "subtitle": "Handpicked promotions and popular programs from our partners",
+      "title": "Recommended Health Programs",
+      "subtitle": "Handpicked promotions and popular health programs from our partners",
       "prev": "Previous program",
-      "next": "Next program"
-    },
-    "howItWorks": {
-      "title": "How WOS Works",
-      "subtitle": "Three simple steps, from finding a program to traveling home with confidence",
-      "steps": [
-        {
-          "icon": "🔍",
-          "title": "Choose Your Health Goal",
-          "desc": "From checkups to recovery to aesthetics — pick what matters to you"
-        },
-        {
-          "icon": "🤝",
-          "title": "Book Everything in One Place",
-          "desc": "Add hotel and transport to your program in a single booking, with clear pricing"
-        },
-        {
-          "icon": "🌿",
-          "title": "Travel with Confidence",
-          "desc": "Our team supports you the whole way, from appointment to the trip home"
-        }
-      ]
+      "next": "Next program",
+      "partnersTitle": "Hotel & Transport Partners",
+      "partnersSubtitle": "Hotels and transfer services ready to take care of your journey"
     },
     "testimonials": {
       "title": "What Our Patients Say",
@@ -263,6 +247,7 @@
   },
   "nav": {
     "home": "Home",
+    "login": "Log in",
     "services": "Services",
     "partners": "Partners",
     "contact": "Contact",
@@ -270,7 +255,8 @@
     "myTrip": "My Trip",
     "viewAllServices": "View all services",
     "openMenu": "Open menu",
-    "closeMenu": "Close menu"
+    "closeMenu": "Close menu",
+    "selectLanguage": "Select language"
   },
   "common": {
     "partnersCount": "{count} partners",
@@ -324,7 +310,7 @@
       "returnSectionTitle": "Return trip",
       "name": "Full name",
       "phone": "Phone number",
-      "line": "Line ID",
+      "line": "LINE / WhatsApp",
       "country": "Current country of residence",
       "select": "-- Select --",
       "other": "Other",
@@ -345,10 +331,18 @@
       "vehicleTypeVipVan": "🚐 VIP Van",
       "vehicleTypeMedicalTransport": "🚑 Medical transport",
       "vehicleTypeOtherPlaceholder": "Enter vehicle type",
+      "vehicleTypeStartingFrom": "Starting from {price}",
       "passengerCount": "Number of passengers",
       "medicalAssistance": "🚑 Medical assistance transport",
       "filterByProvince": "Filter by province",
-      "allProvinces": "All provinces"
+      "allProvinces": "All provinces",
+      "filterByRoomType": "Filter by room type",
+      "allRoomTypes": "All room types",
+      "roomTypeSingle": "Single room",
+      "roomTypeDouble": "Double room",
+      "roomTypeTwin": "Twin room",
+      "roomTypeDeluxe": "Deluxe room",
+      "roomTypeSuite": "Suite"
     },
     "summary": {
       "main": "Main program",
@@ -964,5 +958,558 @@
     "submitting": "Searching...",
     "error": "Please enter both order number and phone number.",
     "notFound": "Booking not found. Please check your order number and phone number and try again."
+  },
+  "myTrip": {
+    "orderLabel": "Your booking",
+    "customerPrefix": "Mr./Ms.",
+    "journeyHeading": "Your itinerary",
+    "unassignedItemFallback": "Awaiting hotel/transport selection",
+    "waitingAssignmentBadge": "Awaiting team assignment",
+    "hotelStayLabel": "Stay {checkin} to {checkout}",
+    "roomsLabel": "{count} room(s)",
+    "itemPriceLabel": "Price: {amount}",
+    "dailyLabel": "Full-day charter · {count} day(s) · starts {time}",
+    "roundTripLabel": "Round trip · pickup {pickup} · return {dropoff}",
+    "oneWayLabel": "One way · pickup {pickup}",
+    "pickupLabel": "Pickup: {location}",
+    "dropoffLabel": "Drop-off: {location}",
+    "totalLabel": "Total amount",
+    "depositPaidLabel": "Deposit paid",
+    "balanceLabel": "Balance remaining",
+    "payButton": "💳 Pay now",
+    "pendingReviewBanner": "🔍 Our team is reviewing the slip you submitted. Please wait (usually within 24 hours).",
+    "paymentHistoryHeading": "Payment history",
+    "reasonLabel": "Reason",
+    "viewSlip": "View slip",
+    "retryButton": "Retry",
+    "loadPaymentsFailed": "Failed to load payment history",
+    "draftNotice": "This booking hasn't been confirmed yet. Please confirm your quotation first.",
+    "goToQuote": "Go to quotation",
+    "loadFailed": "Failed to load data",
+    "status": {
+      "draft": {
+        "label": "Draft quotation",
+        "desc": "Items not yet confirmed"
+      },
+      "pending_deposit": {
+        "label": "⏳ Deposit pending",
+        "desc": "Items confirmed — please pay the deposit to confirm your booking"
+      },
+      "pending_deposit_unassigned": {
+        "desc": "Items confirmed — please wait for our team to price the remaining items before paying the deposit"
+      },
+      "pending_verification": {
+        "label": "🔍 Verifying payment",
+        "desc": "Our team received your slip and is verifying it (usually within 24 hours)"
+      },
+      "deposit_paid": {
+        "label": "✅ Deposit paid",
+        "desc": "Our team has verified your deposit payment"
+      },
+      "confirmed": {
+        "label": "✅ Booking confirmed",
+        "desc": "Your booking has been confirmed"
+      },
+      "checked_in": {
+        "label": "🏨 Checked in",
+        "desc": "Your journey is underway"
+      },
+      "completed": {
+        "label": "🎉 Journey completed",
+        "desc": "Thank you for traveling with WOS"
+      },
+      "cancelled": {
+        "label": "❌ Cancelled",
+        "desc": "This booking has been cancelled"
+      },
+      "refunded": {
+        "label": "↩️ Refunded",
+        "desc": "Your refund has been processed"
+      }
+    },
+    "itemStatus": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "checked_in": "Checked in",
+      "completed": "Completed",
+      "cancelled": "Cancelled",
+      "refunded": "Refunded"
+    },
+    "paymentStatus": {
+      "waiting_verification": "🔍 Verifying",
+      "pending": "🔍 Verifying",
+      "verified": "✅ Verified",
+      "rejected": "❌ Rejected"
+    },
+    "contactLine": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
+    "whatsappCta": "💬 Chat with WOS on WhatsApp"
+  },
+  "privacy": {
+    "pageTitle": "Privacy Policy",
+    "lastUpdated": "Last Updated: August 30, 2026",
+    "intro": [
+      "WOS (“WOS”, “we”, “us”, or “our”) respects your privacy and is committed to protecting your personal information.",
+      "This Privacy Policy explains how WOS collects, uses, stores, discloses, and protects personal information when you use our website, booking services, healthcare and wellness coordination services, customer support, partner services, and related communication services.",
+      "By using WOS services, you acknowledge that you have read and understood this Privacy Policy."
+    ],
+    "sections": [
+      {
+        "title": "1. Who We Are",
+        "paragraphs": [
+          "WOS is a healthcare, wellness, travel, and service coordination platform that helps customers arrange and manage services in Thailand, including healthcare and wellness services, transportation, accommodation, appointments, and related concierge services."
+        ],
+        "fields": [
+          {
+            "label": "Data Controller / Service Provider",
+            "value": "หจก. รอยัล บริตจ์ 99"
+          },
+          {
+            "label": "Website",
+            "value": "https://www.wos.asia/th"
+          },
+          {
+            "label": "Privacy Contact",
+            "value": "hello@wos.asia"
+          },
+          {
+            "label": "Business Address",
+            "value": "211 Moo 3, T. Ban Chan, A. Muang Udon Thani 41000, Thailand"
+          },
+          {
+            "label": "Business Registration Number",
+            "value": "0413568000586"
+          }
+        ],
+        "closing": "If you have questions regarding this Privacy Policy or how your personal information is handled, please contact us using the information above."
+      },
+      {
+        "title": "2. Information We Collect",
+        "paragraphs": [
+          "Depending on how you use WOS, we may collect the following categories of information."
+        ],
+        "subsections": [
+          {
+            "subtitle": "2.1 Identity and Contact Information",
+            "items": [
+              "Full name",
+              "Preferred name",
+              "Date of birth, where necessary for a service",
+              "Nationality",
+              "Gender, where necessary for a service",
+              "Telephone number",
+              "Email address",
+              "Messaging contact information",
+              "Passport or identification information where required for travel or service coordination"
+            ]
+          },
+          {
+            "subtitle": "2.2 Booking and Journey Information",
+            "items": [
+              "Booking details",
+              "Appointment dates and times",
+              "Travel dates",
+              "Arrival and departure information",
+              "Transportation requirements",
+              "Accommodation information",
+              "Healthcare or wellness appointment information",
+              "Customer preferences",
+              "Special requests",
+              "Booking status",
+              "Service provider information",
+              "Customer journey and service coordination information"
+            ]
+          },
+          {
+            "subtitle": "2.3 Payment Information",
+            "items": [
+              "Payment amount",
+              "Currency",
+              "Payment status",
+              "Payment method",
+              "Transaction reference",
+              "Payment confirmation",
+              "Payment or transfer evidence uploaded by the customer"
+            ],
+            "note": "WOS does not intentionally collect or store your full payment card number unless specifically stated at the point of payment. Where payment services are provided by a third-party payment provider, that provider may process payment information according to its own privacy policy."
+          },
+          {
+            "subtitle": "2.4 Communications",
+            "items": [
+              "Emails",
+              "Customer support messages",
+              "Booking communications",
+              "Service-related messages",
+              "WhatsApp communications",
+              "Other communications with WOS"
+            ]
+          },
+          {
+            "subtitle": "2.5 Technical Information",
+            "items": [
+              "IP address",
+              "Browser type",
+              "Device type",
+              "Operating system",
+              "Pages visited",
+              "Access time",
+              "General website usage information",
+              "Security and diagnostic information"
+            ],
+            "note": "We use this information primarily for security, service operation, troubleshooting, and improving our platform."
+          }
+        ]
+      },
+      {
+        "title": "3. Health and Wellness Information",
+        "paragraphs": [
+          "Certain WOS services may involve information relating to a customer's health, medical needs, wellness goals, appointments, or healthcare services.",
+          "We treat health-related information as sensitive information and only collect or process it when necessary for providing the requested service, coordinating with an authorized healthcare or wellness provider, complying with legal requirements, or based on an appropriate legal basis or consent where required.",
+          "We aim to limit the collection and disclosure of health-related information to what is reasonably necessary for the requested service.",
+          "WOS is not a substitute for a healthcare professional. Medical diagnosis, treatment, and clinical decisions remain the responsibility of the relevant licensed healthcare provider."
+        ]
+      },
+      {
+        "title": "4. How We Use Personal Information",
+        "paragraphs": [
+          "We may use personal information for the following purposes:"
+        ],
+        "items": [
+          "To create and manage customer bookings.",
+          "To coordinate healthcare, wellness, transportation, accommodation, and related services.",
+          "To communicate with customers regarding their bookings and journey.",
+          "To confirm appointments and service arrangements.",
+          "To process and verify payments.",
+          "To provide customer support and concierge services.",
+          "To coordinate services with authorized partners and service providers.",
+          "To send service-related notifications.",
+          "To send WhatsApp notifications when applicable and authorized.",
+          "To maintain booking, payment, and service records.",
+          "To prevent fraud, abuse, unauthorized access, and other security incidents.",
+          "To maintain and improve the WOS platform.",
+          "To comply with applicable laws and lawful requests from authorities.",
+          "To protect the rights, safety, property, and security of WOS, our customers, partners, and other persons."
+        ],
+        "closing": "We do not sell customers' personal information as a business model."
+      },
+      {
+        "title": "5. WhatsApp Communications",
+        "paragraphs": [
+          "WOS may use WhatsApp to provide service-related communications, including notifications concerning:"
+        ],
+        "items": [
+          "Order confirmation",
+          "Payment verification",
+          "Partner assignment",
+          "Booking updates",
+          "Service coordination",
+          "Other transactional or customer-service messages"
+        ],
+        "extra": [
+          "WhatsApp communications may be processed through Meta's WhatsApp Business Platform.",
+          "The information required to send these communications may include your name, telephone number, booking reference, and relevant service information.",
+          "WOS uses WhatsApp primarily for transactional and service-related communications. You should not send unnecessary sensitive information through WhatsApp.",
+          "Your use of WhatsApp is also subject to Meta's applicable terms and privacy policies.",
+          "If you no longer wish to receive non-essential communications, you may contact WOS using the contact information provided in this Privacy Policy. Certain essential service notifications may still be necessary to fulfill your booking or requested services."
+        ]
+      },
+      {
+        "title": "6. Sharing Information With Service Providers and Partners",
+        "paragraphs": [
+          "WOS may share relevant personal information with trusted service providers and partners when necessary to provide the service requested by the customer.",
+          "Depending on the customer's journey, these parties may include:"
+        ],
+        "items": [
+          "Hospitals",
+          "Clinics",
+          "Wellness centers",
+          "Healthcare professionals",
+          "Hotels and accommodation providers",
+          "Transportation providers",
+          "Travel-related service providers",
+          "Payment service providers",
+          "Technology and hosting providers",
+          "Customer communication providers",
+          "Other service providers specifically required to fulfill a customer's booking"
+        ],
+        "extra": [
+          "We aim to share only information reasonably necessary for the relevant service.",
+          "For example, a transportation provider may receive information necessary to arrange a pickup, while a healthcare provider may receive information necessary to arrange an appointment.",
+          "Partners and service providers may process information according to their own legal obligations and privacy policies."
+        ]
+      },
+      {
+        "title": "7. International Transfers",
+        "paragraphs": [
+          "Some WOS technology, hosting, communication, payment, or service providers may operate in countries outside Thailand.",
+          "Where personal information is transferred internationally, WOS will take reasonable steps to ensure that the transfer is handled in accordance with applicable data protection laws and appropriate safeguards."
+        ]
+      },
+      {
+        "title": "8. Data Retention",
+        "paragraphs": [
+          "WOS retains personal information only for as long as reasonably necessary for the purposes described in this Privacy Policy, including:"
+        ],
+        "items": [
+          "Providing and completing requested services",
+          "Maintaining booking and transaction records",
+          "Resolving disputes",
+          "Maintaining security records",
+          "Complying with legal, accounting, tax, and regulatory requirements",
+          "Enforcing agreements and protecting legal rights"
+        ],
+        "closing": "When personal information is no longer reasonably required, WOS will take reasonable steps to delete, anonymize, or securely dispose of it, subject to applicable legal requirements."
+      },
+      {
+        "title": "9. Data Security",
+        "paragraphs": [
+          "WOS takes reasonable technical and organizational measures to protect personal information against unauthorized access, disclosure, alteration, loss, or destruction. Security measures may include:"
+        ],
+        "items": [
+          "Access controls",
+          "Authentication mechanisms",
+          "Database security controls",
+          "Storage access controls",
+          "Encryption or secure transmission where appropriate",
+          "Server-side processing of sensitive operations",
+          "Monitoring and logging",
+          "Role-based access to administrative systems"
+        ],
+        "closing": "However, no internet transmission or electronic storage system can be guaranteed to be completely secure."
+      },
+      {
+        "title": "10. Customer Rights",
+        "paragraphs": [
+          "Subject to applicable law, you may have rights concerning your personal information, including the right to:"
+        ],
+        "items": [
+          "Request access to your personal information",
+          "Request correction of inaccurate information",
+          "Request deletion of personal information where legally permitted",
+          "Request restriction of certain processing",
+          "Object to certain processing",
+          "Withdraw consent where processing is based on consent",
+          "Request information about how your personal information is processed",
+          "Submit a complaint to the relevant data protection authority"
+        ],
+        "closing": "Requests should be sent to hello@wos.asia. We may need to verify your identity before completing certain requests."
+      },
+      {
+        "title": "11. Cookies and Similar Technologies",
+        "paragraphs": [
+          "WOS may use cookies and similar technologies to:"
+        ],
+        "items": [
+          "Keep the website functioning",
+          "Maintain sessions",
+          "Improve website performance",
+          "Understand website usage",
+          "Improve user experience",
+          "Maintain security"
+        ],
+        "closing": "Where required by applicable law, WOS will provide appropriate notice or obtain consent before using non-essential cookies or similar technologies."
+      },
+      {
+        "title": "12. Third-Party Services",
+        "paragraphs": [
+          "WOS may use third-party services to operate parts of the platform, including hosting, database, payment, communications, analytics, maps, authentication, and other infrastructure services.",
+          "Third-party services may process information according to their own terms and privacy policies. Examples may include services used to provide:"
+        ],
+        "items": [
+          "Cloud hosting",
+          "Database infrastructure",
+          "Payment processing",
+          "WhatsApp communications",
+          "Maps and location services",
+          "Authentication",
+          "File and document storage",
+          "Email or customer communication"
+        ],
+        "closing": "WOS does not control the privacy practices of independent third parties."
+      },
+      {
+        "title": "13. Children's Privacy",
+        "paragraphs": [
+          "WOS services are not intentionally directed toward children.",
+          "We do not knowingly collect personal information from children in circumstances where such collection is prohibited by applicable law.",
+          "If you believe that a child has provided personal information to WOS without appropriate authorization, please contact us so that we can review and take appropriate action."
+        ]
+      },
+      {
+        "title": "14. Changes to This Privacy Policy",
+        "paragraphs": [
+          "WOS may update this Privacy Policy from time to time to reflect changes to our services, technology, legal requirements, or business practices.",
+          "When we make material changes, we may update the “Last Updated” date and provide additional notice where required.",
+          "We encourage users to review this page periodically."
+        ]
+      },
+      {
+        "title": "15. Contact Us",
+        "paragraphs": [
+          "If you have questions, requests, or concerns regarding this Privacy Policy or your personal information, please contact:"
+        ],
+        "fields": [
+          {
+            "label": "Service Provider",
+            "value": "หจก. รอยัล บริตจ์ 99"
+          },
+          {
+            "label": "Website",
+            "value": "https://www.wos.asia/th"
+          },
+          {
+            "label": "Privacy Email",
+            "value": "hello@wos.asia"
+          },
+          {
+            "label": "Business Address",
+            "value": "211 Moo 3, T. Ban Chan, A. Muang Udon Thani 41000, Thailand"
+          },
+          {
+            "label": "Business Registration Number",
+            "value": "0413568000586"
+          }
+        ]
+      }
+    ]
+  },
+  "tripJourney": {
+    "greeting": "Hello, {name}",
+    "greetingGeneric": "Your trip",
+    "companion": "Travel companion",
+    "itineraryHeading": "Trip itinerary",
+    "noEventsYet": "No events scheduled yet for this trip",
+    "journeyMap": {
+      "heading": "Journey map",
+      "stopCount": "{count} stops",
+      "pickup": "Pickup",
+      "dropoff": "Drop-off",
+      "open": "Open",
+      "openFullRoute": "Open full route in Google Maps"
+    },
+    "hero": {
+      "nowLabel": "Now",
+      "nextLabel": "Next up",
+      "completeTitle": "Your journey is complete",
+      "completeSubtitle": "Thank you for traveling with WOS",
+      "viewDetails": "View details",
+      "openMaps": "Open Maps"
+    },
+    "tripStatus": {
+      "planned": "Planned",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "eventStatus": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "error": {
+      "not_found": "We couldn't find this trip. The link may be incorrect — please contact our team.",
+      "link_revoked": "This link has been revoked. Please contact our team for a new one.",
+      "link_expired": "This link has expired. Please contact our team for a new one.",
+      "unknown": "Something went wrong loading your trip. Please try again."
+    },
+    "whatsappCta": "💬 Chat with WOS on WhatsApp",
+    "contactLine": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1"
+  },
+  "partnerTripJourney": {
+    "heading": "Your assigned schedule",
+    "scheduleHeading": "Schedule",
+    "noEventsYet": "No events assigned to you yet for this trip",
+    "statusAction": {
+      "markConfirmed": "Confirm this task",
+      "markInProgress": "Start task",
+      "markCompleted": "Mark completed",
+      "updating": "Updating...",
+      "updateFailed": "Update failed — please try again"
+    },
+    "tripStatus": {
+      "planned": "Planned",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "eventStatus": {
+      "pending": "Pending",
+      "confirmed": "Confirmed",
+      "in_progress": "In progress",
+      "completed": "Completed",
+      "cancelled": "Cancelled"
+    },
+    "error": {
+      "not_found": "We couldn't find this. The link may be incorrect — please contact our team.",
+      "link_revoked": "This link has been revoked. Please contact our team for a new one.",
+      "link_expired": "This link has expired. Please contact our team for a new one.",
+      "unknown": "Something went wrong loading this. Please try again."
+    },
+    "whatsappCta": "💬 Chat with WOS on WhatsApp",
+    "contactLine": "Questions? Contact LINE @vlf9996z · WhatsApp wa.me/message/BVJXBWDYR2UHN1",
+    "customerContact": "Customer contact"
+  },
+  "consultation": {
+    "eyebrow": "Free — no cost, no obligation",
+    "title": "Free WOS Consultation",
+    "description": "Tell us what you're looking for and the WOS team will get back to you to help plan your health journey.",
+    "fields": {
+      "name": "Full name",
+      "namePlaceholder": "Enter your name",
+      "contactChannel": "Preferred contact channel",
+      "contactChannelOptions": {
+        "phone": "Phone",
+        "whatsapp": "WhatsApp",
+        "line": "LINE",
+        "email": "Email",
+        "other": "Other"
+      },
+      "contactValue": "Phone number / contact ID",
+      "contactValuePlaceholder": "e.g. +66 8X-XXX-XXXX or LINE ID",
+      "country": "Current country of residence",
+      "requestTypes": "What are you interested in? (select all that apply)",
+      "requestTypeOptions": {
+        "health_checkup": "Health checkup",
+        "medical_treatment": "Medical treatment",
+        "dental": "Dental",
+        "wellness": "Wellness",
+        "aesthetic": "Aesthetic",
+        "hospital_clinic": "Hospital / Clinic",
+        "hotel": "Hotel",
+        "transport": "Transport",
+        "not_sure": "Not sure yet"
+      },
+      "message": "Additional details (optional)",
+      "messagePlaceholder": "Tell us about your needs, symptoms, or questions",
+      "travelPeriod": "When are you planning to travel?",
+      "travelPeriodOptions": {
+        "unspecified": "Not sure yet",
+        "within_1_month": "Within 1 month",
+        "1_to_3_months": "1–3 months",
+        "more_than_3_months": "More than 3 months"
+      },
+      "select": "-- Select --",
+      "other": "Other",
+      "submit": "Send consultation request",
+      "submitting": "Sending..."
+    },
+    "success": {
+      "title": "Your request has been received",
+      "description": "Thank you for trusting WOS. Our team will contact you as soon as possible.",
+      "another": "Send another request"
+    },
+    "errors": {
+      "name": "Please enter your name",
+      "contactChannel": "Please select a contact channel",
+      "contactValue": "Please enter a valid contact",
+      "country": "Please select a country",
+      "requestTypes": "Please select at least one option",
+      "generic": "Something went wrong. Please try again."
+    },
+    "bannerEyebrow": "Not sure where to start?",
+    "bannerTitle": "Free WOS Consultation",
+    "bannerDescription": "Tell us what you need — the WOS team will help you find the right health program, at no cost.",
+    "cta": "Get free consultation"
   }
 }

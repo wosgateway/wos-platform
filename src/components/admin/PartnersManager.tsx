@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
 import type { Partner } from '@/lib/data';
@@ -16,6 +16,47 @@ const CATEGORY_OPTIONS = [
   { value: 'Hotel', label: 'โรงแรม & รถรับส่ง — Hotel' },
   { value: 'Transport', label: 'โรงแรม & รถรับส่ง — Transport' },
 ];
+
+// Response shape of GET /api/admin/partners/[id]/hard-delete (precheck) —
+// see that route's file header. canDelete is server-computed (order_items
+// / packages / reviews = 0); the confirm button below trusts it, but the
+// DELETE call is re-checked server-side regardless (RLS/RPC don't trust
+// this either — see sql/075_admin_hard_delete_partner.sql).
+// Latest mou_sign_requests row for one organization, as returned by
+// GET /api/admin/mou/sign-requests. status is trusted as-is for the
+// terminal states (signed/cancelled); pending/otp_verified are
+// additionally checked against token_expires_at client-side, because
+// the backend never flips a row to 'expired' at rest — see that
+// route's header comment.
+type MouSignRequestSummary = {
+  id: string;
+  status: 'pending' | 'otp_verified' | 'signed' | 'expired' | 'cancelled';
+  signer_name: string;
+  signer_email: string | null;
+  token_expires_at: string;
+  sent_at: string | null;
+  created_at: string;
+};
+
+type HardDeletePrecheck = {
+  partner: { id: string; name: string; category: string; status: string };
+  canDelete: boolean;
+  blockingReason: string | null;
+  willDelete: {
+    organizations: number;
+    branches: number;
+    portalUsers: number;
+    depositRules: number;
+    settlements: number;
+    packages: number;
+    reviews: number;
+  };
+  warnings: {
+    patients: number;
+    documents: number;
+    subscriptions: number;
+  };
+};
 
 interface PartnerFormState {
   id: string | null;
@@ -41,6 +82,7 @@ interface PartnerFormState {
   location_source: string | null;
   location_resolved_at: string | null;
   location_verified_at: string | null;
+  line_user_id: string;
 }
 
 const emptyForm: PartnerFormState = {
@@ -62,10 +104,16 @@ const emptyForm: PartnerFormState = {
   location_source: null,
   location_resolved_at: null,
   location_verified_at: null,
+  line_user_id: '',
 };
 
 export function PartnersManager() {
-  const supabase = createClient();
+  // Must read the same session cookie AdminGate signs in under ('sb-wos-admin')
+  // — createClient() with no namespace reads a different, unauthenticated
+  // cookie, so is_platform_admin() sees no session and every INSERT/UPDATE
+  // here fails RLS ("new row violates row-level security policy") even
+  // though SELECT still works (partners has a public read policy too).
+  const supabase = useMemo(() => createClient('admin'), []);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
@@ -80,6 +128,54 @@ export function PartnersManager() {
   const [resolveError, setResolveError] = useState<string | null>(null);
   const [updatingLocationStatus, setUpdatingLocationStatus] = useState(false);
 
+  // Portal login (แบบที่ 2: สร้างบัญชีไว้ล็อกอินได้ในอนาคต แต่ไม่ส่งอีเมล —
+  // แอดมินคัดลอกลิงก์ไปส่งเอง) — ดู /api/admin/partners/[id]/portal-access
+  const [portalForm, setPortalForm] = useState({
+    organizationName: '',
+    branchName: '',
+    contactName: '',
+    contactEmail: '',
+    contactPhone: '',
+  });
+  const [portalCreating, setPortalCreating] = useState(false);
+  const [portalError, setPortalError] = useState<string | null>(null);
+  const [portalInviteLink, setPortalInviteLink] = useState<string | null>(null);
+  const [portalExistingEmail, setPortalExistingEmail] = useState<string | null>(null);
+
+  // Whether THIS partner already has a portal account — fetched fresh
+  // every time the modal opens (GET /api/admin/partners/[id]/portal-access)
+  // so the form always reflects what's actually saved, instead of the
+  // blank inputs it used to show on every open regardless of prior
+  // saves (see that route's GET handler doc comment for why this
+  // existed). 'checking' gates the create/edit UI while the lookup is
+  // in flight so the admin can't submit against a still-unknown state.
+  const [portalAccountStatus, setPortalAccountStatus] = useState<'checking' | 'none' | 'exists'>('none');
+  const [portalAccountLoadError, setPortalAccountLoadError] = useState<string | null>(null);
+  const [portalEditSaving, setPortalEditSaving] = useState(false);
+  const [portalEditError, setPortalEditError] = useState<string | null>(null);
+  const [portalEditSaved, setPortalEditSaved] = useState(false);
+
+  // "ดูแทนพาร์ทเนอร์" (impersonate) — ดู /api/admin/partners/[id]/impersonate
+  // route ฝั่ง backend มีครบแล้ว (audit log ครบ) แต่ไม่เคยมีปุ่มเรียกใช้จริง
+  // เพิ่มตรงนี้: กดแล้วเปิดแท็บใหม่ที่ล็อกอินเป็นพาร์ทเนอร์นั้นทันที
+  const [impersonating, setImpersonating] = useState(false);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
+
+  // ลบพาร์ทเนอร์ถาวร (hard delete) — ดู /api/admin/partners/[id]/hard-delete
+  // GET = precheck (นับว่ามีอะไรผูกอยู่บ้าง, ลบได้ไหม), DELETE = ลบจริง
+  // ปุ่มนี้ไม่เคยมี UI มาก่อน แม้ backend จะพร้อมแล้ว (075/route.ts)
+  // ความปลอดภัยอยู่ 3 ชั้น: (1) เรียก precheck ก่อนเสมอ และ disable ปุ่มยืนยัน
+  // ถ้า canDelete เป็น false, (2) ต้องพิมพ์ชื่อพาร์ทเนอร์ให้ตรงเป๊ะก่อนถึงจะกดลบได้
+  // (กันการกดพลาด/กดรัว ๆ แบบ confirm() เดิม), (3) เซิร์ฟเวอร์/RPC re-check
+  // เงื่อนไขเดิมซ้ำอีกรอบอยู่ดี ต่อให้ precheck ฝั่งนี้เพี้ยนหรือถูก bypass
+  const [deleteTarget, setDeleteTarget] = useState<Partner | null>(null);
+  const [deletePrecheck, setDeletePrecheck] = useState<HardDeletePrecheck | null>(null);
+  const [deletePrecheckLoading, setDeletePrecheckLoading] = useState(false);
+  const [deletePrecheckError, setDeletePrecheckError] = useState<string | null>(null);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+
   async function loadPartners() {
     setLoading(true);
     setListError(null);
@@ -92,14 +188,159 @@ export function PartnersManager() {
     setPartners((data ?? []) as Partner[]);
   }
 
+  // Login email(s) per partner (from /api/admin/partners/portal-accounts) —
+  // fetched separately from `partners` itself since it's a service-role
+  // join across organizations/branches/users, not a plain table select.
+  // Best-effort: if it fails, the table still renders fine, just without
+  // this column filled in (see the "-" fallback below).
+  const [portalAccounts, setPortalAccounts] = useState<Record<string, { email: string; status: string | null }[]>>(
+    {}
+  );
+
+  async function loadPortalAccounts() {
+    try {
+      const res = await fetch('/api/admin/partners/portal-accounts');
+      if (!res.ok) return;
+      const data = await res.json();
+      setPortalAccounts(data.accounts ?? {});
+    } catch {
+      // Non-critical for the list view — silently skip.
+    }
+  }
+
+  // MOU sign-request status per partner (Founding Partner e-signature
+  // flow) — mirrors loadPortalAccounts above: one bulk fetch instead of
+  // a per-row round trip. organizationIdByPartnerId is what lets the
+  // "ส่ง MOU ให้เซ็น" button below know which organization to attach a
+  // new mou_sign_requests row to (that table only has organization_id,
+  // never partner_id — see create-sign-request/route.ts).
+  const [organizationIdByPartnerId, setOrganizationIdByPartnerId] = useState<Record<string, string>>({});
+  const [latestSignRequestByOrgId, setLatestSignRequestByOrgId] = useState<Record<string, MouSignRequestSummary>>({});
+  const [mouForm, setMouForm] = useState({ signerName: '', signerEmail: '' });
+  const [mouSending, setMouSending] = useState(false);
+  const [mouError, setMouError] = useState<string | null>(null);
+  const [mouWarning, setMouWarning] = useState<string | null>(null);
+  const [mouLink, setMouLink] = useState<string | null>(null);
+
+  async function loadMouStatus() {
+    try {
+      const res = await fetch('/api/admin/mou/sign-requests');
+      if (!res.ok) return;
+      const data = await res.json();
+      setOrganizationIdByPartnerId(data.organizationIdByPartnerId ?? {});
+      setLatestSignRequestByOrgId(data.latestSignRequestByOrgId ?? {});
+    } catch {
+      // Non-critical for the list view — silently skip.
+    }
+  }
+
+  // label/color for a partner's MOU state — used by both the table
+  // column and the modal section below. null orgId means portal access
+  // (which creates the organization) hasn't been set up yet for this
+  // partner.
+  function getMouBadge(orgId: string | undefined): { label: string; className: string } {
+    if (!orgId) {
+      return { label: 'ยังไม่มีองค์กร', className: 'bg-slate-100 text-slate-400' };
+    }
+    const req = latestSignRequestByOrgId[orgId];
+    if (!req) {
+      return { label: 'ยังไม่ส่ง MOU', className: 'bg-slate-100 text-slate-500' };
+    }
+    if (req.status === 'signed') {
+      return { label: '✅ ลงนามแล้ว', className: 'bg-emerald-100 text-emerald-700' };
+    }
+    if (req.status === 'cancelled') {
+      return { label: 'ยกเลิกแล้ว', className: 'bg-slate-100 text-slate-400' };
+    }
+    // pending / otp_verified — check expiry client-side (see type comment above)
+    if (new Date(req.token_expires_at).getTime() < Date.now()) {
+      return { label: '⚠️ ลิงก์หมดอายุ', className: 'bg-red-100 text-red-600' };
+    }
+    if (req.status === 'otp_verified') {
+      return { label: '🕒 กำลังยืนยันตัวตน', className: 'bg-amber-100 text-amber-700' };
+    }
+    return { label: '🕒 รอลงนาม', className: 'bg-amber-100 text-amber-700' };
+  }
+
   useEffect(() => {
     loadPartners();
+    loadPortalAccounts();
+    loadMouStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // MOU sign-request status can change out-of-band — an admin sends a
+  // signing link, then a partner completes it in a separate tab/device
+  // minutes later while this admin tab stays open. Re-fetch on window
+  // focus / tab visibility instead of polling on a timer, so the table
+  // catches up the moment the admin actually looks at it again, without
+  // hammering the DB while the tab sits in the background unattended.
+  // Throttled to 5s so rapid focus/visibility events (both can fire for
+  // one alt-tab back) don't double up the request.
+  const lastMouRefetchRef = useRef(0);
+  useEffect(() => {
+    function revalidateMouStatus() {
+      if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (now - lastMouRefetchRef.current < 5000) return;
+      lastMouRefetchRef.current = now;
+      loadMouStatus();
+    }
+    window.addEventListener('focus', revalidateMouStatus);
+    document.addEventListener('visibilitychange', revalidateMouStatus);
+    return () => {
+      window.removeEventListener('focus', revalidateMouStatus);
+      document.removeEventListener('visibilitychange', revalidateMouStatus);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function openModal(partner?: Partner) {
     setFormError(null);
     setResolveError(null);
+    setPortalError(null);
+    setPortalInviteLink(null);
+    setPortalExistingEmail(null);
+    setImpersonateError(null);
+    // Prefill from the latest sign request for this partner's org, if
+    // one exists and isn't a dead end (signed/cancelled) — lets the
+    // admin see who the link currently goes to and only edit the field
+    // that's actually changing (e.g. a new signer email) instead of
+    // retyping both from scratch. organizationIdByPartnerId/
+    // latestSignRequestByOrgId are already populated by the initial
+    // loadMouStatus() call on mount, so this is available synchronously
+    // here even though openModal itself doesn't fetch anything.
+    const existingOrgId = partner?.id ? organizationIdByPartnerId[partner.id] : undefined;
+    const existingMou = existingOrgId ? latestSignRequestByOrgId[existingOrgId] : undefined;
+    const mouIsLive = existingMou && existingMou.status !== 'signed' && existingMou.status !== 'cancelled';
+    setMouForm(
+      mouIsLive
+        ? { signerName: existingMou.signer_name, signerEmail: existingMou.signer_email ?? '' }
+        : { signerName: '', signerEmail: '' }
+    );
+    setMouError(null);
+    setMouWarning(null);
+    setMouLink(null);
+    setPortalAccountLoadError(null);
+    setPortalEditError(null);
+    setPortalEditSaved(false);
+    setPortalForm({
+      organizationName: partner?.name ?? '',
+      branchName: partner?.name ? `${partner.name} - สาขาหลัก` : '',
+      contactName: '',
+      contactEmail: '',
+      contactPhone: '',
+    });
+    // Blank defaults above are only a placeholder while this loads (or
+    // the final state for a partner with no account yet) — the fetch
+    // below overwrites them with the saved contact info the moment it
+    // resolves, for a partner that already has one.
+    if (partner?.id) {
+      setPortalAccountStatus('checking');
+      loadPortalAccountStatus(partner.id);
+    } else {
+      setPortalAccountStatus('none');
+    }
     if (partner) {
       const p = partner as Partner & {
         address?: string | null;
@@ -130,22 +371,89 @@ export function PartnersManager() {
         location_source: p.location_source ?? null,
         location_resolved_at: p.location_resolved_at ?? null,
         location_verified_at: p.location_verified_at ?? null,
+        line_user_id: (p as { line_user_id?: string | null }).line_user_id ?? '',
       });
     } else {
-      setForm(emptyForm);
+      setForm({ ...emptyForm });
     }
     setModalOpen(true);
   }
 
+  // 5 MB cap — same limit for cover and logo. Prevents an accidental
+  // (or malicious) huge upload from eating storage quota; Supabase
+  // Storage would accept much larger files without this check.
+  const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+
+  // Admin uploads can never go through a plain client-side
+  // `supabase.storage.from('partner-images').upload()` — the bucket's
+  // insert policy (003_storage_bucket_partner_images.sql) requires the
+  // caller's own `organization_id`, and admins don't have one (nor
+  // does a brand-new partner that hasn't been saved yet). Instead: ask
+  // /api/admin/partners/upload-image for a signed upload URL (minted
+  // server-side with the service-role client, bypassing that policy
+  // entirely for a real, auth-checked admin), then PUT the file
+  // straight to Storage with it. Same shape as
+  // uploadBookingAttachment() in src/lib/booking/upload-attachment.ts.
+  async function uploadPartnerImage(file: File, kind: 'cover' | 'logo'): Promise<string> {
+    const res = await fetch('/api/admin/partners/upload-image', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ filename: file.name, kind }),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new Error(result?.error ?? 'ขอลิงก์อัปโหลดไม่สำเร็จ');
+    }
+    const { error: uploadError } = await supabase.storage
+      .from('partner-images')
+      .uploadToSignedUrl(result.path, result.token, file);
+    if (uploadError) throw uploadError;
+    const { data } = supabase.storage.from('partner-images').getPublicUrl(result.path);
+    return data.publicUrl;
+  }
+
+  // Extracts the storage object path back out of a getPublicUrl()
+  // result, so the "remove image" button can tell the delete route
+  // which object to remove without re-deriving the path some other
+  // way. Returns null for anything not shaped like a partner-images
+  // public URL (e.g. a legacy hand-pasted URL from before uploads
+  // existed) — those just get cleared from the form, nothing to
+  // delete from storage.
+  function extractPartnerImagePath(publicUrl: string): string | null {
+    const marker = '/object/public/partner-images/';
+    const idx = publicUrl.indexOf(marker);
+    if (idx === -1) return null;
+    try {
+      return decodeURIComponent(publicUrl.slice(idx + marker.length));
+    } catch {
+      return null;
+    }
+  }
+
+  async function deletePartnerImage(publicUrl: string) {
+    const path = extractPartnerImagePath(publicUrl);
+    if (!path) return; // nothing storage-side to clean up
+    const res = await fetch('/api/admin/partners/upload-image', {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) {
+      const result = await res.json().catch(() => ({}));
+      throw new Error(result?.error ?? 'ลบรูปไม่สำเร็จ');
+    }
+  }
+
   async function handleCoverUpload(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setFormError('ไฟล์รูปปกต้องไม่เกิน 5MB');
+      return;
+    }
     setUploading(true);
     setFormError(null);
     try {
-      const path = `${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      const { error: uploadError } = await supabase.storage.from('partner-images').upload(path, file);
-      if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('partner-images').getPublicUrl(path);
-      setForm((f) => ({ ...f, cover_image_url: data.publicUrl }));
+      const publicUrl = await uploadPartnerImage(file, 'cover');
+      setForm((f) => ({ ...f, cover_image_url: publicUrl }));
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'อัปโหลดรูปไม่สำเร็จ');
     } finally {
@@ -158,16 +466,45 @@ export function PartnersManager() {
   // See migration 023 for why logo_url is a separate column from
   // cover_image_url.
   async function handleLogoUpload(file: File) {
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setFormError('ไฟล์โลโก้ต้องไม่เกิน 5MB');
+      return;
+    }
     setUploading(true);
     setFormError(null);
     try {
-      const path = `logos/${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
-      const { error: uploadError } = await supabase.storage.from('partner-images').upload(path, file);
-      if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('partner-images').getPublicUrl(path);
-      setForm((f) => ({ ...f, logo_url: data.publicUrl }));
+      const publicUrl = await uploadPartnerImage(file, 'logo');
+      setForm((f) => ({ ...f, logo_url: publicUrl }));
     } catch (e) {
       setFormError(e instanceof Error ? e.message : 'อัปโหลดโลโก้ไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleRemoveCoverImage() {
+    if (!form.cover_image_url) return;
+    setUploading(true);
+    setFormError(null);
+    try {
+      await deletePartnerImage(form.cover_image_url);
+      setForm((f) => ({ ...f, cover_image_url: '' }));
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'ลบรูปไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function handleRemoveLogoImage() {
+    if (!form.logo_url) return;
+    setUploading(true);
+    setFormError(null);
+    try {
+      await deletePartnerImage(form.logo_url);
+      setForm((f) => ({ ...f, logo_url: '' }));
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'ลบโลโก้ไม่สำเร็จ');
     } finally {
       setUploading(false);
     }
@@ -205,7 +542,7 @@ export function PartnersManager() {
         latitude: data.partner.latitude,
         longitude: data.partner.longitude,
         location_status: data.partner.location_status,
-        location_source: 'google_maps',
+        location_source: data.partner.location_source,
         location_resolved_at: data.partner.location_resolved_at,
       }));
       loadPartners();
@@ -216,33 +553,290 @@ export function PartnersManager() {
     }
   }
 
-  // Verify/reject don't involve an outside fetch, so this goes straight
-  // through the RLS-protected browser client like the rest of this
-  // form (logo_url, show_on_homepage, etc.) — no need for the SSRF-safe
-  // server route here.
+  // Verify/reject go through the admin API (not the RLS-protected
+  // browser client) so they're recorded in audit_log (073) — this
+  // gates public visibility on the map (047 nearby_partners()), so
+  // who verified what and when needs to be recoverable.
   async function handleSetLocationStatus(nextStatus: 'verified' | 'rejected') {
     if (!form.id) return;
     setUpdatingLocationStatus(true);
     setResolveError(null);
-    const nowIso = new Date().toISOString();
-    const { error } = await supabase
-      .from('partners')
-      .update({
-        location_status: nextStatus,
-        location_verified_at: nextStatus === 'verified' ? nowIso : null,
-      })
-      .eq('id', form.id);
-    setUpdatingLocationStatus(false);
-    if (error) {
-      setResolveError('อัปเดตสถานะไม่สำเร็จ: ' + error.message);
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/verify-location`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: nextStatus }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResolveError(data.error ?? 'อัปเดตสถานะไม่สำเร็จ');
+        return;
+      }
+      setForm((f) => ({
+        ...f,
+        location_status: data.partner.location_status,
+        location_verified_at: data.partner.location_verified_at,
+      }));
+      loadPartners();
+    } catch (e) {
+      setResolveError(e instanceof Error ? e.message : 'อัปเดตสถานะไม่สำเร็จ');
+    } finally {
+      setUpdatingLocationStatus(false);
+    }
+  }
+
+  // Creates org+branch+Auth user for this partner and returns a
+  // copyable set-password link — no email is ever sent (see the route's
+  // header comment for how generateLink({type:'invite'}) does that).
+  async function handleCreatePortalAccess() {
+    if (!form.id) return;
+    setPortalError(null);
+    setPortalExistingEmail(null);
+    if (!portalForm.organizationName.trim() || !portalForm.branchName.trim()) {
+      setPortalError('กรุณากรอกชื่อองค์กรและชื่อสาขา');
       return;
     }
-    setForm((f) => ({
-      ...f,
-      location_status: nextStatus,
-      location_verified_at: nextStatus === 'verified' ? nowIso : null,
-    }));
-    loadPartners();
+    if (!portalForm.contactName.trim()) {
+      setPortalError('กรุณากรอกชื่อผู้ติดต่อ');
+      return;
+    }
+    if (!portalForm.contactEmail.trim() || !portalForm.contactEmail.includes('@')) {
+      setPortalError('กรุณากรอกอีเมลผู้ติดต่อที่ถูกต้อง');
+      return;
+    }
+    setPortalCreating(true);
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/portal-access`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          organizationName: portalForm.organizationName.trim(),
+          branchName: portalForm.branchName.trim(),
+          contactName: portalForm.contactName.trim(),
+          contactEmail: portalForm.contactEmail.trim(),
+          contactPhone: portalForm.contactPhone.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalError(data.error ?? 'สร้างบัญชีเข้าสู่ระบบไม่สำเร็จ');
+        if (data.existingBranchEmail) setPortalExistingEmail(data.existingBranchEmail);
+        return;
+      }
+      setPortalInviteLink(data.inviteLink);
+    } catch (e) {
+      setPortalError(e instanceof Error ? e.message : 'สร้างบัญชีเข้าสู่ระบบไม่สำเร็จ');
+    } finally {
+      setPortalCreating(false);
+    }
+  }
+
+  // For a partner that already has a login (existingBranchEmail came
+  // back from handleCreatePortalAccess above) — re-mints a fresh
+  // link for that same email via the existing resend-invite-link route
+  // instead of trying to create a second org/branch.
+  async function handleResendPortalLink(email: string) {
+    setPortalError(null);
+    setPortalCreating(true);
+    try {
+      const res = await fetch('/api/admin/partners/resend-invite-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalError(data.error ?? 'ขอลิงก์ใหม่ไม่สำเร็จ');
+        return;
+      }
+      setPortalInviteLink(data.inviteLink);
+      setPortalExistingEmail(null);
+    } catch (e) {
+      setPortalError(e instanceof Error ? e.message : 'ขอลิงก์ใหม่ไม่สำเร็จ');
+    } finally {
+      setPortalCreating(false);
+    }
+  }
+
+  // Checks whether this partner already has a portal account and, if
+  // so, prefills portalForm with its saved contact info — this is what
+  // makes the modal stop showing blank inputs for a partner whose
+  // contact info was already submitted successfully in an earlier
+  // session (see GET handler's doc comment in the route file).
+  async function loadPortalAccountStatus(partnerId: string) {
+    setPortalAccountLoadError(null);
+    try {
+      const res = await fetch(`/api/admin/partners/${partnerId}/portal-access`);
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalAccountLoadError(data.error ?? 'ตรวจสอบบัญชีพอร์ทัลที่มีอยู่ไม่สำเร็จ');
+        setPortalAccountStatus('none');
+        return;
+      }
+      if (data.exists) {
+        setPortalForm({
+          organizationName: data.organizationName ?? '',
+          branchName: data.branchName ?? '',
+          contactName: data.contactName ?? '',
+          contactEmail: data.contactEmail ?? '',
+          contactPhone: data.contactPhone ?? '',
+        });
+        setPortalAccountStatus('exists');
+      } else {
+        setPortalAccountStatus('none');
+      }
+    } catch (e) {
+      setPortalAccountLoadError(e instanceof Error ? e.message : 'ตรวจสอบบัญชีพอร์ทัลที่มีอยู่ไม่สำเร็จ');
+      setPortalAccountStatus('none');
+    }
+  }
+
+  // Saves an edit to an EXISTING portal account's contact info (PATCH,
+  // as opposed to handleCreatePortalAccess's POST which only ever
+  // works once per partner). This is the fix for the actual bug: before
+  // this existed, there was no way to correct a contact's name/phone/
+  // email after the initial creation short of a manual DB edit.
+  async function handleSavePortalEdit() {
+    if (!form.id) return;
+    setPortalEditError(null);
+    setPortalEditSaved(false);
+    if (!portalForm.contactName.trim()) {
+      setPortalEditError('กรุณากรอกชื่อผู้ติดต่อ');
+      return;
+    }
+    if (!portalForm.contactEmail.trim() || !portalForm.contactEmail.includes('@')) {
+      setPortalEditError('กรุณากรอกอีเมลผู้ติดต่อที่ถูกต้อง');
+      return;
+    }
+    setPortalEditSaving(true);
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/portal-access`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contactName: portalForm.contactName.trim(),
+          contactEmail: portalForm.contactEmail.trim(),
+          contactPhone: portalForm.contactPhone.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setPortalEditError(data.error ?? 'บันทึกข้อมูลผู้ติดต่อไม่สำเร็จ');
+        return;
+      }
+      setPortalEditSaved(true);
+      loadPortalAccounts(); // refresh the list view's email column too
+    } catch (e) {
+      setPortalEditError(e instanceof Error ? e.message : 'บันทึกข้อมูลผู้ติดต่อไม่สำเร็จ');
+    } finally {
+      setPortalEditSaving(false);
+    }
+  }
+
+  // Creates a mou_sign_requests row for this partner's organization and
+  // emails the signer a link to /partner/mou-sign/[token] (OTP +
+  // signature canvas). Requires an organization to already exist —
+  // handleCreatePortalAccess above is what creates one — so the modal
+  // section below only renders this form once organizationIdByPartnerId
+  // has an entry for this partner.
+  //
+  // 2026-09 fix: this used to always POST /create-sign-request, even
+  // when a request already existed for this org. For a still-live one
+  // (pending/otp_verified) that left TWO simultaneously valid links —
+  // exactly the failure mode /resend/route.ts's own header comment
+  // warns about, because this UI never actually called that route.
+  // Now: if latestSignRequestByOrgId has an entry, go through
+  // /sign-requests/[id]/resend instead, which cancels the old link
+  // before minting the new one (or, for an already-terminal expired/
+  // cancelled row, just creates fresh — resend handles both). Only
+  // hits /create-sign-request directly when there's no prior request
+  // at all. This is also how a signer gets changed: mouForm is
+  // pre-filled with the current signer on openModal, so editing the
+  // name/email here and sending is the "change signer" flow.
+  async function handleSendMou() {
+    if (!form.id) return;
+    const organizationId = organizationIdByPartnerId[form.id];
+    if (!organizationId) return;
+    setMouError(null);
+    setMouWarning(null);
+    if (!mouForm.signerName.trim()) {
+      setMouError('กรุณากรอกชื่อผู้ลงนาม');
+      return;
+    }
+    if (!mouForm.signerEmail.trim() || !mouForm.signerEmail.includes('@')) {
+      setMouError('กรุณากรอกอีเมลผู้ลงนามที่ถูกต้อง');
+      return;
+    }
+    const existingRequest = latestSignRequestByOrgId[organizationId];
+    const url = existingRequest
+      ? `/api/admin/mou/sign-requests/${existingRequest.id}/resend`
+      : '/api/admin/mou/create-sign-request';
+    const body = existingRequest
+      ? { signerName: mouForm.signerName.trim(), signerEmail: mouForm.signerEmail.trim() }
+      : { organizationId, signerName: mouForm.signerName.trim(), signerEmail: mouForm.signerEmail.trim() };
+    setMouSending(true);
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      const data = await res.json();
+      if (res.status === 207) {
+        // Row created, but the invite email itself failed to send —
+        // still a valid link, just needs to be copied and sent
+        // manually (same shape as create-sign-request's own comment).
+        setMouWarning(data.warning ?? 'สร้างลิงก์สำเร็จ แต่ส่งอีเมลไม่สำเร็จ — กรุณาคัดลอกลิงก์ไปส่งเอง');
+        setMouLink(data.link ?? null);
+        loadMouStatus();
+        return;
+      }
+      if (!res.ok) {
+        setMouError(data.error ?? 'สร้างคำขอลงนามไม่สำเร็จ');
+        return;
+      }
+      setMouLink(data.link);
+      loadMouStatus();
+    } catch (e) {
+      setMouError(e instanceof Error ? e.message : 'สร้างคำขอลงนามไม่สำเร็จ');
+    } finally {
+      setMouSending(false);
+    }
+  }
+
+  // เปิดแท็บใหม่ล่วงหน้าก่อน await เพื่อกัน popup blocker (browser จะบล็อก
+  // window.open ที่เรียกหลัง await เพราะไม่ถือเป็น user gesture อีกต่อไป)
+  // แล้วค่อยตั้ง .location ของแท็บนั้นหลังได้ actionLink กลับมา
+  async function handleImpersonate() {
+    if (!form.id) return;
+    setImpersonateError(null);
+    setImpersonating(true);
+    const newTab = window.open('about:blank', '_blank');
+    try {
+      const res = await fetch(`/api/admin/partners/${form.id}/impersonate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        newTab?.close();
+        setImpersonateError(data.error ?? 'เข้าดูแทนไม่สำเร็จ');
+        return;
+      }
+      if (newTab) {
+        newTab.location.href = data.actionLink;
+      } else {
+        // popup ถูกบล็อกไปแล้ว (เช่น browser ไม่นับเป็น user gesture) —
+        // เปิดในแท็บปัจจุบันแทน ดีกว่าไม่ทำอะไรเลย
+        window.location.href = data.actionLink;
+      }
+    } catch (e) {
+      newTab?.close();
+      setImpersonateError(e instanceof Error ? e.message : 'เข้าดูแทนไม่สำเร็จ');
+    } finally {
+      setImpersonating(false);
+    }
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -250,6 +844,14 @@ export function PartnersManager() {
     setFormError(null);
     if (!form.name.trim()) {
       setFormError('กรุณากรอกชื่อพาร์ทเนอร์');
+      return;
+    }
+    if (form.show_on_homepage && !form.logo_url.trim()) {
+      setFormError('ต้องอัปโหลดโลโก้ก่อน ถึงจะแสดงในหน้าแรกได้');
+      return;
+    }
+    if (form.line_user_id.trim() && !/^U[0-9a-f]{32}$/i.test(form.line_user_id.trim())) {
+      setFormError('LINE User ID ต้องขึ้นต้นด้วย U ตามด้วยตัวอักษร/ตัวเลข 32 ตัว (ไม่ใช่ LINE OA ID หรือชื่อที่แสดง)');
       return;
     }
     setSaving(true);
@@ -264,27 +866,125 @@ export function PartnersManager() {
       logo_url: form.logo_url.trim() || null,
       show_on_homepage: form.show_on_homepage,
       address: form.address.trim() || null,
+      // google_maps_url was missing here — meant a saved partner's map
+      // link silently reverted to blank on the next edit, even though
+      // resolve-location (which writes it directly) worked fine.
+      google_maps_url: form.google_maps_url.trim() || null,
+      line_user_id: form.line_user_id.trim() || null,
     };
     const { error } = form.id
       ? await supabase.from('partners').update(payload).eq('id', form.id)
       : await supabase.from('partners').insert(payload);
     setSaving(false);
     if (error) {
-      setFormError('บันทึกไม่สำเร็จ: ' + error.message);
+      // idx_partners_line_user_id_unique (migration 086) — surface a
+      // clear message instead of the raw Postgres constraint text.
+      const dupeLineId = error.code === '23505' && error.message.includes('line_user_id');
+      setFormError(dupeLineId ? 'LINE ID นี้ถูกผูกกับพาร์ทเนอร์รายอื่นอยู่แล้ว' : 'บันทึกไม่สำเร็จ: ' + error.message);
       return;
     }
     setModalOpen(false);
     loadPartners();
   }
 
-  async function handleDelete(id: string) {
-    if (!confirm('ลบพาร์ทเนอร์นี้? แพ็กเกจที่ผูกอยู่จะได้รับผลกระทบ')) return;
-    const { error } = await supabase.from('partners').delete().eq('id', id);
-    if (error) {
-      alert('ลบไม่สำเร็จ: ' + error.message);
+    async function handleSuspend(id: string) {
+    if (!confirm('ระงับพาร์ทเนอร์นี้?')) return;
+
+    const res = await fetch(`/api/admin/partners/${id}/suspend`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: 'inactive',
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || 'ระงับพาร์ทเนอร์ไม่สำเร็จ');
       return;
     }
+
     loadPartners();
+  }
+
+  async function handleReactivate(id: string) {
+    if (!confirm('ต้องการเปิดใช้งานพาร์ทเนอร์นี้อีกครั้งหรือไม่?')) return;
+
+    const res = await fetch(`/api/admin/partners/${id}/suspend`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: 'active',
+      }),
+    });
+
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(data.error || 'เปิดใช้งานพาร์ทเนอร์ไม่สำเร็จ');
+      return;
+    }
+
+    loadPartners();
+  }
+
+  async function openDeleteModal(partner: Partner) {
+    setDeleteTarget(partner);
+    setDeletePrecheck(null);
+    setDeletePrecheckError(null);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+    setDeletePrecheckLoading(true);
+    try {
+      const res = await fetch(`/api/admin/partners/${partner.id}/hard-delete`);
+      const data = await res.json();
+      if (!res.ok) {
+        setDeletePrecheckError(data.error ?? 'ตรวจสอบข้อมูลไม่สำเร็จ');
+        return;
+      }
+      setDeletePrecheck(data as HardDeletePrecheck);
+    } catch (e) {
+      setDeletePrecheckError(e instanceof Error ? e.message : 'ตรวจสอบข้อมูลไม่สำเร็จ');
+    } finally {
+      setDeletePrecheckLoading(false);
+    }
+  }
+
+  function closeDeleteModal() {
+    if (deleting) return; // อย่าให้ปิดโมดัลกลางอากาศระหว่างเรียก DELETE อยู่
+    setDeleteTarget(null);
+    setDeletePrecheck(null);
+    setDeletePrecheckError(null);
+    setDeleteConfirmText('');
+    setDeleteError(null);
+  }
+
+  async function handleConfirmHardDelete() {
+    if (!deleteTarget || !deletePrecheck?.canDelete) return;
+    if (deleteConfirmText.trim() !== deleteTarget.name) return;
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      const res = await fetch(`/api/admin/partners/${deleteTarget.id}/hard-delete`, { method: 'DELETE' });
+      const data = await res.json();
+      if (!res.ok) {
+        setDeleteError(data.error ?? 'ลบไม่สำเร็จ');
+        return;
+      }
+      setDeleteTarget(null);
+      setDeletePrecheck(null);
+      setDeleteConfirmText('');
+      loadPartners();
+    } catch (e) {
+      setDeleteError(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   // Name search is case-insensitive and matches anywhere in the name
@@ -373,6 +1073,8 @@ export function PartnersManager() {
                 <th className="px-4 py-2">คะแนน</th>
                 <th className="px-4 py-2">หน้าแรก</th>
                 <th className="px-4 py-2">ตำแหน่ง</th>
+                <th className="px-4 py-2">บัญชีเข้าสู่ระบบ</th>
+                <th className="px-4 py-2">MOU</th>
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
@@ -401,7 +1103,8 @@ export function PartnersManager() {
                   <td className="px-4 py-2">
                     {(() => {
                       const locStatus = (p as { location_status?: string }).location_status;
-                      if (!locStatus || !(p as { latitude?: number | null }).latitude) {
+                      const latitude = (p as { latitude?: number | null }).latitude;
+                      if (!locStatus || latitude == null) {
                         return <span className="text-xs text-slate-300">—</span>;
                       }
                       const badgeClass =
@@ -415,12 +1118,59 @@ export function PartnersManager() {
                       );
                     })()}
                   </td>
+                  <td className="px-4 py-2">
+                    {(() => {
+                      const accounts = portalAccounts[p.id];
+                      if (!accounts || accounts.length === 0) {
+                        return <span className="text-xs text-slate-300">ยังไม่มีบัญชี</span>;
+                      }
+                      return (
+                        <div className="flex flex-col gap-0.5">
+                          {accounts.map((acc) => (
+                            <span key={acc.email} className="text-xs text-slate-600">
+                              {acc.email}
+                              {acc.status && acc.status !== 'active' ? (
+                                <span className="ml-1 rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-400">
+                                  {acc.status}
+                                </span>
+                              ) : null}
+                            </span>
+                          ))}
+                        </div>
+                      );
+                    })()}
+                  </td>
+                  <td className="px-4 py-2">
+                    {(() => {
+                      const badge = getMouBadge(organizationIdByPartnerId[p.id]);
+                      return <span className={`rounded-full px-2 py-0.5 text-xs ${badge.className}`}>{badge.label}</span>;
+                    })()}
+                  </td>
                   <td className="px-4 py-2 text-right">
                     <button onClick={() => openModal(p)} className="mr-3 text-primary-dark hover:underline">
                       แก้ไข
                     </button>
-                    <button onClick={() => handleDelete(p.id)} className="text-red-500 hover:underline">
-                      ลบ
+                    {p.status === 'active' ? (
+                      <button
+                        onClick={() => handleSuspend(p.id)}
+                        className="mr-3 text-red-500 hover:underline"
+                      >
+                        ระงับ
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => handleReactivate(p.id)}
+                        className="mr-3 text-emerald-600 hover:underline"
+                      >
+                        เปิดใช้งาน
+                      </button>
+                    )}
+                    <button
+                      onClick={() => openDeleteModal(p)}
+                      className="text-red-700 hover:underline"
+                      title="ลบถาวร — ย้อนกลับไม่ได้"
+                    >
+                      ลบถาวร
                     </button>
                   </td>
                 </tr>
@@ -506,6 +1256,18 @@ export function PartnersManager() {
               />
             </div>
             <div>
+              <label className="form-label">LINE User ID</label>
+              <input
+                className="form-input font-mono text-xs"
+                value={form.line_user_id}
+                onChange={(e) => setForm({ ...form, line_user_id: e.target.value })}
+                placeholder="U1234567890abcdef1234567890abcdef"
+              />
+              <p className="mt-1 text-[11px] text-slate-400">
+                ใช้ส่งงาน (เช็คอิน-เช็คเอาท์-ชื่อผู้เข้าพัก) ให้พาร์ทเนอร์ทาง LINE โดยตรง ไม่ผูกอัตโนมัติ ต้องกรอกเอง
+              </p>
+            </div>
+            <div>
               <label className="form-label">รูปปก</label>
               <input
                 type="file"
@@ -515,14 +1277,24 @@ export function PartnersManager() {
               />
               {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
               {form.cover_image_url ? (
-                <Image
-                  src={form.cover_image_url}
-                  alt=""
-                  width={80}
-                  height={80}
-                  className="mt-2 h-20 w-20 rounded-lg object-cover"
-                  unoptimized
-                />
+                <div className="mt-2 flex items-center gap-3">
+                  <Image
+                    src={form.cover_image_url}
+                    alt=""
+                    width={80}
+                    height={80}
+                    className="h-20 w-20 rounded-lg object-cover"
+                    unoptimized
+                  />
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoverImage}
+                    disabled={uploading}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600 disabled:opacity-50"
+                  >
+                    ลบรูป
+                  </button>
+                </div>
               ) : null}
             </div>
 
@@ -621,10 +1393,363 @@ export function PartnersManager() {
               ) : null}
             </div>
 
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-3">
+              <div>
+                <label className="form-label">การเข้าสู่ระบบพอร์ทัล</label>
+                <p className="mt-0.5 text-xs text-slate-400">
+                  สร้างบัญชีให้พาร์ทเนอร์ล็อกอินเข้าพอร์ทัลได้ในอนาคต — ระบบจะ{' '}
+                  <span className="font-medium">ไม่ส่งอีเมลเชิญอัตโนมัติ</span> คุณจะได้ลิงก์มาคัดลอกไปส่งเอง
+                  (LINE, WhatsApp, อีเมลส่วนตัว ฯลฯ)
+                </p>
+              </div>
+
+              {form.id ? (
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">เข้าดูแทนพาร์ทเนอร์</p>
+                    <p className="text-xs text-slate-400">
+                      เปิดพอร์ทัลในแท็บใหม่ โดยล็อกอินเป็นบัญชีพาร์ทเนอร์นี้จริง ๆ (สำหรับตรวจสอบ/ช่วยเหลือ) —
+                      บันทึกลง audit log ทุกครั้ง
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleImpersonate}
+                    disabled={impersonating}
+                    className="shrink-0 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap disabled:opacity-50"
+                  >
+                    {impersonating ? 'กำลังเปิด...' : '🔑 เข้าดูแทน'}
+                  </button>
+                </div>
+              ) : null}
+              {impersonateError ? (
+                <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                  {impersonateError}
+                </div>
+              ) : null}
+
+              {!form.id ? (
+                <p className="text-xs text-slate-400">บันทึกพาร์ทเนอร์นี้ก่อน ถึงจะสร้างบัญชีเข้าสู่ระบบได้</p>
+              ) : portalInviteLink ? (
+                <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                  <p className="mb-1 text-emerald-700">สร้างลิงก์สำเร็จ — คัดลอกไปส่งให้พาร์ทเนอร์ได้เลย:</p>
+                  <div className="flex gap-2">
+                    <input readOnly className="form-input flex-1 text-xs" value={portalInviteLink} />
+                    <button
+                      type="button"
+                      onClick={() => navigator.clipboard.writeText(portalInviteLink)}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap"
+                    >
+                      คัดลอก
+                    </button>
+                  </div>
+                </div>
+              ) : portalAccountStatus === 'checking' ? (
+                <p className="text-xs text-slate-400">กำลังตรวจสอบบัญชีพอร์ทัลที่มีอยู่...</p>
+              ) : portalAccountStatus === 'exists' ? (
+                // Account already exists for this partner — POST above
+                // would just 409. This is the edit path: same fields,
+                // prefilled with what's actually saved (loadPortalAccountStatus),
+                // PATCHed instead of POSTed.
+                <>
+                  {portalAccountLoadError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalAccountLoadError}
+                    </div>
+                  ) : null}
+                  <div className="rounded-lg border border-slate-200 bg-white p-3">
+                    <p className="text-xs text-slate-400">
+                      <span className="font-medium text-slate-600">{portalForm.organizationName}</span> ·{' '}
+                      {portalForm.branchName} — มีบัญชีพอร์ทัลอยู่แล้ว แก้ไขข้อมูลผู้ติดต่อได้ด้านล่าง
+                    </p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="form-label">ชื่อผู้ติดต่อ</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactName}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">เบอร์โทร (ถ้ามี)</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactPhone}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactPhone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="form-label">อีเมลผู้ติดต่อ (ใช้ล็อกอินด้วย — เปลี่ยนแล้วมีผลกับการล็อกอินทันที)</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={portalForm.contactEmail}
+                      onChange={(e) => setPortalForm({ ...portalForm, contactEmail: e.target.value })}
+                    />
+                  </div>
+
+                  {portalEditError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalEditError}
+                    </div>
+                  ) : null}
+                  {portalEditSaved ? (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                      บันทึกข้อมูลผู้ติดต่อแล้ว
+                    </div>
+                  ) : null}
+
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleSavePortalEdit}
+                      disabled={portalEditSaving}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+                    >
+                      {portalEditSaving ? 'กำลังบันทึก...' : 'บันทึกข้อมูลผู้ติดต่อ'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleResendPortalLink(portalForm.contactEmail.trim())}
+                      disabled={portalCreating || !portalForm.contactEmail.trim()}
+                      className="text-sm text-slate-500 underline disabled:opacity-50"
+                    >
+                      {portalCreating ? 'กำลังสร้างลิงก์...' : 'ขอลิงก์ตั้งรหัสผ่านใหม่'}
+                    </button>
+                  </div>
+                  {portalError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalError}
+                    </div>
+                  ) : null}
+                </>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="form-label">ชื่อองค์กร</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.organizationName}
+                        onChange={(e) => setPortalForm({ ...portalForm, organizationName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">ชื่อสาขา</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.branchName}
+                        onChange={(e) => setPortalForm({ ...portalForm, branchName: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="form-label">ชื่อผู้ติดต่อ</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactName}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactName: e.target.value })}
+                      />
+                    </div>
+                    <div>
+                      <label className="form-label">เบอร์โทร (ถ้ามี)</label>
+                      <input
+                        className="form-input"
+                        value={portalForm.contactPhone}
+                        onChange={(e) => setPortalForm({ ...portalForm, contactPhone: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="form-label">อีเมลผู้ติดต่อ</label>
+                    <input
+                      type="email"
+                      className="form-input"
+                      value={portalForm.contactEmail}
+                      onChange={(e) => setPortalForm({ ...portalForm, contactEmail: e.target.value })}
+                    />
+                  </div>
+
+                  {portalError ? (
+                    <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                      {portalError}
+                      {portalExistingEmail ? (
+                        <button
+                          type="button"
+                          onClick={() => handleResendPortalLink(portalExistingEmail)}
+                          disabled={portalCreating}
+                          className="ml-2 underline disabled:opacity-50"
+                        >
+                          ขอลิงก์ใหม่สำหรับ {portalExistingEmail}
+                        </button>
+                      ) : null}
+                    </div>
+                  ) : null}
+
+                  <button
+                    type="button"
+                    onClick={handleCreatePortalAccess}
+                    disabled={portalCreating}
+                    className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+                  >
+                    {portalCreating ? 'กำลังสร้าง...' : 'สร้างบัญชีเข้าสู่ระบบ (ไม่ส่งอีเมล)'}
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <label className="form-label">MOU Founding Partner (เซ็นออนไลน์)</label>
+                  <p className="mt-0.5 text-xs text-slate-400">
+                    ส่งลิงก์ให้พาร์ทเนอร์เซ็นข้อตกลงออนไลน์ (ยืนยันตัวตนด้วย OTP + วาดลายเซ็น) ไม่ต้องพิมพ์เอกสาร
+                  </p>
+                  {/* Hardcoded to the same default create-sign-request falls back
+                      to ('founding-partner-v1') — update this if/when the admin UI
+                      gains a template_version picker. ?organizationId= (when known)
+                      makes this preview show THIS partner's actual name + commercial
+                      rate filled in, not just the blank template — see
+                      /api/admin/mou/template/[templateVersion]/route.ts's header. */}
+                  {(() => {
+                    const partnerId = form.id;
+                    const organizationId = partnerId ? organizationIdByPartnerId[partnerId] : undefined;
+                    const href = organizationId
+                      ? `/api/admin/mou/template/founding-partner-v1?organizationId=${organizationId}`
+                      : '/api/admin/mou/template/founding-partner-v1';
+                    return (
+                      <a
+                        href={href}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-1 inline-block text-xs font-medium text-emerald-700 hover:underline"
+                      >
+                        👁️ ดูฉบับร่าง MOU ก่อนส่ง (PDF)
+                      </a>
+                    );
+                  })()}
+                </div>
+                {(() => {
+                  const partnerId = form.id;
+                  const organizationId = partnerId ? organizationIdByPartnerId[partnerId] : undefined;
+                  if (!organizationId) return null;
+                  const badge = getMouBadge(organizationId);
+                  return (
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs whitespace-nowrap ${badge.className}`}>
+                      {badge.label}
+                    </span>
+                  );
+                })()}
+              </div>
+
+              {(() => {
+                const partnerId = form.id;
+                if (!partnerId) {
+                  return <p className="text-xs text-slate-400">บันทึกพาร์ทเนอร์นี้ก่อน ถึงจะส่ง MOU ให้เซ็นได้</p>;
+                }
+                const organizationId = organizationIdByPartnerId[partnerId];
+                if (!organizationId) {
+                  return (
+                    <p className="text-xs text-amber-600">
+                      ⚠️ ต้อง &quot;สร้างบัญชีเข้าสู่ระบบ&quot; ด้านบนก่อน (ระบบจะสร้างองค์กรผูกกับพาร์ทเนอร์นี้) ถึงจะส่ง MOU
+                      ให้เซ็นได้
+                    </p>
+                  );
+                }
+                const existingRequest = latestSignRequestByOrgId[organizationId];
+                if (mouLink) {
+                  return (
+                    <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm">
+                      <p className="mb-1 text-emerald-700">สร้างลิงก์สำเร็จ — คัดลอกไปส่งให้พาร์ทเนอร์ได้เลย:</p>
+                      <div className="flex gap-2">
+                        <input readOnly className="form-input flex-1 text-xs" value={mouLink} />
+                        <button
+                          type="button"
+                          onClick={() => navigator.clipboard.writeText(mouLink)}
+                          className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm whitespace-nowrap"
+                        >
+                          คัดลอก
+                        </button>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setMouLink(null)}
+                        className="mt-2 text-xs text-emerald-700 underline"
+                      >
+                        ส่งอีกฉบับ
+                      </button>
+                    </div>
+                  );
+                }
+                return (
+                  <>
+                    {mouWarning ? (
+                      <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                        {mouWarning}
+                      </div>
+                    ) : null}
+                    {existingRequest &&
+                    (existingRequest.status === 'pending' || existingRequest.status === 'otp_verified') ? (
+                      <p className="text-xs text-slate-400">
+                        มีลิงก์ที่ยังไม่หมดอายุอยู่แล้ว — ฟิลด์ด้านล่างคือผู้ลงนามคนปัจจุบัน แก้ไขแล้วกดส่ง
+                        เพื่อ<span className="font-medium text-slate-500">เปลี่ยนผู้ลงนาม</span>
+                        (ลิงก์เดิมจะถูกยกเลิกทันที ใช้ไม่ได้อีก)
+                      </p>
+                    ) : null}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="form-label">ชื่อผู้ลงนาม</label>
+                        <input
+                          className="form-input"
+                          value={mouForm.signerName}
+                          onChange={(e) => setMouForm({ ...mouForm, signerName: e.target.value })}
+                        />
+                      </div>
+                      <div>
+                        <label className="form-label">อีเมลผู้ลงนาม</label>
+                        <input
+                          type="email"
+                          className="form-input"
+                          value={mouForm.signerEmail}
+                          onChange={(e) => setMouForm({ ...mouForm, signerEmail: e.target.value })}
+                        />
+                      </div>
+                    </div>
+
+                    {mouError ? (
+                      <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                        {mouError}
+                      </div>
+                    ) : null}
+
+                    <button
+                      type="button"
+                      onClick={handleSendMou}
+                      disabled={mouSending}
+                      className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-sm disabled:opacity-50"
+                    >
+                      {mouSending
+                        ? 'กำลังส่ง...'
+                        : existingRequest &&
+                            (existingRequest.status === 'pending' || existingRequest.status === 'otp_verified')
+                          ? '📄 ยกเลิกลิงก์เดิม + ส่งใหม่'
+                          : existingRequest
+                            ? '📄 ส่ง MOU ให้เซ็น (ฉบับใหม่)'
+                            : '📄 ส่ง MOU ให้เซ็น'}
+                    </button>
+                  </>
+                );
+              })()}
+            </div>
+
             <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
               <label className="form-label">โลโก้ (สำหรับแถบเลื่อนหน้าแรก)</label>
               <p className="mb-2 text-xs text-slate-400">
-                ใช้ไฟล์ PNG/SVG พื้นหลังโปร่งใส แนะนำขนาด 400×160px (หรือสัดส่วนใกล้เคียง) จะเลื่อนได้สวยที่สุด — ดูรายละเอียดขนาดเพิ่มเติมได้ที่ PartnerLogos.tsx
+                ใช้ไฟล์ PNG/SVG พื้นหลังโปร่งใส แนะนำขนาด 320×320px (สี่เหลี่ยมจัตุรัส) จะอยู่ในกรอบการ์ดหน้าแรกได้สวยที่สุด — อัปโหลดแล้วติ๊ก &quot;แสดงในแถบ...หน้าแรก&quot; ด้านล่าง จะขึ้นหน้าแรกทันทีโดยไม่ต้องแก้โค้ด — ดูรายละเอียดเพิ่มเติมได้ที่ PartnerLogos.tsx
               </p>
               <input
                 type="file"
@@ -634,15 +1759,25 @@ export function PartnersManager() {
               />
               {uploading ? <p className="mt-1 text-xs text-slate-400">กำลังอัปโหลด...</p> : null}
               {form.logo_url ? (
-                <div className="mt-2 flex h-16 items-center rounded-lg border border-slate-200 bg-white px-3">
-                  <Image
-                    src={form.logo_url}
-                    alt=""
-                    width={160}
-                    height={64}
-                    className="max-h-12 w-auto object-contain"
-                    unoptimized
-                  />
+                <div className="mt-2 flex items-center gap-3">
+                  <div className="flex h-16 items-center rounded-lg border border-slate-200 bg-white px-3">
+                    <Image
+                      src={form.logo_url}
+                      alt=""
+                      width={160}
+                      height={64}
+                      className="max-h-12 w-auto object-contain"
+                      unoptimized
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveLogoImage}
+                    disabled={uploading}
+                    className="rounded-lg border border-red-200 px-3 py-1.5 text-xs text-red-600 disabled:opacity-50"
+                  >
+                    ลบโลโก้
+                  </button>
                 </div>
               ) : null}
               <label className="mt-3 flex items-center gap-2 text-sm text-slate-600">
@@ -672,6 +1807,100 @@ export function PartnersManager() {
               </button>
             </div>
           </form>
+        </div>
+      ) : null}
+
+      {/* ===== ยืนยันลบถาวร ===== */}
+      {deleteTarget ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md space-y-4 rounded-2xl bg-white p-6">
+            <h3 className="text-base font-bold text-red-700">ลบพาร์ทเนอร์ถาวร: {deleteTarget.name}</h3>
+            <p className="text-xs text-slate-500">
+              การลบนี้ถาวร ย้อนกลับไม่ได้ — จะลบ Organization, สาขา, บัญชีเข้าสู่ระบบของพอร์ทัล และข้อมูลพาร์ทเนอร์
+              ทั้งหมด ถ้าต้องการแค่ซ่อน/ปิดการใช้งานชั่วคราว ให้ใช้ปุ่ม &quot;ระงับ&quot; แทน — ยกเลิกการลบนี้ไม่ได้
+              หลังกดยืนยัน
+            </p>
+
+            {deletePrecheckLoading ? (
+              <p className="text-sm text-slate-400">กำลังตรวจสอบข้อมูลที่ผูกอยู่...</p>
+            ) : deletePrecheckError ? (
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                {deletePrecheckError}
+              </div>
+            ) : deletePrecheck ? (
+              <>
+                <div className="space-y-1 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                  <p>
+                    จะลบ: Organization {deletePrecheck.willDelete.organizations} รายการ ·
+                    สาขา {deletePrecheck.willDelete.branches} รายการ ·
+                    บัญชีพอร์ทัล {deletePrecheck.willDelete.portalUsers} บัญชี
+                  </p>
+                  <p>
+                    Deposit rules {deletePrecheck.willDelete.depositRules} · Settlements{' '}
+                    {deletePrecheck.willDelete.settlements}
+                  </p>
+                  {deletePrecheck.warnings.patients > 0 ||
+                  deletePrecheck.warnings.documents > 0 ||
+                  deletePrecheck.warnings.subscriptions > 0 ? (
+                    <p className="text-amber-600">
+                      ⚠️ ผูกกับ patients {deletePrecheck.warnings.patients} · documents{' '}
+                      {deletePrecheck.warnings.documents} · subscriptions{' '}
+                      {deletePrecheck.warnings.subscriptions} (จะถูกลบตามไปด้วยแบบ cascade)
+                    </p>
+                  ) : null}
+                </div>
+
+                {!deletePrecheck.canDelete ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                    {deletePrecheck.blockingReason}
+                  </div>
+                ) : (
+                  <div>
+                    <label className="form-label">
+                      พิมพ์ชื่อพาร์ทเนอร์ &quot;{deleteTarget.name}&quot; ให้ตรงทุกตัวอักษรเพื่อยืนยัน
+                    </label>
+                    <input
+                      className="form-input"
+                      value={deleteConfirmText}
+                      onChange={(e) => setDeleteConfirmText(e.target.value)}
+                      placeholder={deleteTarget.name}
+                      autoComplete="off"
+                    />
+                  </div>
+                )}
+
+                {deleteError ? (
+                  <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600">
+                    {deleteError}
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                type="button"
+                onClick={closeDeleteModal}
+                disabled={deleting}
+                className="rounded-lg border border-slate-200 px-4 py-2 text-sm disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmHardDelete}
+                disabled={
+                  deleting ||
+                  deletePrecheckLoading ||
+                  !deletePrecheck?.canDelete ||
+                  deleteConfirmText.trim() !== deleteTarget.name
+                }
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm text-white disabled:opacity-40"
+              >
+                {deleting ? 'กำลังลบ...' : 'ลบถาวร'}
+              </button>
+            </div>
+          </div>
         </div>
       ) : null}
     </div>

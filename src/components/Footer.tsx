@@ -84,7 +84,7 @@ export function Footer() {
             </h3>
             <ul className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:block sm:space-y-2">
               <li>
-                <a href="tel:+66855907666" className="hover:text-white">
+                <a href="tel:+66864522644" className="hover:text-white">
                   {t('contactPhoneTh')}
                 </a>
               </li>
@@ -105,7 +105,7 @@ export function Footer() {
               </li>
               <li>
                 <a
-                  href="https://wa.me/message/BVJXBWDYR2UHN1"
+                  href="https://wa.me/66864522644"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="hover:text-white"
@@ -123,21 +123,16 @@ export function Footer() {
         </div>
 
         {/* ===== Legal / Company info =====
-            NOTE: the dev comment that used to live here explaining why
-            privacyPolicy is plain text (no /privacy page exists yet, so no
-            <Link>) got corrupted into unreadable mojibake somewhere in a
-            prior export/repackage step. Re-stated here in clean Thai; the
-            actual behavior (plain text, not a link) is unchanged — swap in
-            <Link href="/privacy"> once that page exists. */}
+            /privacy page now exists (src/app/[locale]/privacy/page.tsx),
+            so privacyPolicy is a real locale-aware Link again. */}
         <div className="mt-10 border-t border-slate-800 pt-6 text-center text-xs leading-relaxed text-slate-500">
           <p>{t('companyLine')}</p>
           <p className="mt-1">
             &copy; {year} WOS. {t('rightsReserved')}
             {' · '}
-            {/* ยังไม่มีหน้านโยบายความเป็นส่วนตัวในเว็บใหม่ — ใส่เป็นข้อความเฉยๆ
-                ไม่ทำเป็นลิงก์ เพื่อไม่ให้เกิด 404 ซ้ำแบบ /partner เดิม
-                (สร้างหน้า /privacy แล้วค่อยเปลี่ยนเป็น <Link href="/privacy"> ทีหลังได้) */}
-            {t('privacyPolicy')}
+            <Link href="/privacy" className="hover:text-white">
+              {t('privacyPolicy')}
+            </Link>
           </p>
         </div>
       </div>

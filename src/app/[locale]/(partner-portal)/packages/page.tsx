@@ -1,9 +1,24 @@
 // src/app/(partner-portal)/packages/page.tsx
 import { requirePartnerAuth } from '@/lib/partner/auth';
+import { createClient } from '@/lib/supabase/server';
 import { PackagesManager } from '@/components/partner/PackagesManager';
 
 export default async function PackagesPage() {
   const { user } = await requirePartnerAuth();
+
+  // ดึง category ของพาร์ทเนอร์ (Hotel/Transport/...) มาส่งให้ PackagesManager
+  // ใช้คุมว่าจะโชว์ dropdown "ประเภทห้อง" หรือไม่ — เฉพาะ category='Hotel'
+  // ดู migration 082 / PackagesManager.tsx สำหรับรายละเอียดเต็ม
+  let partnerCategory: string | null = null;
+  if (user.branch?.partner_id) {
+    const supabase = createClient();
+    const { data: partnerRow } = await supabase
+      .from('partners')
+      .select('category')
+      .eq('id', user.branch.partner_id)
+      .single();
+    partnerCategory = partnerRow?.category ?? null;
+  }
 
   // สาขานี้ยังไม่ถูกผูกกับ partner listing บนเว็บสาธารณะ (แอดมินยังไม่ได้
   // เชื่อมให้ผ่าน branches.partner_id) — สร้างโปรแกรมไปก็ไม่มี partner_id
@@ -34,7 +49,11 @@ export default async function PackagesPage() {
           ถึงจะแสดงบนเว็บไซต์จริง
         </p>
       </div>
-      <PackagesManager partnerId={user.branch.partner_id} organizationId={user.organization_id} />
+      <PackagesManager
+        partnerId={user.branch.partner_id}
+        organizationId={user.organization_id}
+        partnerCategory={partnerCategory}
+      />
     </div>
   );
 }

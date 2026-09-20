@@ -19,6 +19,7 @@ interface PackageFormState {
   is_promotion: boolean;
   suggested_hotel_name: string;
   suggested_hotel_price_note: string;
+  sub_category: string;
 }
 
 const emptyForm: PackageFormState = {
@@ -33,7 +34,21 @@ const emptyForm: PackageFormState = {
   is_promotion: false,
   suggested_hotel_name: '',
   suggested_hotel_price_note: '',
+  sub_category: '',
 };
+
+// ดู migration 082 — ประเภทห้อง ใช้เฉพาะแพ็กเกจของพาร์ทเนอร์หมวด 'Hotel'
+// free-text ที่ DB, dropdown นี้คือ source of truth ของค่าที่ควรใช้จริง
+// (ต้องตรงกับ ROOM_TYPE_OPTIONS ใน partner/PackagesManager.tsx)
+const ROOM_TYPE_OPTIONS: { value: string; label: string }[] = [
+  { value: '', label: 'ไม่ระบุ' },
+  { value: 'single', label: 'ห้องเดี่ยว (Single)' },
+  { value: 'double', label: 'เตียงใหญ่ 2 ท่าน (Double)' },
+  { value: 'twin', label: 'เตียงคู่ 2 ท่าน (Twin)' },
+  { value: 'deluxe', label: 'ห้องดีลักซ์ (Deluxe)' },
+  { value: 'suite', label: 'ห้องสวีท (Suite)' },
+  { value: 'other', label: 'อื่นๆ' },
+];
 
 const STATUS_LABEL: Record<Package['status'], { text: string; className: string }> = {
   pending: { text: '⏳ รอตรวจสอบ', className: 'bg-amber-100 text-amber-700' },
@@ -45,7 +60,9 @@ const STATUS_LABEL: Record<Package['status'], { text: string; className: string 
 type StatusFilter = 'all' | Package['status'];
 
 export function PackagesManager() {
-  const supabase = createClient();
+  // See PartnersManager.tsx's comment — must match AdminGate's 'sb-wos-admin'
+  // cookie or writes here fail RLS as an unauthenticated request.
+  const supabase = createClient('admin');
   const [packages, setPackages] = useState<Package[]>([]);
   const [partners, setPartners] = useState<Partner[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,6 +122,7 @@ export function PackagesManager() {
         is_promotion: !!pkg.is_promotion,
         suggested_hotel_name: (pkg.suggested_hotel_name as string) ?? '',
         suggested_hotel_price_note: (pkg.suggested_hotel_price_note as string) ?? '',
+        sub_category: (pkg.sub_category as string) ?? '',
       });
     } else {
       setForm({ ...emptyForm, partner_id: partners[0]?.id ?? '' });
@@ -155,6 +173,11 @@ export function PackagesManager() {
       is_promotion: form.is_promotion,
       suggested_hotel_name: form.suggested_hotel_name.trim() || null,
       suggested_hotel_price_note: form.suggested_hotel_price_note.trim() || null,
+      // ส่งเฉพาะเมื่อพาร์ทเนอร์ที่เลือกในฟอร์มเป็นหมวดโรงแรม — กันไม่ให้
+      // ค่าตกค้างจากการสลับพาร์ทเนอร์ในฟอร์มเดียวกันหลุดไปแพ็กเกจหมวดอื่น
+      sub_category: partners.find((p) => p.id === form.partner_id)?.category === 'Hotel'
+        ? form.sub_category.trim() || null
+        : null,
     };
     // แอดมินสร้าง/แก้เอง = published ทันที ไม่ต้องผ่านขั้นตอนอนุมัติ
     // (ต่างจากที่พาร์ทเนอร์ส่งมาจาก portal ซึ่งเข้ามาเป็น 'pending' เสมอ)
@@ -211,6 +234,15 @@ export function PackagesManager() {
     }
     loadAll();
   }
+
+  // Category of whichever partner is currently selected in the open
+  // form — controls whether the room-type dropdown shows. Recomputed
+  // from `partners` + `form.partner_id` rather than stored on form
+  // state, so switching the partner dropdown updates this immediately.
+  const selectedFormPartnerCategory = useMemo(
+    () => partners.find((p) => p.id === form.partner_id)?.category ?? null,
+    [partners, form.partner_id]
+  );
 
   // Distinct partner categories, derived from the loaded partners list
   // rather than hardcoded — a new category (added by inserting a partner
@@ -437,7 +469,14 @@ export function PackagesManager() {
             <tbody>
               {filtered.map((pkg) => (
                 <tr key={pkg.id} className="border-t border-slate-100">
-                  <td className="px-4 py-2 font-medium text-slate-800">{pkg.title as string}</td>
+                  <td className="px-4 py-2 font-medium text-slate-800">
+                    {pkg.title as string}
+                    {pkg.sub_category ? (
+                      <div className="text-xs font-normal text-slate-400">
+                        🛏️ {ROOM_TYPE_OPTIONS.find((o) => o.value === pkg.sub_category)?.label ?? pkg.sub_category}
+                      </div>
+                    ) : null}
+                  </td>
                   <td className="px-4 py-2 text-slate-500">
                     {(pkg.partners as { name?: string } | undefined)?.name ?? '-'}
                   </td>
@@ -577,6 +616,25 @@ export function PackagesManager() {
                 onChange={(e) => setForm({ ...form, duration: e.target.value })}
               />
             </div>
+            {selectedFormPartnerCategory === 'Hotel' ? (
+              <div>
+                <label className="form-label">ประเภทห้อง</label>
+                <select
+                  className="form-input"
+                  value={form.sub_category}
+                  onChange={(e) => setForm({ ...form, sub_category: e.target.value })}
+                >
+                  {ROOM_TYPE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-xs text-slate-400">
+                  ใช้กรองในหน้าจองฝั่งลูกค้า — ดู migration 082
+                </p>
+              </div>
+            ) : null}
             <div className="rounded-xl border border-slate-100 bg-slate-50/60 p-3">
               <p className="mb-3 text-xs text-slate-400">
                 🏨 ที่พักแนะนำ — ใช้แค่โชว์ให้ผู้ป่วยเห็นภาพราคาคร่าวๆตอนดูโปรแกรม

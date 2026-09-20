@@ -29,6 +29,9 @@ export async function requireAdmin(response?: NextResponse): Promise<RequireAdmi
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      // Isolated from the partner-portal cookie (see src/lib/supabase/client.ts's
+      // comment) — must match AdminGate.tsx's createClient('admin') exactly.
+      cookieOptions: { name: 'sb-wos-admin' },
       cookies: {
         getAll() {
           return cookieStore.getAll();
