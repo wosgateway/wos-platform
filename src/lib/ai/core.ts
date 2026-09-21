@@ -1,4 +1,4 @@
-﻿import OpenAI from 'openai';
+import OpenAI from 'openai';
 import { WOS_AI_SYSTEM_PROMPT } from './prompts';
 import { searchWosNotionKnowledge } from './notion-knowledge';
 import {
@@ -6,9 +6,18 @@ import {
   getProgramDetails,
 } from './programs';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+// Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
+// at module scope made `next build` fail whenever the key was not present in
+// the build environment. Creating the client on first use keeps builds
+// independent of runtime secrets.
+let openaiClient: OpenAI | null = null;
+
+function getOpenAI(): OpenAI {
+  if (!openaiClient) {
+    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  }
+  return openaiClient;
+}
 
 /**
  * WOS AI tools
@@ -32,7 +41,7 @@ const tools = [
         query: {
           type: 'string',
           description:
-            'The customer search intent or keyword, preferably using the customer language.',
+            'Short search keyword in THAI. Program titles and descriptions are stored in Thai, so translate the customer intent into Thai keywords (for example "knee check" -> "ตรวจเข่า", "dental implant" -> "รากฟันเทียม"), even when the customer writes in English or Lao. Prefer 1-3 words.',
         },
         limit: {
           type: 'integer',
@@ -225,7 +234,9 @@ LIVE PROGRAM TOOL RULES:
 - Only use getProgramDetails with a program ID returned by searchPrograms.
 - Never invent a program ID.
 - Never invent a program, partner, price, service, availability, schedule, duration, or benefit.
-- If searchPrograms returns no results, clearly say that no matching published WOS program was found.
+- Always call searchPrograms with short THAI keywords, because program data is stored in Thai. Translate the customer's request into Thai first, even if the customer writes in English or Lao.
+- If searchPrograms returns no results, retry once with a broader Thai keyword (for example "เข่า" instead of "ตรวจเข่า") before concluding anything.
+- If the retry also returns no results, clearly say that no matching published WOS program was found.
 - If getProgramDetails returns no result, clearly say that verified details for that program are not currently available.
 - Do not claim that a program is available for a specific date or time unless a dedicated availability tool confirms it.
 - Do not expose partner commercial terms, commission rates, internal IDs, admin data, security information, or other internal WOS operational information.
@@ -243,7 +254,7 @@ ${knowledgeContext}`;
      * -------------------------------------------------------
      */
     let response =
-      await openai.responses.create({
+      await getOpenAI().responses.create({
         model: 'gpt-5.6-luna',
         instructions,
         input: userMessage,
@@ -339,7 +350,7 @@ ${knowledgeContext}`;
        * Feed tool results back to the model.
        */
       response =
-        await openai.responses.create({
+        await getOpenAI().responses.create({
           model: 'gpt-5.6-luna',
           instructions,
           previous_response_id:
@@ -354,7 +365,16 @@ ${knowledgeContext}`;
      * 5. Final customer-facing response
      * -------------------------------------------------------
      */
-    return response.output_text;
+    const finalText = response.output_text?.trim();
+
+    if (finalText) {
+      return finalText;
+    }
+
+    // The model was still requesting tools after MAX_TOOL_ROUNDS (or returned
+    // nothing). Never send the customer an empty message.
+    console.warn('[WOS_AI] empty final answer after tool rounds');
+    return 'Sorry, I could not complete that request right now. Please contact the WOS team for help. / ขออภัย ตอนนี้ยังตอบคำถามนี้ไม่ได้ กรุณาติดต่อทีมงาน WOS ค่ะ';
   } catch (error) {
     console.error(
       '[WOS_OPENAI_ERROR]',

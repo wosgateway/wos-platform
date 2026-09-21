@@ -1,4 +1,4 @@
-﻿import {
+import {
   fetchActivePackages,
   fetchPackageById,
   searchPackages,
@@ -237,7 +237,17 @@ function buildSearchCandidates(query: string): string[] {
 function mapSearchResult(
   item: Awaited<ReturnType<typeof searchPackages>>[number]
 ): ProgramSearchResult {
-  const partner = item.partners?.[0];
+  // Supabase returns a many-to-one embed (packages -> partners) as a single
+  // object, not an array; handle both shapes.
+  const rawPartner = item.partners as unknown;
+  const partner = (Array.isArray(rawPartner) ? rawPartner[0] : rawPartner) as
+    | {
+        id?: string;
+        name?: string;
+        category?: string;
+        province?: string | null;
+      }
+    | undefined;
 
   return {
     id: String(item.id ?? ''),
@@ -308,18 +318,6 @@ export async function searchPrograms(
 
     try {
       rawItems = await searchPackages(candidate, safeLimit);
-
-console.log(
-  '[WOS_AI_DEBUG] raw search package:',
-  rawItems.map((item) => ({
-    id: item.id,
-    title: item.title,
-    original_price: item.original_price,
-    special_price: item.special_price,
-    duration: item.duration,
-    duration_minutes: item.duration_minutes,
-  }))
-);
     } catch (error) {
       console.error(
         '[WOS_AI_TOOL] searchPrograms candidate failed:',
@@ -347,12 +345,12 @@ console.log(
   // receive unrelated programs and accidentally present them as matches.
   const normalizedQuery = normalizeQuery(query).toLowerCase();
   const isBroadBrowseQuery =
-    normalizedQuery.includes('มโปรแกรมอะไรบาง') ||
-    normalizedQuery.includes('มบรการอะไรบาง') ||
+    normalizedQuery.includes('มีโปรแกรมอะไรบ้าง') ||
+    normalizedQuery.includes('มีบริการอะไรบ้าง') ||
     normalizedQuery.includes('แนะนำโปรแกรม') ||
-    normalizedQuery.includes('แนะนำบรการ') ||
+    normalizedQuery.includes('แนะนำบริการ') ||
     normalizedQuery.includes('รายการโปรแกรม') ||
-    normalizedQuery.includes('รายการบรการ') ||
+    normalizedQuery.includes('รายการบริการ') ||
     normalizedQuery.includes('what programs') ||
     normalizedQuery.includes('what services') ||
     normalizedQuery.includes('show me programs') ||

@@ -211,9 +211,15 @@ export async function fetchTransportVehiclePricing(): Promise<Record<string, num
   return map;
 }
 
+// NOTE: `partners` is a many-to-one relation (packages.partner_id ->
+// partners.id), so PostgREST always returns a single object here, not
+// an array. This type used to say `Array<...>`, which let
+// `item.partners?.[0]` in programs.ts silently return `undefined`
+// forever. Keep this a single object to match the real response shape.
 type ActivePackageResult = Omit<Partial<Package>, 'partners'> & {
-  partners?: Array<
-    Pick<Partner, 'id' | 'name' | 'category' | 'status' | 'province'>
+  partners?: Pick<
+    Partner,
+    'id' | 'name' | 'category' | 'status' | 'province'
   >;
 };
 
@@ -237,12 +243,17 @@ export async function fetchActivePackages(
 
   if (error) throw error;
 
-  return data ?? [];
+  // Without generated DB types supabase-js infers embedded relations as
+  // arrays, but a many-to-one embed (packages -> partners) is returned as a
+  // single object at runtime, which is what ActivePackageResult describes.
+  return (data ?? []) as unknown as ActivePackageResult[];
 }
 
+// Same many-to-one shape as ActivePackageResult above — not an array.
 type SearchPackageResult = Omit<Partial<Package>, 'partners'> & {
-  partners?: Array<
-    Pick<Partner, 'id' | 'name' | 'category' | 'status' | 'province'>
+  partners?: Pick<
+    Partner,
+    'id' | 'name' | 'category' | 'status' | 'province'
   >;
 };
 
@@ -292,11 +303,15 @@ export async function searchPackages(
 
   const merged = new Map<string, SearchPackageResult>();
 
-  for (const item of [
+  // See note in fetchActivePackages: runtime shape is a single partner object.
+  const rows = [
     ...(titleResult.data ?? []),
     ...(descriptionResult.data ?? []),
-  ]) {
-    merged.set(item.id, item);
+  ] as unknown as SearchPackageResult[];
+
+  for (const item of rows) {
+    const id = item.id;
+    if (typeof id === 'string') merged.set(id, item);
   }
 
   return Array.from(merged.values())

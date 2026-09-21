@@ -1,4 +1,4 @@
-﻿import { notion } from './notion';
+import { notion } from './notion';
 
 export type NotionKnowledgeItem = {
   title: string;
@@ -78,50 +78,86 @@ async function getPageContent(pageId: string) {
     .join('\n');
 }
 
-export async function searchWosNotionKnowledge(
-  query: string
-): Promise<NotionKnowledgeItem[]> {
+// Notion's search endpoint matches page TITLES, not page content, so passing
+// the customer's sentence as the query returned almost nothing. All customer-
+// facing articles are titled "AI Article — ...", so we load that set once and
+// cache it instead of searching per message.
+const ARTICLE_QUERY = 'AI Article';
+const CUSTOMER_FACING_MARKER = 'Customer-facing AI knowledge';
+const CACHE_TTL_MS = 5 * 60_000;
+const FETCH_CONCURRENCY = 3; // Notion allows ~3 requests/second
+
+let cache: { at: number; items: NotionKnowledgeItem[] } | null = null;
+
+function getPageTitle(page: unknown): string {
+  const p = page as {
+    properties?: Record<string, { type?: string; title?: RichTextItem[] }>;
+  };
+  if (!p.properties) return '';
+  const titleProp = Object.values(p.properties).find((v) => v?.type === 'title');
+  return titleProp?.title?.[0]?.plain_text ?? '';
+}
+
+async function loadArticles(): Promise<NotionKnowledgeItem[]> {
   const response = await notion.search({
-    query,
+    query: ARTICLE_QUERY,
     page_size: 100,
-    filter: {
-      property: 'object',
-      value: 'page',
-    },
+    filter: { property: 'object', value: 'page' },
   });
 
+  const pages = response.results;
   const items: NotionKnowledgeItem[] = [];
 
-  for (const rawPage of response.results) {
-    const page = rawPage;
+  for (let i = 0; i < pages.length; i += FETCH_CONCURRENCY) {
+    const chunk = pages.slice(i, i + FETCH_CONCURRENCY);
 
-    const title =
-      'properties' in page &&
-      page.properties &&
-      'title' in page.properties &&
-      page.properties.title &&
-      'title' in page.properties.title &&
-      Array.isArray(page.properties.title.title)
-        ? page.properties.title.title[0]?.plain_text ?? ''
-        : '';
+    const loaded = await Promise.all(
+      chunk.map(async (page): Promise<NotionKnowledgeItem | null> => {
+        const content = await getPageContent(page.id);
 
-    const content = await getPageContent(page.id);
+        // Only pages explicitly marked as customer-facing may reach the model.
+        if (!content || !content.includes(CUSTOMER_FACING_MARKER)) {
+          return null;
+        }
 
-    if (!content) {
-      continue;
+        return {
+          title: getPageTitle(page),
+          content,
+          source: 'notion-ai-article',
+          pageId: page.id,
+        };
+      })
+    );
+
+    for (const item of loaded) {
+      if (item) items.push(item);
     }
-
-    if (!content.includes('Customer-facing AI knowledge')) {
-      continue;
-    }
-
-    items.push({
-      title,
-      content,
-      source: 'notion-ai-article',
-      pageId: page.id,
-    });
   }
 
   return items;
+}
+
+export async function searchWosNotionKnowledge(
+  // Kept for API compatibility with core.ts; all articles are loaded and cached.
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  _query: string
+): Promise<NotionKnowledgeItem[]> {
+  if (cache && Date.now() - cache.at < CACHE_TTL_MS) {
+    return cache.items;
+  }
+
+  try {
+    const items = await loadArticles();
+    cache = { at: Date.now(), items };
+    return items;
+  } catch (error) {
+    // Knowledge is an enhancement: if Notion is down or misconfigured, keep
+    // serving the last good copy, or answer without knowledge, instead of
+    // failing the whole request with a 500.
+    console.error(
+      '[WOS_NOTION_ERROR]',
+      error instanceof Error ? error.message : String(error)
+    );
+    return cache?.items ?? [];
+  }
 }
