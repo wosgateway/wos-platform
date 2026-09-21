@@ -14,7 +14,7 @@ const NAV_ITEMS = [
   { href: '/packages', label: 'โปรแกรม', icon: '📦' },
   { href: '/availability', label: 'ห้องว่าง', icon: '📅' },
   { href: '/vehicles', label: 'รถ', icon: '🚐' },
-  { href: '/routes', label: 'เส้นทาง', icon: '' },
+  { href: '/routes', label: 'เส้นทาง', icon: '🛣️' },
   { href: '/company', label: 'ข้อมูลบริษัท', icon: '🏢' },
   { href: '/documents', label: 'เอกสาร', icon: '📄' },
   { href: '/billing', label: 'บิล & ระบบสมาชิก', icon: '💳' },

@@ -1,3 +1,17 @@
+// src/components/partner/RoutesManager.tsx
+//
+// Phase 5 ของ Milestone 2 (Transport Group) — จัดการเส้นทางให้บริการ
+// (migration 121: public.transport_routes)
+//
+// สัญญา (ล็อกไว้ก่อนเขียน 121):
+//   - ต้นทาง/ปลายทางเป็น code จาก public.transport_locations เท่านั้น
+//     ห้ามมี free text / "อื่นๆ ระบุเอง" (ไม่มีคอลัมน์รองรับใน DB)
+//   - เส้นทางมีทิศทาง: A→B กับ B→A เป็นคนละแถว
+//   - ไม่มีราคา / round_trip / ประเภทรถ ในหน้านี้
+//   - dropdown มาจาก DB (transport_locations) ไม่ hard-code
+//
+// Pattern เดียวกับ VehiclesManager: เรียก Supabase ตรงจาก client + RLS,
+// และตรวจ 0 แถวหลัง update/delete (RLS กรองเงียบ ๆ ไม่ error)
 'use client';
 
 import { useCallback, useEffect, useState } from 'react';
@@ -6,17 +20,13 @@ import { createClient } from '@/lib/supabase/client';
 interface TransportLocation {
   code: string;
   name_th: string;
-  name_en: string;
-  name_lo: string;
   sort_order: number;
 }
 
 interface TransportRoute {
   id: string;
-  origin_code: string | null;
-  destination_code: string | null;
-  origin_custom_name: string | null;
-  destination_custom_name: string | null;
+  origin_code: string;
+  destination_code: string;
   is_active: boolean;
   created_at: string;
 }
@@ -25,23 +35,25 @@ interface RouteFormData {
   id: string | null;
   origin_code: string;
   destination_code: string;
-  origin_custom_name: string;
-  destination_custom_name: string;
   is_active: boolean;
 }
-
-const CUSTOM_LOCATION = '__custom__';
 
 const emptyForm: RouteFormData = {
   id: null,
   origin_code: '',
   destination_code: '',
-  origin_custom_name: '',
-  destination_custom_name: '',
   is_active: true,
 };
 
 const supabase = createClient();
+
+// แปลง error ของ Postgres ให้พาร์ทเนอร์อ่านรู้เรื่อง (ไม่โชว์ข้อความดิบ)
+function friendlyError(err: { code?: string; message: string }): string {
+  if (err.code === '23505') return 'มีเส้นทางนี้อยู่แล้ว (ทิศทางเดียวกัน) — แก้ไขรายการเดิมแทน';
+  if (err.code === '23514') return 'ต้นทางและปลายทางต้องแตกต่างกัน';
+  if (err.code === '23503') return 'จุดรับ-ส่งที่เลือกไม่ถูกต้องหรือถูกปิดใช้งาน กรุณาเลือกใหม่';
+  return err.message;
+}
 
 export function RoutesManager({ partnerId }: { partnerId: string }) {
   const [locations, setLocations] = useState<TransportLocation[]>([]);
@@ -60,31 +72,23 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
     const [locationsResult, routesResult] = await Promise.all([
       supabase
         .from('transport_locations')
-        .select('code,name_th,name_en,name_lo,sort_order')
+        .select('code,name_th,sort_order')
         .eq('is_active', true)
         .order('sort_order', { ascending: true }),
-
       supabase
         .from('transport_routes')
-        .select(
-          'id,origin_code,destination_code,origin_custom_name,destination_custom_name,is_active,created_at'
-        )
+        .select('id,origin_code,destination_code,is_active,created_at')
         .eq('partner_id', partnerId)
         .order('created_at', { ascending: false }),
     ]);
 
     if (locationsResult.error) {
-      setError(
-        'ไม่สามารถโหลดจุดรับ-ส่งได้: ' + locationsResult.error.message
-      );
+      setError('ไม่สามารถโหลดจุดรับ-ส่งได้: ' + locationsResult.error.message);
       setLoading(false);
       return;
     }
-
     if (routesResult.error) {
-      setError(
-        'ไม่สามารถโหลดเส้นทางได้: ' + routesResult.error.message
-      );
+      setError('ไม่สามารถโหลดเส้นทางได้: ' + routesResult.error.message);
       setLoading(false);
       return;
     }
@@ -98,99 +102,43 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
     loadData();
   }, [loadData]);
 
-  function locationLabel(
-    code: string | null,
-    customName: string | null
-  ) {
-    if (code) {
-      const location = locations.find((item) => item.code === code);
-      return location ? location.name_th : code;
-    }
+  // จุดที่ถูกปิดใช้งานทีหลังยังต้องแสดงชื่อ/ค่าเดิมได้ — fallback เป็น code
+  function locationLabel(code: string) {
+    return locations.find((item) => item.code === code)?.name_th ?? code;
+  }
 
-    return customName?.trim() || 'ไม่ระบุสถานที่';
+  // ตอนแก้ไข: ถ้า code เดิมไม่อยู่ใน list (ถูกปิดใช้งาน) ให้ยังเลือกค่าเดิมได้
+  function optionsFor(current: string) {
+    if (current && !locations.some((l) => l.code === current)) {
+      return [...locations, { code: current, name_th: current + ' (ปิดใช้งานแล้ว)', sort_order: 999 }];
+    }
+    return locations;
   }
 
   function openModal(route?: TransportRoute) {
     setFormError('');
-
-    if (!route) {
-      setForm(emptyForm);
-      setModalOpen(true);
-      return;
-    }
-
-    setForm({
-      id: route.id,
-      origin_code: route.origin_code ?? CUSTOM_LOCATION,
-      destination_code: route.destination_code ?? CUSTOM_LOCATION,
-      origin_custom_name: route.origin_custom_name ?? '',
-      destination_custom_name: route.destination_custom_name ?? '',
-      is_active: route.is_active,
-    });
-
+    setForm(
+      route
+        ? {
+            id: route.id,
+            origin_code: route.origin_code,
+            destination_code: route.destination_code,
+            is_active: route.is_active,
+          }
+        : emptyForm
+    );
     setModalOpen(true);
-  }
-
-  function handleOriginChange(value: string) {
-    setForm((current) => ({
-      ...current,
-      origin_code: value,
-      origin_custom_name:
-        value === CUSTOM_LOCATION ? current.origin_custom_name : '',
-    }));
-  }
-
-  function handleDestinationChange(value: string) {
-    setForm((current) => ({
-      ...current,
-      destination_code: value,
-      destination_custom_name:
-        value === CUSTOM_LOCATION ? current.destination_custom_name : '',
-    }));
   }
 
   async function handleSubmit(event: React.FormEvent) {
     event.preventDefault();
     setFormError('');
 
-    const originIsCustom = form.origin_code === CUSTOM_LOCATION;
-    const destinationIsCustom =
-      form.destination_code === CUSTOM_LOCATION;
-
-    const originCustomName = form.origin_custom_name.trim();
-    const destinationCustomName =
-      form.destination_custom_name.trim();
-
     if (!form.origin_code || !form.destination_code) {
       setFormError('กรุณาเลือกต้นทางและปลายทาง');
       return;
     }
-
-    if (originIsCustom && !originCustomName) {
-      setFormError('กรุณาระบุชื่อต้นทาง');
-      return;
-    }
-
-    if (destinationIsCustom && !destinationCustomName) {
-      setFormError('กรุณาระบุชื่อปลายทาง');
-      return;
-    }
-
-    if (
-      originIsCustom &&
-      destinationIsCustom &&
-      originCustomName.toLowerCase() ===
-        destinationCustomName.toLowerCase()
-    ) {
-      setFormError('ต้นทางและปลายทางต้องแตกต่างกัน');
-      return;
-    }
-
-    if (
-      !originIsCustom &&
-      !destinationIsCustom &&
-      form.origin_code === form.destination_code
-    ) {
+    if (form.origin_code === form.destination_code) {
       setFormError('ต้นทางและปลายทางต้องแตกต่างกัน');
       return;
     }
@@ -199,16 +147,8 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
 
     const payload = {
       partner_id: partnerId,
-      origin_code: originIsCustom ? null : form.origin_code,
-      destination_code: destinationIsCustom
-        ? null
-        : form.destination_code,
-      origin_custom_name: originIsCustom
-        ? originCustomName
-        : null,
-      destination_custom_name: destinationIsCustom
-        ? destinationCustomName
-        : null,
+      origin_code: form.origin_code,
+      destination_code: form.destination_code,
       is_active: form.is_active,
     };
 
@@ -219,18 +159,14 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
           .eq('id', form.id)
           .eq('partner_id', partnerId)
           .select('id')
-      : await supabase
-          .from('transport_routes')
-          .insert(payload)
-          .select('id');
+      : await supabase.from('transport_routes').insert(payload).select('id');
 
     setSaving(false);
 
     if (result.error) {
-      setFormError('บันทึกไม่สำเร็จ: ' + result.error.message);
+      setFormError('บันทึกไม่สำเร็จ: ' + friendlyError(result.error));
       return;
     }
-
     if (!result.data || result.data.length === 0) {
       setFormError(
         form.id
@@ -246,9 +182,7 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm('ลบเส้นทางนี้? การดำเนินการนี้ไม่สามารถย้อนกลับได้')) {
-      return;
-    }
+    if (!confirm('ลบเส้นทางนี้? การดำเนินการนี้ไม่สามารถกู้คืนได้')) return;
 
     const { data, error: deleteError } = await supabase
       .from('transport_routes')
@@ -258,15 +192,13 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
       .select('id');
 
     if (deleteError) {
-      alert('ลบไม่สำเร็จ: ' + deleteError.message);
+      alert('ลบไม่สำเร็จ: ' + friendlyError(deleteError));
       return;
     }
-
     if (!data || data.length === 0) {
       alert('ลบไม่สำเร็จ: ไม่พบสิทธิ์ของคุณสำหรับเส้นทางนี้');
       return;
     }
-
     await loadData();
   }
 
@@ -277,11 +209,8 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex gap-4 text-sm text-slate-500">
           <span>เส้นทางทั้งหมด {routes.length}</span>
-          <span className="text-emerald-600">
-            เปิดใช้งาน {activeCount}
-          </span>
+          <span className="text-emerald-600">เปิดใช้งาน {activeCount}</span>
         </div>
-
         <div className="flex gap-2">
           <button
             onClick={loadData}
@@ -289,11 +218,7 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
           >
             รีเฟรช
           </button>
-
-          <button
-            onClick={() => openModal()}
-            className="btn-primary text-sm"
-          >
+          <button onClick={() => openModal()} className="btn-primary text-sm">
             + เพิ่มเส้นทาง
           </button>
         </div>
@@ -325,27 +250,15 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
                 <th className="px-4 py-2"></th>
               </tr>
             </thead>
-
             <tbody>
               {routes.map((route) => (
-                <tr
-                  key={route.id}
-                  className="border-b border-slate-50 hover:bg-slate-50"
-                >
+                <tr key={route.id} className="border-b border-slate-50 hover:bg-slate-50">
                   <td className="px-4 py-3 font-medium text-slate-800">
-                    {locationLabel(
-                      route.origin_code,
-                      route.origin_custom_name
-                    )}
+                    {locationLabel(route.origin_code)}
                   </td>
-
                   <td className="px-4 py-3 font-medium text-slate-800">
-                    {locationLabel(
-                      route.destination_code,
-                      route.destination_custom_name
-                    )}
+                    {locationLabel(route.destination_code)}
                   </td>
-
                   <td className="px-4 py-3">
                     {route.is_active ? (
                       <span className="rounded-full bg-emerald-100 px-2 py-1 text-xs font-medium text-emerald-700">
@@ -357,7 +270,6 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
                       </span>
                     )}
                   </td>
-
                   <td className="px-4 py-3 text-right">
                     <button
                       onClick={() => openModal(route)}
@@ -365,7 +277,6 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
                     >
                       แก้ไข
                     </button>
-
                     <button
                       onClick={() => handleDelete(route.id)}
                       className="text-xs text-red-500 hover:underline"
@@ -396,105 +307,53 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
               </div>
             ) : null}
 
-            {/* Origin */}
             <div>
               <label className="form-label">ต้นทาง *</label>
-
               <select
                 className="form-input"
                 value={form.origin_code}
                 onChange={(event) =>
-                  handleOriginChange(event.target.value)
+                  setForm({ ...form, origin_code: event.target.value })
                 }
               >
                 <option value="">เลือกต้นทาง</option>
-
-                {locations.map((location) => (
+                {optionsFor(form.origin_code).map((location) => (
                   <option key={location.code} value={location.code}>
                     {location.name_th}
                   </option>
                 ))}
-
-                <option value={CUSTOM_LOCATION}>
-                  อื่นๆ — ระบุเอง
-                </option>
               </select>
-
-              {form.origin_code === CUSTOM_LOCATION ? (
-                <input
-                  type="text"
-                  className="form-input mt-2"
-                  value={form.origin_custom_name}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      origin_custom_name: event.target.value,
-                    })
-                  }
-                  placeholder="ระบุชื่อต้นทาง เช่น โรงแรม ABC"
-                  maxLength={200}
-                />
-              ) : null}
             </div>
 
-            {/* Destination */}
             <div>
               <label className="form-label">ปลายทาง *</label>
-
               <select
                 className="form-input"
                 value={form.destination_code}
                 onChange={(event) =>
-                  handleDestinationChange(event.target.value)
+                  setForm({ ...form, destination_code: event.target.value })
                 }
               >
                 <option value="">เลือกปลายทาง</option>
-
-                {locations.map((location) => (
+                {optionsFor(form.destination_code).map((location) => (
                   <option key={location.code} value={location.code}>
                     {location.name_th}
                   </option>
                 ))}
-
-                <option value={CUSTOM_LOCATION}>
-                  อื่นๆ — ระบุเอง
-                </option>
               </select>
-
-              {form.destination_code === CUSTOM_LOCATION ? (
-                <input
-                  type="text"
-                  className="form-input mt-2"
-                  value={form.destination_custom_name}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      destination_custom_name: event.target.value,
-                    })
-                  }
-                  placeholder="ระบุชื่อปลายทาง เช่น โรงพยาบาล ABC"
-                  maxLength={200}
-                />
-              ) : null}
             </div>
 
-            <div>
-              <label className="flex items-center gap-2 text-sm text-slate-600">
-                <input
-                  type="checkbox"
-                  checked={form.is_active}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      is_active: event.target.checked,
-                    })
-                  }
-                  className="h-4 w-4 rounded border-slate-300 text-primary-dark focus:ring-primary"
-                />
-
-                เปิดใช้งานเส้นทางนี้
-              </label>
-            </div>
+            <label className="flex items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={form.is_active}
+                onChange={(event) =>
+                  setForm({ ...form, is_active: event.target.checked })
+                }
+                className="h-4 w-4 rounded border-slate-300 text-primary-dark focus:ring-primary"
+              />
+              เปิดใช้งานเส้นทางนี้
+            </label>
 
             <p className="text-xs text-slate-400">
               หมายเหตุ: เส้นทางขาไปและขากลับเป็นคนละรายการ เช่น
@@ -509,7 +368,6 @@ export function RoutesManager({ partnerId }: { partnerId: string }) {
               >
                 ยกเลิก
               </button>
-
               <button
                 type="submit"
                 disabled={saving}
