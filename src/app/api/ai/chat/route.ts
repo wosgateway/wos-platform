@@ -14,6 +14,28 @@ function getClientIp(request: Request): string {
   return forwarded?.split(',')[0]?.trim() || 'unknown';
 }
 
+function getErrorStatus(error: unknown): number | undefined {
+  return (error as { status?: number } | null)?.status;
+}
+
+// Seconds the upstream told us to wait (works with plain-object headers and
+// the Headers class, depending on the openai SDK version). Clamped so a daily
+// quota reset never produces an absurd value.
+function getRetryAfterSeconds(error: unknown): number {
+  const headers = (error as { headers?: unknown } | null)?.headers;
+  let raw: string | null | undefined;
+
+  if (headers && typeof (headers as Headers).get === 'function') {
+    raw = (headers as Headers).get('retry-after');
+  } else if (headers && typeof headers === 'object') {
+    raw = (headers as Record<string, string | undefined>)['retry-after'];
+  }
+
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 30;
+  return Math.min(Math.ceil(seconds), 3600);
+}
+
 export async function POST(request: Request) {
   try {
     // This endpoint is public and every call costs OpenAI tokens.
@@ -61,7 +83,26 @@ export async function POST(request: Request) {
       answer,
     });
   } catch (error) {
-    console.error('[AI_CHAT_ERROR]', error);
+    // OpenAI quota / rate limit (429): the service is healthy, it is just
+    // busy or out of quota. Tell the caller to retry instead of a generic 500.
+    if (getErrorStatus(error) === 429) {
+      const retryAfter = getRetryAfterSeconds(error);
+      console.warn('[AI_CHAT_RATE_LIMITED] upstream 429, retry after', retryAfter, 's');
+
+      return NextResponse.json(
+        {
+          error: 'AI service is busy',
+          message:
+            'The assistant is very busy right now. Please try again in a moment. / ผู้ช่วยกำลังมีผู้ใช้งานจำนวนมาก กรุณาลองอีกครั้งในอีกสักครู่ค่ะ',
+        },
+        { status: 503, headers: { 'Retry-After': String(retryAfter) } }
+      );
+    }
+
+    console.error(
+      '[AI_CHAT_ERROR]',
+      error instanceof Error ? error.message : error
+    );
 
     return NextResponse.json(
       { error: 'AI service temporarily unavailable' },

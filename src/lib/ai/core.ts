@@ -10,6 +10,11 @@ import {
 // at module scope made `next build` fail whenever the key was not present in
 // the build environment. Creating the client on first use keeps builds
 // independent of runtime secrets.
+// gpt-5.6-luna defaults to "medium" reasoning, which took ~10s per answer.
+// Customer chat is mostly lookup + summarise, so start at "low". Supported
+// values for this model: none | low | medium | high | xhigh | max.
+const REASONING_EFFORT = 'low' as const;
+
 let openaiClient: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
@@ -172,25 +177,98 @@ async function executeTool(
 }
 
 /**
+ * ---------------------------------------------------------
+ * Usage accounting
+ * ---------------------------------------------------------
+ */
+type UsageTotals = {
+  requests: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  reasoningTokens: number;
+  totalTokens: number;
+};
+
+function createUsageTotals(): UsageTotals {
+  return {
+    requests: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    reasoningTokens: 0,
+    totalTokens: 0,
+  };
+}
+
+// One customer question can cost several OpenAI requests (first call + one
+// per tool round), and the full instructions are re-sent on each of them.
+// Track the totals so quota/cost problems are visible in the logs.
+function addUsage(
+  totals: UsageTotals,
+  response: {
+    usage?: {
+      input_tokens?: number;
+      output_tokens?: number;
+      total_tokens?: number;
+      input_tokens_details?: { cached_tokens?: number };
+      output_tokens_details?: { reasoning_tokens?: number };
+    } | null;
+  }
+) {
+  totals.requests += 1;
+  const u = response.usage;
+  if (!u) return;
+  totals.inputTokens += u.input_tokens ?? 0;
+  totals.cachedInputTokens += u.input_tokens_details?.cached_tokens ?? 0;
+  totals.outputTokens += u.output_tokens ?? 0;
+  totals.reasoningTokens += u.output_tokens_details?.reasoning_tokens ?? 0;
+  totals.totalTokens += u.total_tokens ?? 0;
+}
+
+// Avoid dumping the whole SDK error (it includes every response header,
+// including Set-Cookie) into the logs.
+function describeError(error: unknown) {
+  const e = error as { status?: number; code?: string; message?: string };
+  return {
+    status: e?.status,
+    code: e?.code,
+    message: e?.message ?? String(error),
+  };
+}
+
+export type WosAIHistoryMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+/**
  * Maximum number of tool rounds allowed for one customer message.
  *
- * Example:
+ * Typical path: searchPrograms -> getProgramDetails -> final answer
+ * (2 tool rounds -> 3 OpenAI requests total).
  *
- * Round 1:
- * searchPrograms
- *
- * Round 2:
- * getProgramDetails
- *
- * Round 3:
- * final answer
- *
- * This prevents accidental infinite tool loops.
+ * 3 rather than 2: prompts.ts explicitly instructs the model to retry
+ * searchPrograms once with a broader Thai keyword when the first
+ * search returns nothing ("ถ้า searchPrograms ไม่เจอ ให้ลองคำกว้างขึ้น
+ * อีกครั้งก่อนสรุป") — that's search(narrow) -> search(broad) ->
+ * getProgramDetails -> final, i.e. 3 tool rounds. MAX_TOOL_ROUNDS=2
+ * would cut that documented retry path off mid-flow for a plausible,
+ * common customer question ("มีโปรแกรมไหม" with a term that doesn't
+ * exact-match). 4 (the previous value) allows one more round of
+ * slack than any of today's known flows need, so 3 is the tighter
+ * cap that doesn't also break the retry-with-broader-keyword rule.
+ * Revisit once [WOS_AI_USAGE] shows how often round 3 actually fires.
  */
-const MAX_TOOL_ROUNDS = 4;
+const MAX_TOOL_ROUNDS = 3;
 
 export async function runWosAI(
-  userMessage: string
+  userMessage: string,
+  // Optional prior turns of this conversation, oldest first. AI Core
+  // owns context assembly — callers (the Chatwoot webhook, /api/ai/chat)
+  // pass raw history; they must not build their own prompt around it.
+  // Defaults to [] so existing single-string call sites keep working.
+  history: WosAIHistoryMessage[] = []
 ) {
   try {
     /**
@@ -253,13 +331,26 @@ ${knowledgeContext}`;
      * 3. Initial OpenAI request
      * -------------------------------------------------------
      */
+    const usage = createUsageTotals();
+
+    // History is appended before the current message so the model
+    // sees the conversation in order; the knowledge/program lookups
+    // above are still keyed on userMessage only (the latest turn),
+    // matching how the previous webhook decided what to search for.
+    const input = [
+      ...history.map((m) => ({ role: m.role, content: m.content })),
+      { role: 'user' as const, content: userMessage },
+    ];
+
     let response =
       await getOpenAI().responses.create({
         model: 'gpt-5.6-luna',
         instructions,
-        input: userMessage,
+        input,
         tools: [...tools],
+        reasoning: { effort: REASONING_EFFORT },
       });
+    addUsage(usage, response);
 
     /**
      * -------------------------------------------------------
@@ -357,8 +448,19 @@ ${knowledgeContext}`;
             response.id,
           input: toolOutputs,
           tools: [...tools],
+          reasoning: { effort: REASONING_EFFORT },
         });
+      addUsage(usage, response);
     }
+
+    console.log(
+      '[WOS_AI_USAGE]',
+      JSON.stringify({
+        ...usage,
+        knowledgeArticles: knowledge.length,
+        instructionsChars: instructions.length,
+      })
+    );
 
     /**
      * -------------------------------------------------------
@@ -378,7 +480,7 @@ ${knowledgeContext}`;
   } catch (error) {
     console.error(
       '[WOS_OPENAI_ERROR]',
-      error
+      JSON.stringify(describeError(error))
     );
 
     throw error;
