@@ -5,6 +5,7 @@ import {
   searchPrograms,
   getProgramDetails,
 } from './programs';
+import { createServiceClient } from '@/lib/supabase/service';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -262,6 +263,58 @@ export type WosAIHistoryMessage = {
  */
 const MAX_TOOL_ROUNDS = 3;
 
+// =====================================================
+// Dynamic contact-info block (from Supabase `bot_config` table)
+//
+// ย้ายมาจาก Chatwoot webhook route.ts เดิม — ตอนนี้เป็นส่วนหนึ่งของ AI
+// Core V1 แทน เพราะทั้ง Chatwoot webhook และ /api/ai/chat ควรได้ข้อมูล
+// ติดต่อชุดเดียวกัน ไม่ใช่แค่ webhook ทางเดียวเหมือนเดิม
+//
+// เหตุผลที่ต้องมี: ถ้าไม่ inject ข้อมูลนี้เข้า context โมเดลจะ "เดา" เอง
+// (เช่น เดา LINE OA จากชื่อโดเมน, เดาว่าไม่มี WhatsApp) ซึ่งเคยเป็นบั๊กจริง
+// มาก่อน แคชไว้ 60 วินาทีกันยิง query Supabase ทุกข้อความที่เข้ามา
+// =====================================================
+type BotConfigRow = { key: string; value: string };
+let botConfigCache: { block: string; fetchedAt: number } | null = null;
+const BOT_CONFIG_TTL_MS = 60_000;
+
+async function getContactInfoBlock(): Promise<string> {
+  const now = Date.now();
+  if (botConfigCache && now - botConfigCache.fetchedAt < BOT_CONFIG_TTL_MS) {
+    return botConfigCache.block;
+  }
+
+  try {
+    const supabase = createServiceClient();
+    const { data, error } = await supabase.from('bot_config').select('key, value');
+
+    if (error || !data) {
+      console.error('[ai-core] failed to load bot_config', error?.message);
+      // ใช้ค่าเก่าที่แคชไว้ต่อถ้ามี ดีกว่าไม่มีข้อมูลติดต่อเลยทั้งหมด
+      return botConfigCache?.block ?? '';
+    }
+
+    const cfg: Record<string, string> = {};
+    for (const row of data as BotConfigRow[]) cfg[row.key] = row.value;
+
+    const block = `VERIFIED CONTACT INFORMATION (use only when the customer asks for a contact channel — never invent a channel not listed here, e.g. do not claim Facebook/Telegram exist if not listed):
+- Phone (Thailand): ${cfg.contact_phone_th ?? 'not available'}
+- Phone (Laos): ${cfg.contact_phone_la ?? 'not available'}
+- LINE OA: ${cfg.contact_line_id ?? 'not available'} (link: ${cfg.contact_line_url ?? ''})
+- WhatsApp: ${cfg.contact_whatsapp_url ? `available (link: ${cfg.contact_whatsapp_url})` : 'not available'}
+- Email: ${cfg.contact_email ?? 'not available'}`;
+
+    botConfigCache = { block, fetchedAt: now };
+    return block;
+  } catch (err) {
+    console.error(
+      '[ai-core] getContactInfoBlock error',
+      err instanceof Error ? err.message : String(err)
+    );
+    return botConfigCache?.block ?? '';
+  }
+}
+
 export async function runWosAI(
   userMessage: string,
   // Optional prior turns of this conversation, oldest first. AI Core
@@ -276,10 +329,10 @@ export async function runWosAI(
      * 1. Retrieve verified WOS knowledge from Notion
      * -------------------------------------------------------
      */
-    const knowledge =
-      await searchWosNotionKnowledge(
-        userMessage
-      );
+    const [knowledge, contactInfoBlock] = await Promise.all([
+      searchWosNotionKnowledge(userMessage),
+      getContactInfoBlock(),
+    ]);
 
     const knowledgeContext =
       knowledge.length > 0
@@ -324,7 +377,13 @@ LIVE PROGRAM TOOL RULES:
 - Answer in the customer's language whenever practical.
 
 VERIFIED WOS KNOWLEDGE:
-${knowledgeContext}`;
+${knowledgeContext}
+
+${contactInfoBlock}
+
+CONTACT INFO RULE:
+- If the customer asks for a phone number, LINE, WhatsApp, or email, answer directly from the verified contact information above — do not say "the team will contact you" instead.
+- Never invent a contact channel that is not listed above.`;
 
     /**
      * -------------------------------------------------------
