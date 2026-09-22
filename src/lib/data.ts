@@ -276,30 +276,53 @@ export async function searchPackages(
   const baseSelect =
     'id, partner_id, title, description, image_url, is_promotion, original_price, special_price, duration, status, is_active, sub_category, partners!inner(id, name, category, status, province)';
 
-  const [titleResult, descriptionResult] = await Promise.all([
-    supabase
-      .from('packages')
-      .select(baseSelect)
-      .eq('status', 'published')
-      .eq('is_active', true)
-      .eq('partners.status', 'active')
-      .ilike('title', searchPattern)
-      .order('title', { ascending: true })
-      .limit(safeLimit),
+  const [titleResult, descriptionResult, partnerNameResult, provinceResult] =
+    await Promise.all([
+      supabase
+        .from('packages')
+        .select(baseSelect)
+        .eq('status', 'published')
+        .eq('is_active', true)
+        .eq('partners.status', 'active')
+        .ilike('title', searchPattern)
+        .order('title', { ascending: true })
+        .limit(safeLimit),
 
-    supabase
-      .from('packages')
-      .select(baseSelect)
-      .eq('status', 'published')
-      .eq('is_active', true)
-      .eq('partners.status', 'active')
-      .ilike('description', searchPattern)
-      .order('title', { ascending: true })
-      .limit(safeLimit),
-  ]);
+      supabase
+        .from('packages')
+        .select(baseSelect)
+        .eq('status', 'published')
+        .eq('is_active', true)
+        .eq('partners.status', 'active')
+        .ilike('description', searchPattern)
+        .order('title', { ascending: true })
+        .limit(safeLimit),
+
+      supabase
+        .from('packages')
+        .select(baseSelect)
+        .eq('status', 'published')
+        .eq('is_active', true)
+        .eq('partners.status', 'active')
+        .ilike('partners.name', searchPattern)
+        .order('title', { ascending: true })
+        .limit(safeLimit),
+
+      supabase
+        .from('packages')
+        .select(baseSelect)
+        .eq('status', 'published')
+        .eq('is_active', true)
+        .eq('partners.status', 'active')
+        .ilike('partners.province', searchPattern)
+        .order('title', { ascending: true })
+        .limit(safeLimit),
+    ]);
 
   if (titleResult.error) throw titleResult.error;
   if (descriptionResult.error) throw descriptionResult.error;
+  if (partnerNameResult.error) throw partnerNameResult.error;
+  if (provinceResult.error) throw provinceResult.error;
 
   const merged = new Map<string, SearchPackageResult>();
 
@@ -307,6 +330,8 @@ export async function searchPackages(
   const rows = [
     ...(titleResult.data ?? []),
     ...(descriptionResult.data ?? []),
+    ...(partnerNameResult.data ?? []),
+    ...(provinceResult.data ?? []),
   ] as unknown as SearchPackageResult[];
 
   for (const item of rows) {
