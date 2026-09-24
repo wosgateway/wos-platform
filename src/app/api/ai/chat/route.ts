@@ -60,8 +60,24 @@ export async function POST(request: Request) {
       );
     }
 
-    const body = await request.json();
-    const message = body?.message;
+    // Parse the body ourselves so malformed JSON returns a clean 400 instead
+    // of falling into the catch-all 500. The body is never logged: it is
+    // customer text.
+    let body: unknown;
+
+    try {
+      body = JSON.parse(await request.text());
+    } catch {
+      return NextResponse.json(
+        { error: 'Invalid JSON body' },
+        { status: 400 }
+      );
+    }
+
+    const message =
+      typeof body === 'object' && body !== null
+        ? (body as { message?: unknown }).message
+        : undefined;
 
     if (typeof message !== 'string' || !message.trim()) {
       return NextResponse.json(

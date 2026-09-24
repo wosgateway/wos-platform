@@ -4,45 +4,42 @@ import {
   searchPackages,
 } from '@/lib/data';
 
+/**
+ * These objects are sent straight back to the model as tool results, so keep
+ * them small: no image URLs, category/sub-category, or partner ids. The model
+ * copies whatever it sees, and the prompt forbids showing internal ids.
+ *
+ * `id` stays on search results only because getProgramDetails needs it
+ * (tool-guard.ts collects it from here).
+ */
+export type ProgramPartnerInfo = {
+  name?: string;
+  province?: string | null;
+};
+
 export type ProgramSearchResult = {
   id: string;
   title: string;
   description?: string | null;
-  image_url?: string | null;
-  sub_category?: string | null;
   is_promotion?: boolean;
   original_price?: number | null;
   special_price?: number | null;
   duration?: string | null;
   duration_minutes?: number | null;
-  partner_id?: string;
-  partner?: {
-    id?: string;
-    name?: string;
-    category?: string;
-    province?: string | null;
-  };
+  partner?: ProgramPartnerInfo;
 };
 
-export type ProgramDetailsResult = {
-  id: string;
-  title: string;
-  description?: string | null;
-  image_url?: string | null;
-  sub_category?: string | null;
-  is_promotion?: boolean;
-  original_price?: number | null;
-  special_price?: number | null;
-  duration?: string | null;
-  duration_minutes?: number | null;
-  partner_id?: string;
-  partner?: {
-    id?: string;
-    name?: string;
-    category?: string;
-    province?: string | null;
-  };
-};
+export type ProgramDetailsResult = Omit<ProgramSearchResult, 'id'>;
+
+/** Drop null/undefined/empty-string fields so the model sees only real data. */
+function compact<T extends Record<string, unknown>>(obj: T): T {
+  const out: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === null || value === undefined || value === '') continue;
+    out[key] = value;
+  }
+  return out as T;
+}
 
 /**
  * Words that are usually conversational/search noise rather than
@@ -249,49 +246,26 @@ function mapSearchResult(
       }
     | undefined;
 
-  return {
+  return compact({
     id: String(item.id ?? ''),
     title: String(item.title ?? ''),
-    description:
-      item.description == null ? null : String(item.description),
-    image_url:
-      item.image_url == null ? null : String(item.image_url),
-    sub_category:
-      item.sub_category == null ? null : String(item.sub_category),
-    is_promotion: Boolean(item.is_promotion),
-
-original_price:
-  item.original_price == null
-    ? null
-    : Number(item.original_price),
-
-special_price:
-  item.special_price == null
-    ? null
-    : Number(item.special_price),
-
-duration:
-  item.duration == null
-    ? null
-    : String(item.duration),
-
-duration_minutes:
-  item.duration_minutes == null
-    ? null
-    : Number(item.duration_minutes),
-
-partner_id:
-      item.partner_id == null ? undefined : String(item.partner_id),
+    description: item.description == null ? null : String(item.description),
+    is_promotion: item.is_promotion ? true : undefined,
+    original_price:
+      item.original_price == null ? null : Number(item.original_price),
+    special_price:
+      item.special_price == null ? null : Number(item.special_price),
+    duration: item.duration == null ? null : String(item.duration),
+    duration_minutes:
+      item.duration_minutes == null ? null : Number(item.duration_minutes),
     partner: partner
-      ? {
-          id: String(partner.id ?? ''),
+      ? compact({
           name: String(partner.name ?? ''),
-          category: String(partner.category ?? ''),
           province:
             partner.province == null ? null : String(partner.province),
-        }
+        })
       : undefined,
-  };
+  }) as ProgramSearchResult;
 }
 
 export async function searchPrograms(
@@ -405,47 +379,24 @@ export async function getProgramDetails(
       return null;
     }
 
-    return {
-      id: String(item.id ?? ''),
+    return compact({
       title: String(item.title ?? ''),
       description:
         item.description == null ? null : String(item.description),
-      image_url:
-        item.image_url == null ? null : String(item.image_url),
-      sub_category:
-        item.sub_category == null ? null : String(item.sub_category),
-      is_promotion: Boolean(item.is_promotion),
-
-original_price:
-  item.original_price == null
-    ? null
-    : Number(item.original_price),
-
-special_price:
-  item.special_price == null
-    ? null
-    : Number(item.special_price),
-
-duration:
-  item.duration == null
-    ? null
-    : String(item.duration),
-
-duration_minutes:
-  item.duration_minutes == null
-    ? null
-    : Number(item.duration_minutes),
-
-partner_id:
-  item.partner_id == null ? undefined : String(item.partner_id),
-      partner: {
-        id: String(partner.id ?? ''),
+      is_promotion: item.is_promotion ? true : undefined,
+      original_price:
+        item.original_price == null ? null : Number(item.original_price),
+      special_price:
+        item.special_price == null ? null : Number(item.special_price),
+      duration: item.duration == null ? null : String(item.duration),
+      duration_minutes:
+        item.duration_minutes == null ? null : Number(item.duration_minutes),
+      partner: compact({
         name: String(partner.name ?? ''),
-        category: String(partner.category ?? ''),
         province:
           partner.province == null ? null : String(partner.province),
-      },
-    };
+      }),
+    }) as ProgramDetailsResult;
   } catch (error) {
     console.error(
       '[WOS_AI_TOOL] getProgramDetails failed:',

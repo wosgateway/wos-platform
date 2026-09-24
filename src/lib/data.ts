@@ -257,6 +257,7 @@ type SearchPackageResult = Omit<Partial<Package>, 'partners'> & {
   >;
 };
 
+
 export async function searchPackages(
   query: string,
   limit = 10
@@ -271,80 +272,53 @@ export async function searchPackages(
   if (!safeQuery) return [];
 
   const safeLimit = Math.min(Math.max(limit, 1), 10);
-  const searchPattern = `%${safeQuery}%`;
 
-  const baseSelect =
-    'id, partner_id, title, description, image_url, is_promotion, original_price, special_price, duration, status, is_active, sub_category, partners!inner(id, name, category, status, province)';
+  const { data, error } = await supabase.rpc('search_packages_thai', {
+    search_term: safeQuery,
+    result_limit: safeLimit,
+  });
 
-  const [titleResult, descriptionResult, partnerNameResult, provinceResult] =
-    await Promise.all([
-      supabase
-        .from('packages')
-        .select(baseSelect)
-        .eq('status', 'published')
-        .eq('is_active', true)
-        .eq('partners.status', 'active')
-        .ilike('title', searchPattern)
-        .order('title', { ascending: true })
-        .limit(safeLimit),
+  if (error) throw error;
 
-      supabase
-        .from('packages')
-        .select(baseSelect)
-        .eq('status', 'published')
-        .eq('is_active', true)
-        .eq('partners.status', 'active')
-        .ilike('description', searchPattern)
-        .order('title', { ascending: true })
-        .limit(safeLimit),
+  type SearchPackagesThaiRow = {
+    id: string;
+    partner_id: string | null;
+    title: string | null;
+    description: string | null;
+    image_url: string | null;
+    is_promotion: boolean | null;
+    original_price: number | null;
+    special_price: number | null;
+    duration: string | null;
+    status: string | null;
+    is_active: boolean | null;
+    sub_category: string | null;
+    partner_id_out: string | null;
+    partner_name: string | null;
+    partner_category: string | null;
+    partner_status: string | null;
+    partner_province: string | null;
+  };
 
-      supabase
-        .from('packages')
-        .select(baseSelect)
-        .eq('status', 'published')
-        .eq('is_active', true)
-        .eq('partners.status', 'active')
-        .ilike('partners.name', searchPattern)
-        .order('title', { ascending: true })
-        .limit(safeLimit),
-
-      supabase
-        .from('packages')
-        .select(baseSelect)
-        .eq('status', 'published')
-        .eq('is_active', true)
-        .eq('partners.status', 'active')
-        .ilike('partners.province', searchPattern)
-        .order('title', { ascending: true })
-        .limit(safeLimit),
-    ]);
-
-  if (titleResult.error) throw titleResult.error;
-  if (descriptionResult.error) throw descriptionResult.error;
-  if (partnerNameResult.error) throw partnerNameResult.error;
-  if (provinceResult.error) throw provinceResult.error;
-
-  const merged = new Map<string, SearchPackageResult>();
-
-  // See note in fetchActivePackages: runtime shape is a single partner object.
-  const rows = [
-    ...(titleResult.data ?? []),
-    ...(descriptionResult.data ?? []),
-    ...(partnerNameResult.data ?? []),
-    ...(provinceResult.data ?? []),
-  ] as unknown as SearchPackageResult[];
-
-  for (const item of rows) {
-    const id = item.id;
-    if (typeof id === 'string') merged.set(id, item);
-  }
-
-  return Array.from(merged.values())
-    .sort((a, b) =>
-      String(a.title ?? '').localeCompare(
-        String(b.title ?? ''),
-        'th'
-      )
-    )
-    .slice(0, safeLimit);
+  return ((data ?? []) as SearchPackagesThaiRow[]).map((row) => ({
+    id: row.id,
+    partner_id: row.partner_id ?? undefined,
+    title: row.title,
+    description: row.description,
+    image_url: row.image_url,
+    is_promotion: row.is_promotion,
+    original_price: row.original_price,
+    special_price: row.special_price,
+    duration: row.duration,
+    status: row.status,
+    is_active: row.is_active,
+    sub_category: row.sub_category,
+    partners: {
+      id: row.partner_id_out ?? undefined,
+      name: row.partner_name ?? undefined,
+      category: row.partner_category ?? undefined,
+      status: row.partner_status ?? undefined,
+      province: row.partner_province,
+    },
+  })) as unknown as SearchPackageResult[];
 }

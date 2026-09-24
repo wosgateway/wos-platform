@@ -1,10 +1,24 @@
 import OpenAI from 'openai';
 import { WOS_AI_SYSTEM_PROMPT } from './prompts';
-import { searchWosNotionKnowledge } from './notion-knowledge';
+import { looksLikeLeakedToolCall, sanitizeHistory } from './leak-guard';
+import {
+  buildFallbackReply,
+  buildProgramAnswer,
+  extractVerifiedPrograms,
+  type VerifiedProgram,
+} from './program-answer';
+import {
+  annotateToolResult,
+  collectUuidsFromMessages,
+  NO_LOOKUP_TOOL,
+  normalizeToolCall,
+  validateToolArgs,
+} from './tool-guard';
 import {
   searchPrograms,
   getProgramDetails,
 } from './programs';
+import { searchWosNotionKnowledge } from './notion-knowledge';
 import { createServiceClient } from '@/lib/supabase/service';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
@@ -14,13 +28,17 @@ import { createServiceClient } from '@/lib/supabase/service';
 // gpt-5.6-luna defaults to "medium" reasoning, which took ~10s per answer.
 // Customer chat is mostly lookup + summarise, so start at "low". Supported
 // values for this model: none | low | medium | high | xhigh | max.
-const REASONING_EFFORT = 'low' as const;
 
 let openaiClient: OpenAI | null = null;
 
 function getOpenAI(): OpenAI {
   if (!openaiClient) {
-    openaiClient = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+    openaiClient = new OpenAI({
+      apiKey: process.env.LITELLM_API_KEY || process.env.OPENAI_API_KEY,
+      ...(process.env.LITELLM_BASE_URL
+        ? { baseURL: process.env.LITELLM_BASE_URL }
+        : {}),
+    });
   }
   return openaiClient;
 }
@@ -81,7 +99,39 @@ const tools = [
       additionalProperties: false,
     },
   },
+
+  // typhoon2-8b's Ollama template rewrites the last user message to "respond
+  // with a JSON for a function call" whenever tools are attached, so the model
+  // cannot answer a greeting / contact question in plain text. This no-op tool
+  // gives it a legal way to say "no lookup needed"; core.ts then re-asks the
+  // model WITHOUT tools so it answers in natural language.
+  {
+    type: 'function' as const,
+    name: NO_LOOKUP_TOOL,
+    description:
+      'Call this ONLY when the customer message does NOT ask about programs, packages, services, treatments, prices, clinics, hotels or transport: for example a greeting, thanks, a request for contact details, or a general question. If the message mentions any program or service, call searchPrograms instead.',
+    strict: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        reason: {
+          type: 'string',
+          description: 'One short phrase saying why no program lookup is needed.',
+        },
+      },
+      required: ['reason'],
+      additionalProperties: false,
+    },
+  },
 ] as const;
+
+/**
+ * Appended to every successful tool result. Small local models tend to echo
+ * the raw JSON back instead of answering; this states the required output
+ * form right next to the data they are looking at.
+ */
+const ANSWER_INSTRUCTION =
+  'Now answer the customer in plain natural language in the customer\'s language. Do NOT output JSON, field names, or code. Mention the program name, the provider (partner) name, the province, the price (show the special_price as the current price and original_price as the regular price if is_promotion is true) and the duration when available. Do not show internal ids or image links. Do not call another tool unless the answer still needs one.';
 
 async function executeTool(
   name: string,
@@ -108,22 +158,15 @@ async function executeTool(
       };
     }
 
-    console.log(
-      '[WOS_AI_TOOL] searchPrograms query:',
-      query
-    );
-
     const items = await searchPrograms(query, limit);
 
-    console.log(
-      '[WOS_AI_TOOL] searchPrograms results:',
-      items
-    );
+    console.log('[WOS_AI_TOOL] searchPrograms count:', items.length);
 
     return {
       success: true,
       count: items.length,
       items,
+      ...(items.length > 0 ? { instruction: ANSWER_INSTRUCTION } : {}),
     };
   }
 
@@ -145,17 +188,9 @@ async function executeTool(
       };
     }
 
-    console.log(
-      '[WOS_AI_TOOL] getProgramDetails programId:',
-      programId
-    );
-
     const item = await getProgramDetails(programId);
 
-    console.log(
-      '[WOS_AI_TOOL] getProgramDetails result:',
-      item
-    );
+    console.log('[WOS_AI_TOOL] getProgramDetails found:', Boolean(item));
 
     if (!item) {
       return {
@@ -169,6 +204,7 @@ async function executeTool(
     return {
       success: true,
       item,
+      instruction: ANSWER_INSTRUCTION,
     };
   }
 
@@ -205,28 +241,6 @@ function createUsageTotals(): UsageTotals {
 // One customer question can cost several OpenAI requests (first call + one
 // per tool round), and the full instructions are re-sent on each of them.
 // Track the totals so quota/cost problems are visible in the logs.
-function addUsage(
-  totals: UsageTotals,
-  response: {
-    usage?: {
-      input_tokens?: number;
-      output_tokens?: number;
-      total_tokens?: number;
-      input_tokens_details?: { cached_tokens?: number };
-      output_tokens_details?: { reasoning_tokens?: number };
-    } | null;
-  }
-) {
-  totals.requests += 1;
-  const u = response.usage;
-  if (!u) return;
-  totals.inputTokens += u.input_tokens ?? 0;
-  totals.cachedInputTokens += u.input_tokens_details?.cached_tokens ?? 0;
-  totals.outputTokens += u.output_tokens ?? 0;
-  totals.reasoningTokens += u.output_tokens_details?.reasoning_tokens ?? 0;
-  totals.totalTokens += u.total_tokens ?? 0;
-}
-
 // Avoid dumping the whole SDK error (it includes every response header,
 // including Set-Cookie) into the logs.
 function describeError(error: unknown) {
@@ -238,41 +252,63 @@ function describeError(error: unknown) {
   };
 }
 
+function addChatUsage(
+  totals: UsageTotals,
+  response: {
+    usage?: {
+      prompt_tokens?: number;
+      completion_tokens?: number;
+      total_tokens?: number;
+      prompt_tokens_details?: {
+        cached_tokens?: number;
+      } | null;
+      completion_tokens_details?: {
+        reasoning_tokens?: number;
+      } | null;
+    };
+  }
+) {
+  totals.requests += 1;
+
+  const u = response.usage;
+  if (!u) return;
+
+  totals.inputTokens += u.prompt_tokens ?? 0;
+  totals.cachedInputTokens +=
+    u.prompt_tokens_details?.cached_tokens ?? 0;
+  totals.outputTokens += u.completion_tokens ?? 0;
+  totals.reasoningTokens +=
+    u.completion_tokens_details?.reasoning_tokens ?? 0;
+  totals.totalTokens += u.total_tokens ?? 0;
+}
+
+/**
+ * Maximum number of tool rounds allowed for one customer message.
+ *
+ * Typical path: searchPrograms -> getProgramDetails -> final answer.
+ * 3 rounds also allows the documented broader-keyword retry.
+ */
+const MAX_TOOL_ROUNDS = 3;
+
+/**
+ * How many times to re-ask the model when its answer is a tool call written
+ * out as plain text (see leak-guard.ts). After this, send the fallback
+ * message instead of the leaked text.
+ */
+const MAX_LEAK_RETRIES = 1;
+
 export type WosAIHistoryMessage = {
   role: 'user' | 'assistant';
   content: string;
 };
 
-/**
- * Maximum number of tool rounds allowed for one customer message.
- *
- * Typical path: searchPrograms -> getProgramDetails -> final answer
- * (2 tool rounds -> 3 OpenAI requests total).
- *
- * 3 rather than 2: prompts.ts explicitly instructs the model to retry
- * searchPrograms once with a broader Thai keyword when the first
- * search returns nothing ("ถ้า searchPrograms ไม่เจอ ให้ลองคำกว้างขึ้น
- * อีกครั้งก่อนสรุป") — that's search(narrow) -> search(broad) ->
- * getProgramDetails -> final, i.e. 3 tool rounds. MAX_TOOL_ROUNDS=2
- * would cut that documented retry path off mid-flow for a plausible,
- * common customer question ("มีโปรแกรมไหม" with a term that doesn't
- * exact-match). 4 (the previous value) allows one more round of
- * slack than any of today's known flows need, so 3 is the tighter
- * cap that doesn't also break the retry-with-broader-keyword rule.
- * Revisit once [WOS_AI_USAGE] shows how often round 3 actually fires.
- */
-const MAX_TOOL_ROUNDS = 3;
-
 // =====================================================
-// Dynamic contact-info block (from Supabase `bot_config` table)
+// Dynamic contact-info block from Supabase `bot_config`.
 //
-// ย้ายมาจาก Chatwoot webhook route.ts เดิม — ตอนนี้เป็นส่วนหนึ่งของ AI
-// Core V1 แทน เพราะทั้ง Chatwoot webhook และ /api/ai/chat ควรได้ข้อมูล
-// ติดต่อชุดเดียวกัน ไม่ใช่แค่ webhook ทางเดียวเหมือนเดิม
-//
-// เหตุผลที่ต้องมี: ถ้าไม่ inject ข้อมูลนี้เข้า context โมเดลจะ "เดา" เอง
-// (เช่น เดา LINE OA จากชื่อโดเมน, เดาว่าไม่มี WhatsApp) ซึ่งเคยเป็นบั๊กจริง
-// มาก่อน แคชไว้ 60 วินาทีกันยิง query Supabase ทุกข้อความที่เข้ามา
+// Without this the model guesses contact channels (e.g. a LINE OA from the
+// domain name, or that no WhatsApp exists). Cached for 60s so it does not
+// query Supabase on every message. `bot_config` is readable by the service
+// role only, so createServiceClient() is required.
 // =====================================================
 type BotConfigRow = { key: string; value: string };
 let botConfigCache: { block: string; fetchedAt: number } | null = null;
@@ -286,11 +322,13 @@ async function getContactInfoBlock(): Promise<string> {
 
   try {
     const supabase = createServiceClient();
-    const { data, error } = await supabase.from('bot_config').select('key, value');
+    const { data, error } = await supabase
+      .from('bot_config')
+      .select('key, value');
 
     if (error || !data) {
       console.error('[ai-core] failed to load bot_config', error?.message);
-      // ใช้ค่าเก่าที่แคชไว้ต่อถ้ามี ดีกว่าไม่มีข้อมูลติดต่อเลยทั้งหมด
+      // A stale cached block beats no contact info at all.
       return botConfigCache?.block ?? '';
     }
 
@@ -329,8 +367,16 @@ export async function runWosAI(
      * 1. Retrieve verified WOS knowledge from Notion
      * -------------------------------------------------------
      */
+    // Neither lookup may take the assistant down: on failure the model just
+    // gets no knowledge / no contact block (and is told to say so).
     const [knowledge, contactInfoBlock] = await Promise.all([
-      searchWosNotionKnowledge(userMessage),
+      searchWosNotionKnowledge(userMessage).catch((err: unknown) => {
+        console.error(
+          '[ai-core] Notion knowledge lookup failed',
+          err instanceof Error ? err.message : String(err)
+        );
+        return [] as Awaited<ReturnType<typeof searchWosNotionKnowledge>>;
+      }),
       getContactInfoBlock(),
     ]);
 
@@ -392,124 +438,245 @@ CONTACT INFO RULE:
      */
     const usage = createUsageTotals();
 
-    // History is appended before the current message so the model
-    // sees the conversation in order; the knowledge/program lookups
-    // above are still keyed on userMessage only (the latest turn),
-    // matching how the previous webhook decided what to search for.
-    const input = [
-      ...history.map((m) => ({ role: m.role, content: m.content })),
-      { role: 'user' as const, content: userMessage },
+    // Chat Completions keeps the tool-call conversation in the standard
+    // user -> assistant(tool_calls) -> tool -> assistant sequence.
+    // Drop assistant turns that are leaked tool-call JSON (already sent to
+    // customers before the output guard existed) so the model does not
+    // imitate its own earlier mistake.
+    const cleanHistory = sanitizeHistory(history);
+    if (cleanHistory.length !== history.length) {
+      console.warn(
+        '[WOS_AI_HISTORY_SANITIZED]',
+        JSON.stringify({ dropped: history.length - cleanHistory.length })
+      );
+    }
+
+    const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
+      { role: 'system', content: instructions },
+      ...cleanHistory.map((m) => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content,
+      })),
+      { role: 'user', content: userMessage },
     ];
 
-    let response =
-      await getOpenAI().responses.create({
-        model: 'gpt-5.6-luna',
-        instructions,
-        input,
-        tools: [...tools],
-        reasoning: { effort: REASONING_EFFORT },
-      });
-    addUsage(usage, response);
+    const chatTools = tools.map((tool) => ({
+      type: 'function' as const,
+      function: {
+        name: tool.name,
+        description: tool.description,
+        parameters: tool.parameters,
+      },
+    }));
+
+    // Program ids the model is allowed to pass to getProgramDetails: ids that
+    // already appear in the context, plus every id searchPrograms returns
+    // during this run. Anything else (e.g. "ProgramID", "12345") is rejected
+    // before it reaches the database.
+    const knownProgramIds = collectUuidsFromMessages(messages);
+
+    // Counts searchPrograms calls that returned nothing (see tool-guard.ts).
+    const searchState = { emptyCount: 0 };
+
+    // Programs returned by real tool calls in this run. If the model cannot
+    // turn them into a readable answer, we build one from these directly.
+    let verifiedPrograms: VerifiedProgram[] = [];
+
+    // withTools=false is used to get a plain-text answer: with tools attached,
+    // the typhoon2 template forces a function-call JSON reply whenever the last
+    // message is from the user.
+    const complete = (withTools = true) =>
+      withTools
+        ? getOpenAI().chat.completions.create({
+            model: process.env.LITELLM_MODEL || 'gpt-5.6-luna',
+            messages,
+            tools: chatTools,
+            tool_choice: 'auto',
+          })
+        : getOpenAI().chat.completions.create({
+            model: process.env.LITELLM_MODEL || 'gpt-5.6-luna',
+            messages,
+          });
+
+    // Runs the tool-call rounds for one model response and returns the last
+    // response (the one that should hold the final customer-facing text).
+    const runToolRounds = async (initial: Awaited<ReturnType<typeof complete>>) => {
+      let current = initial;
+
+      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+        const message = current.choices[0]?.message;
+        const toolCalls =
+          message?.tool_calls?.filter(
+            (call): call is OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall =>
+              call.type === 'function'
+          ) ?? [];
+
+        if (toolCalls.length === 0) {
+          break;
+        }
+
+        // Normalize every call first. Some models send name="function" with
+        // the real tool name inside the arguments; repairing it here also
+        // keeps malformed calls out of the context we send back.
+        const allPrepared = toolCalls.map((call) => {
+          let parsed: unknown = {};
+          let parseError = false;
+
+          try {
+            parsed = JSON.parse(call.function.arguments || '{}');
+          } catch {
+            parseError = true;
+          }
+
+          const normalized = normalizeToolCall(call.function.name, parsed);
+
+          if (normalized.repaired) {
+            console.warn(
+              '[WOS_AI_TOOL_REPAIRED]',
+              JSON.stringify({ from: call.function.name, to: normalized.name })
+            );
+          }
+
+          return { call, normalized, parseError };
+        });
+
+        // The model said "no lookup needed": drop that no-op call and ask
+        // again without tools so it answers the customer in plain text.
+        const prepared = allPrepared.filter(
+          ({ normalized }) => normalized.name !== NO_LOOKUP_TOOL
+        );
+
+        if (prepared.length === 0) {
+          console.log('[WOS_AI_NO_LOOKUP]');
+          current = await complete(false);
+          addChatUsage(usage, current);
+          break;
+        }
+
+        // Preserve the assistant tool-call message before appending
+        // the corresponding tool results.
+        messages.push({
+          role: 'assistant',
+          content: looksLikeLeakedToolCall(message.content)
+            ? ''
+            : message.content ?? '',
+          tool_calls: prepared.map(({ call, normalized }) => ({
+            id: call.id,
+            type: 'function' as const,
+            function: {
+              name: normalized.name,
+              arguments: JSON.stringify(normalized.args),
+            },
+          })),
+        });
+
+        for (const { call, normalized, parseError } of prepared) {
+          try {
+            if (parseError) {
+              throw new Error('Tool arguments were not valid JSON');
+            }
+
+            const rejection = validateToolArgs(
+              normalized.name,
+              normalized.args,
+              knownProgramIds,
+              searchState
+            );
+
+            let result: unknown;
+
+            if (rejection) {
+              console.warn('[WOS_AI_TOOL_REJECTED]', normalized.name);
+              result = rejection;
+            } else {
+              result = annotateToolResult(
+                normalized.name,
+                await executeTool(normalized.name, normalized.args),
+                knownProgramIds,
+                searchState
+              );
+
+              const found = extractVerifiedPrograms(normalized.name, result);
+              if (found.length > 0) verifiedPrograms = found;
+            }
+
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify(result),
+            });
+          } catch (toolError) {
+            console.error(
+              '[WOS_AI_TOOL_ERROR]',
+              normalized.name,
+              toolError
+            );
+
+            messages.push({
+              role: 'tool',
+              tool_call_id: call.id,
+              content: JSON.stringify({
+                success: false,
+                message:
+                  'The requested WOS tool could not retrieve verified information.',
+              }),
+            });
+          }
+        }
+
+        current = await complete();
+
+        addChatUsage(usage, current);
+      }
+
+      return current;
+    };
+
+    let response = await complete();
+
+    addChatUsage(usage, response);
 
     /**
      * -------------------------------------------------------
      * 4. Tool execution loop
-     *
-     * This is important.
-     *
-     * The old version only handled one tool round.
-     *
-     * Example:
-     *
-     * Customer:
-     * "มีโปรแกรมฟื้นฟูสุขภาพไหม"
-     *
-     * AI:
-     * searchPrograms()
-     *
-     * Then customer:
-     * "อันแรกมีรายละเอียดอะไรบ้าง"
-     *
-     * AI may need:
-     * getProgramDetails()
-     *
-     * We therefore allow several tool rounds.
      * -------------------------------------------------------
      */
+    response = await runToolRounds(response);
+
+    let finalText =
+      response.choices[0]?.message?.content?.trim() || '';
+
+    /**
+     * Output guard: the model sometimes writes a tool call as plain text
+     * (e.g. {"type":"function","function":"searchPrograms",...}) instead of
+     * using native tool_calls. Never send that to the customer - re-ask
+     * the model, and fall back if it happens again.
+     */
     for (
-      let round = 0;
-      round < MAX_TOOL_ROUNDS;
-      round++
+      let attempt = 1;
+      attempt <= MAX_LEAK_RETRIES && looksLikeLeakedToolCall(finalText);
+      attempt++
     ) {
-      const functionCalls =
-        response.output.filter(
-          (item) =>
-            item.type === 'function_call'
-        );
+      console.warn(
+        '[WOS_AI_LEAKED_TOOL_CALL]',
+        JSON.stringify({ attempt })
+      );
 
-      /**
-       * No more tools needed.
-       * AI has produced the final response.
-       */
-      if (functionCalls.length === 0) {
-        break;
-      }
+      // Re-sending the identical request tends to reproduce the identical
+      // mistake, so tell the model explicitly what went wrong.
+      messages.push({
+        role: 'user',
+        content:
+          '[System reminder] Your previous reply was raw JSON / a tool call, which the customer cannot read. Reply again with a short, friendly natural-language answer for the customer based on the tool results above. No JSON, no field names, no ids.',
+      });
 
-      const toolOutputs = [];
+      // No tools here: with tools attached and a user message last, the
+      // typhoon2 template demands another function-call JSON reply.
+      response = await complete(false);
+      addChatUsage(usage, response);
+      response = await runToolRounds(response);
 
-      for (const item of functionCalls) {
-        try {
-          const args = JSON.parse(
-            item.arguments || '{}'
-          );
-
-          const result =
-            await executeTool(
-              item.name,
-              args
-            );
-
-          toolOutputs.push({
-            type:
-              'function_call_output' as const,
-            call_id: item.call_id,
-            output:
-              JSON.stringify(result),
-          });
-        } catch (toolError) {
-          console.error(
-            '[WOS_AI_TOOL_ERROR]',
-            item.name,
-            toolError
-          );
-
-          toolOutputs.push({
-            type:
-              'function_call_output' as const,
-            call_id: item.call_id,
-            output: JSON.stringify({
-              success: false,
-              message:
-                'The requested WOS tool could not retrieve verified information.',
-            }),
-          });
-        }
-      }
-
-      /**
-       * Feed tool results back to the model.
-       */
-      response =
-        await getOpenAI().responses.create({
-          model: 'gpt-5.6-luna',
-          instructions,
-          previous_response_id:
-            response.id,
-          input: toolOutputs,
-          tools: [...tools],
-          reasoning: { effort: REASONING_EFFORT },
-        });
-      addUsage(usage, response);
+      finalText = response.choices[0]?.message?.content?.trim() || '';
     }
 
     console.log(
@@ -526,16 +693,32 @@ CONTACT INFO RULE:
      * 5. Final customer-facing response
      * -------------------------------------------------------
      */
-    const finalText = response.output_text?.trim();
-
-    if (finalText) {
+    if (finalText && !looksLikeLeakedToolCall(finalText)) {
       return finalText;
     }
 
-    // The model was still requesting tools after MAX_TOOL_ROUNDS (or returned
-    // nothing). Never send the customer an empty message.
-    console.warn('[WOS_AI] empty final answer after tool rounds');
-    return 'Sorry, I could not complete that request right now. Please contact the WOS team for help. / ขออภัย ตอนนี้ยังตอบคำถามนี้ไม่ได้ กรุณาติดต่อทีมงาน WOS ค่ะ';
+    // Either the model was still requesting tools after MAX_TOOL_ROUNDS (or
+    // returned nothing), or it kept leaking tool-call text after the retry.
+    // Never send the customer an empty message or raw JSON.
+    // Verified program data exists but the model would not phrase it: answer
+    // from the data itself rather than a generic apology.
+    const programAnswer = buildProgramAnswer(verifiedPrograms, userMessage);
+    if (programAnswer) {
+      console.warn(
+        '[WOS_AI] using server-built answer from verified program data',
+        JSON.stringify({ programs: verifiedPrograms.length })
+      );
+      return programAnswer;
+    }
+
+    if (finalText) {
+      console.error(
+        '[WOS_AI] leaked tool-call text persisted after retry, sending fallback'
+      );
+    } else {
+      console.warn('[WOS_AI] empty final answer after tool rounds');
+    }
+    return buildFallbackReply(userMessage);
   } catch (error) {
     console.error(
       '[WOS_OPENAI_ERROR]',
