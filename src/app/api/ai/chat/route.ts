@@ -5,6 +5,27 @@ import { simpleRateLimit } from '@/lib/rate-limit';
 // Multiple tool rounds + Notion + OpenAI can exceed the default limit.
 export const maxDuration = 60;
 
+// NextResponse.json() sets "Content-Type: application/json" with no charset.
+// That is valid per RFC 8259 (JSON is UTF-8 by definition), but some HTTP
+// clients - notably PowerShell's Invoke-WebRequest/Invoke-RestMethod on
+// Windows - fall back to a local codepage instead of UTF-8 when the header
+// omits an explicit charset, which mangles Thai/Lao text on the client side
+// even though the bytes we sent were correct UTF-8. Adding the charset
+// removes that ambiguity for every client, so wrap every JSON response here
+// instead of relying on the default.
+function jsonResponse(
+  data: unknown,
+  init?: number | ResponseInit
+) {
+  const responseInit: ResponseInit =
+    typeof init === 'number' ? { status: init } : init ?? {};
+
+  const headers = new Headers(responseInit.headers);
+  headers.set('Content-Type', 'application/json; charset=utf-8');
+
+  return NextResponse.json(data, { ...responseInit, headers });
+}
+
 const MAX_MESSAGE_LENGTH = 1000;
 const RATE_LIMIT_MAX = 20; // requests
 const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // per 10 minutes, per IP
@@ -47,7 +68,7 @@ export async function POST(request: Request) {
       );
 
       if (!limit.allowed) {
-        return NextResponse.json(
+        return jsonResponse(
           { error: 'Too many requests. Please try again later.' },
           { status: 429 }
         );
@@ -68,7 +89,7 @@ export async function POST(request: Request) {
     try {
       body = JSON.parse(await request.text());
     } catch {
-      return NextResponse.json(
+      return jsonResponse(
         { error: 'Invalid JSON body' },
         { status: 400 }
       );
@@ -80,14 +101,14 @@ export async function POST(request: Request) {
         : undefined;
 
     if (typeof message !== 'string' || !message.trim()) {
-      return NextResponse.json(
+      return jsonResponse(
         { error: 'message is required' },
         { status: 400 }
       );
     }
 
     if (message.length > MAX_MESSAGE_LENGTH) {
-      return NextResponse.json(
+      return jsonResponse(
         { error: `message must be at most ${MAX_MESSAGE_LENGTH} characters` },
         { status: 400 }
       );
@@ -95,7 +116,7 @@ export async function POST(request: Request) {
 
     const answer = await runWosAI(message.trim());
 
-    return NextResponse.json({
+    return jsonResponse({
       answer,
     });
   } catch (error) {
@@ -105,7 +126,7 @@ export async function POST(request: Request) {
       const retryAfter = getRetryAfterSeconds(error);
       console.warn('[AI_CHAT_RATE_LIMITED] upstream 429, retry after', retryAfter, 's');
 
-      return NextResponse.json(
+      return jsonResponse(
         {
           error: 'AI service is busy',
           message:
@@ -120,7 +141,7 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : error
     );
 
-    return NextResponse.json(
+    return jsonResponse(
       { error: 'AI service temporarily unavailable' },
       { status: 500 }
     );

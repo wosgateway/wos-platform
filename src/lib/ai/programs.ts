@@ -267,13 +267,71 @@ function mapSearchResult(
       : undefined,
   }) as ProgramSearchResult;
 }
+// Full list of Thailand's 77 provinces so `detectLocation()` can filter by
+// any province the customer asks about, not only the 4 that happened to be
+// hardcoded before. Bangkok gets its own alias group because it has several
+// common written forms; every other province is matched by its one official
+// Thai name (normalizeLocation() below also strips an optional "จังหวัด"
+// prefix, so "จังหวัดเชียงใหม่" and "เชียงใหม่" match the same alias).
+const BANGKOK_ALIASES = ['กรุงเทพ', 'กรุงเทพฯ', 'กรุงเทพมหานคร'];
 
+const OTHER_PROVINCES = [
+  'กระบี่', 'กาญจนบุรี', 'กาฬสินธุ์', 'กำแพงเพชร', 'ขอนแก่น', 'จันทบุรี',
+  'ฉะเชิงเทรา', 'ชลบุรี', 'ชัยนาท', 'ชัยภูมิ', 'ชุมพร', 'เชียงราย',
+  'เชียงใหม่', 'ตรัง', 'ตราด', 'ตาก', 'นครนายก', 'นครปฐม', 'นครพนม',
+  'นครราชสีมา', 'นครศรีธรรมราช', 'นครสวรรค์', 'นนทบุรี', 'นราธิวาส', 'น่าน',
+  'บึงกาฬ', 'บุรีรัมย์', 'ปทุมธานี', 'ประจวบคีรีขันธ์', 'ปราจีนบุรี',
+  'ปัตตานี', 'พระนครศรีอยุธยา', 'พะเยา', 'พังงา', 'พัทลุง', 'พิจิตร',
+  'พิษณุโลก', 'เพชรบุรี', 'เพชรบูรณ์', 'แพร่', 'ภูเก็ต', 'มหาสารคาม',
+  'มุกดาหาร', 'แม่ฮ่องสอน', 'ยะลา', 'ยโสธร', 'ร้อยเอ็ด', 'ระนอง', 'ระยอง',
+  'ราชบุรี', 'ลพบุรี', 'ลำปาง', 'ลำพูน', 'เลย', 'ศรีสะเกษ', 'สกลนคร',
+  'สงขลา', 'สตูล', 'สมุทรปราการ', 'สมุทรสงคราม', 'สมุทรสาคร', 'สระแก้ว',
+  'สระบุรี', 'สิงห์บุรี', 'สุโขทัย', 'สุพรรณบุรี', 'สุราษฎร์ธานี', 'สุรินทร์',
+  'หนองคาย', 'หนองบัวลำภู', 'อ่างทอง', 'อำนาจเจริญ', 'อุดรธานี', 'อุตรดิตถ์',
+  'อุทัยธานี', 'อุบลราชธานี',
+];
+
+const LOCATION_ALIASES: string[][] = [
+  BANGKOK_ALIASES,
+  ...OTHER_PROVINCES.map((province) => [province]),
+];
+
+function normalizeLocation(value: string): string {
+  return normalizeQuery(value)
+    .replace(/จังหวัด/g, '')
+    .replace(/กรุงเทพมหานคร/g, 'กรุงเทพ')
+    .replace(/กรุงเทพฯ/g, 'กรุงเทพ')
+    .trim();
+}
+
+function detectLocation(query: string): string[] {
+  const normalized = normalizeLocation(query);
+
+  for (const aliases of LOCATION_ALIASES) {
+    if (
+      aliases.some((alias) =>
+        normalized.includes(normalizeLocation(alias))
+      )
+    ) {
+      return aliases;
+    }
+  }
+
+  return [];
+}
 export async function searchPrograms(
   query: string,
   limit = 5
 ): Promise<ProgramSearchResult[]> {
   const safeLimit = Math.min(Math.max(limit, 1), 10);
-  const candidates = buildSearchCandidates(query);
+  const locationAliases = detectLocation(query);
+
+const candidates = Array.from(
+  new Set([
+    ...locationAliases,
+    ...buildSearchCandidates(query),
+  ])
+).slice(0, 12);
 
   if (candidates.length === 0) {
     return [];
@@ -302,12 +360,25 @@ export async function searchPrograms(
     }
 
     for (const item of rawItems) {
-      const mapped = mapSearchResult(item);
+  const mapped = mapSearchResult(item);
 
-      if (mapped.id) {
-        resultMap.set(mapped.id, mapped);
-      }
-    }
+  if (!mapped.id) {
+    continue;
+  }
+
+  if (
+    locationAliases.length > 0 &&
+    !locationAliases.some(
+      (alias) =>
+        normalizeLocation(alias) ===
+        normalizeLocation(mapped.partner?.province ?? '')
+    )
+  ) {
+    continue;
+  }
+
+  resultMap.set(mapped.id, mapped);
+}
 
     if (resultMap.size >= safeLimit) {
       break;

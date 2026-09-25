@@ -65,7 +65,12 @@ const tools = [
         query: {
           type: 'string',
           description:
-            'Short search keyword in THAI. Program titles and descriptions are stored in Thai, so translate the customer intent into Thai keywords (for example "knee check" -> "ตรวจเข่า", "dental implant" -> "รากฟันเทียม"), even when the customer writes in English or Lao. Prefer 1-3 words.',
+            'Short search keyword in THAI describing the SERVICE only (for example "knee check" -> "ตรวจเข่า", "dental implant" -> "รากฟันเทียม"), even when the customer writes in English or Lao. Prefer 1-3 words. Do NOT put a province/location name here - if the customer mentioned one, put it in the separate "province" field instead. Never silently drop a province the customer mentioned; it must always end up in "province".',
+        },
+        province: {
+          type: ['string', 'null'],
+          description:
+            'The Thai province the customer asked about, in THAI (for example "หนองคาย", "อุดรธานี", "ขอนแก่น", "กรุงเทพ"), translating an English/Lao place name if needed. Set this whenever the customer\'s message - including earlier turns in this conversation - names a province/city. Use null only when no province was mentioned anywhere relevant. This field, not "query", is how province is communicated - it must never be dropped.',
         },
         limit: {
           type: 'integer',
@@ -75,7 +80,7 @@ const tools = [
           maximum: 5,
         },
       },
-      required: ['query', 'limit'],
+      required: ['query', 'province', 'limit'],
       additionalProperties: false,
     },
   },
@@ -144,6 +149,11 @@ async function executeTool(
    */
   if (name === 'searchPrograms') {
     const query = String(args.query ?? '').trim();
+    // args.province is `null` (not undefined) when the model omits a
+    // province, per the tool's ["string","null"] schema - String(null)
+    // would otherwise turn that into the literal text "null".
+    const province =
+      args.province == null ? '' : String(args.province).trim();
 
     const limit = Math.min(
       Math.max(Number(args.limit ?? 5), 1),
@@ -158,7 +168,20 @@ async function executeTool(
       };
     }
 
-    const items = await searchPrograms(query, limit);
+    // The model is asked to send the service keyword and the province as
+    // two separate structured fields (see the tool schema above) precisely
+    // so a province can never be silently dropped from a free-text query.
+    // searchPrograms()/detectLocation() in programs.ts scan the combined
+    // string for a known province name, so recombine them here before the
+    // lookup - the two fields are search *input*, not independent filters.
+    const searchQuery = province ? `${query} ${province}`.trim() : query;
+
+    console.log(
+  '[WOS_AI_TOOL] searchPrograms args:',
+  JSON.stringify({ query, province, searchQuery })
+);
+
+    const items = await searchPrograms(searchQuery, limit);
 
     console.log('[WOS_AI_TOOL] searchPrograms count:', items.length);
 
@@ -445,11 +468,13 @@ CONTACT INFO RULE:
     // imitate its own earlier mistake.
     const cleanHistory = sanitizeHistory(history);
     if (cleanHistory.length !== history.length) {
-      console.warn(
-        '[WOS_AI_HISTORY_SANITIZED]',
-        JSON.stringify({ dropped: history.length - cleanHistory.length })
-      );
-    }
+  console.warn(
+    '[WOS_AI_HISTORY_SANITIZED]',
+    JSON.stringify({
+      removed: history.length - cleanHistory.length,
+    })
+  );
+}
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
       { role: 'system', content: instructions },
@@ -499,138 +524,244 @@ CONTACT INFO RULE:
           });
 
     // Runs the tool-call rounds for one model response and returns the last
-    // response (the one that should hold the final customer-facing text).
-    const runToolRounds = async (initial: Awaited<ReturnType<typeof complete>>) => {
-      let current = initial;
+// response (the one that should hold the final customer-facing text).
+const stripSerializedToolFence = (text: string): string => {
+  const trimmed = text.trim();
 
-      for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-        const message = current.choices[0]?.message;
-        const toolCalls =
-          message?.tool_calls?.filter(
-            (call): call is OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall =>
-              call.type === 'function'
-          ) ?? [];
+  const match = trimmed.match(
+    /^```(?:json)?\s*([\s\S]*?)\s*```$/i
+  );
 
-        if (toolCalls.length === 0) {
-          break;
-        }
+  return match ? match[1].trim() : trimmed;
+};
 
-        // Normalize every call first. Some models send name="function" with
-        // the real tool name inside the arguments; repairing it here also
-        // keeps malformed calls out of the context we send back.
-        const allPrepared = toolCalls.map((call) => {
-          let parsed: unknown = {};
-          let parseError = false;
+const runToolRounds = async (
+  initial: Awaited<ReturnType<typeof complete>>
+) => {
+  let current = initial;
 
-          try {
-            parsed = JSON.parse(call.function.arguments || '{}');
-          } catch {
-            parseError = true;
-          }
+  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+    const message = current.choices[0]?.message;
 
-          const normalized = normalizeToolCall(call.function.name, parsed);
+    let toolCalls =
+      message?.tool_calls?.filter(
+        (
+          call
+        ): call is OpenAI.Chat.Completions.ChatCompletionMessageFunctionToolCall =>
+          call.type === 'function'
+      ) ?? [];
 
-          if (normalized.repaired) {
-            console.warn(
-              '[WOS_AI_TOOL_REPAIRED]',
-              JSON.stringify({ from: call.function.name, to: normalized.name })
-            );
-          }
+    /**
+     * Typhoon/Ollama may serialize a function call into message.content
+     * instead of returning native message.tool_calls.
+     *
+     * Convert that serialized call into the same internal shape used by
+     * native tool calls, then continue through normalizeToolCall(),
+     * validateToolArgs(), executeTool(), and the normal tool-result loop.
+     */
+    if (
+      toolCalls.length === 0 &&
+      looksLikeLeakedToolCall(message?.content)
+    ) {
+      try {
+        const raw = message.content?.trim() ?? '';
+        const parsed = JSON.parse(
+          stripSerializedToolFence(raw)
+        ) as {
+          type?: unknown;
+          function?: unknown;
+          arguments?: unknown;
+        };
 
-          return { call, normalized, parseError };
-        });
+        if (
+          parsed &&
+          parsed.type === 'function' &&
+          typeof parsed.function === 'string'
+        ) {
+          const rawArguments =
+            typeof parsed.arguments === 'string'
+              ? parsed.arguments
+              : JSON.stringify(parsed.arguments ?? {});
 
-        // The model said "no lookup needed": drop that no-op call and ask
-        // again without tools so it answers the customer in plain text.
-        const prepared = allPrepared.filter(
-          ({ normalized }) => normalized.name !== NO_LOOKUP_TOOL
-        );
-
-        if (prepared.length === 0) {
-          console.log('[WOS_AI_NO_LOOKUP]');
-          current = await complete(false);
-          addChatUsage(usage, current);
-          break;
-        }
-
-        // Preserve the assistant tool-call message before appending
-        // the corresponding tool results.
-        messages.push({
-          role: 'assistant',
-          content: looksLikeLeakedToolCall(message.content)
-            ? ''
-            : message.content ?? '',
-          tool_calls: prepared.map(({ call, normalized }) => ({
-            id: call.id,
-            type: 'function' as const,
-            function: {
-              name: normalized.name,
-              arguments: JSON.stringify(normalized.args),
+          toolCalls = [
+            {
+              id: `leaked-tool-${round + 1}`,
+              type: 'function',
+              function: {
+                name: parsed.function,
+                arguments: rawArguments,
+              },
             },
-          })),
-        });
+          ];
 
-        for (const { call, normalized, parseError } of prepared) {
-          try {
-            if (parseError) {
-              throw new Error('Tool arguments were not valid JSON');
-            }
-
-            const rejection = validateToolArgs(
-              normalized.name,
-              normalized.args,
-              knownProgramIds,
-              searchState
-            );
-
-            let result: unknown;
-
-            if (rejection) {
-              console.warn('[WOS_AI_TOOL_REJECTED]', normalized.name);
-              result = rejection;
-            } else {
-              result = annotateToolResult(
-                normalized.name,
-                await executeTool(normalized.name, normalized.args),
-                knownProgramIds,
-                searchState
-              );
-
-              const found = extractVerifiedPrograms(normalized.name, result);
-              if (found.length > 0) verifiedPrograms = found;
-            }
-
-            messages.push({
-              role: 'tool',
-              tool_call_id: call.id,
-              content: JSON.stringify(result),
-            });
-          } catch (toolError) {
-            console.error(
-              '[WOS_AI_TOOL_ERROR]',
-              normalized.name,
-              toolError
-            );
-
-            messages.push({
-              role: 'tool',
-              tool_call_id: call.id,
-              content: JSON.stringify({
-                success: false,
-                message:
-                  'The requested WOS tool could not retrieve verified information.',
-              }),
-            });
-          }
+          console.warn(
+            '[WOS_AI_LEAKED_TOOL_CALL_EXECUTING]',
+            JSON.stringify({
+              name: parsed.function,
+              round: round + 1,
+            })
+          );
         }
+      } catch (error) {
+        console.warn(
+          '[WOS_AI_LEAKED_TOOL_CALL_PARSE_ERROR]',
+          error instanceof Error
+            ? error.message
+            : String(error)
+        );
+      }
+    }
 
-        current = await complete();
+    if (toolCalls.length === 0) {
+      break;
+    }
 
-        addChatUsage(usage, current);
+    // Normalize every call first. Some models send name="function" with
+    // the real tool name inside the arguments; repairing it here also
+    // keeps malformed calls out of the context we send back.
+    const allPrepared = toolCalls.map((call) => {
+      let parsed: unknown = {};
+      let parseError = false;
+
+      try {
+        parsed = JSON.parse(
+          call.function.arguments || '{}'
+        );
+      } catch {
+        parseError = true;
       }
 
-      return current;
-    };
+      const normalized = normalizeToolCall(
+        call.function.name,
+        parsed
+      );
+
+      if (normalized.repaired) {
+        console.warn(
+          '[WOS_AI_TOOL_REPAIRED]',
+          JSON.stringify({
+            from: call.function.name,
+            to: normalized.name,
+          })
+        );
+      }
+
+      return {
+        call,
+        normalized,
+        parseError,
+      };
+    });
+
+    // The model said "no lookup needed": drop that no-op call and ask
+    // again without tools so it answers the customer in plain text.
+    const prepared = allPrepared.filter(
+      ({ normalized }) => normalized.name !== NO_LOOKUP_TOOL
+    );
+
+    if (prepared.length === 0) {
+      console.log('[WOS_AI_NO_LOOKUP]');
+      current = await complete(false);
+      addChatUsage(usage, current);
+      break;
+    }
+
+    // Preserve the assistant tool-call message before appending
+    // the corresponding tool results.
+    messages.push({
+      role: 'assistant',
+      content: looksLikeLeakedToolCall(message?.content)
+        ? ''
+        : message?.content ?? '',
+      tool_calls: prepared.map(({ call, normalized }) => ({
+        id: call.id,
+        type: 'function' as const,
+        function: {
+          name: normalized.name,
+          arguments: JSON.stringify(normalized.args),
+        },
+      })),
+    });
+
+    for (const {
+      call,
+      normalized,
+      parseError,
+    } of prepared) {
+      try {
+        if (parseError) {
+          throw new Error(
+            'Tool arguments were not valid JSON'
+          );
+        }
+
+        const rejection = validateToolArgs(
+          normalized.name,
+          normalized.args,
+          knownProgramIds,
+          searchState
+        );
+
+        let result: unknown;
+
+        if (rejection) {
+          console.warn(
+            '[WOS_AI_TOOL_REJECTED]',
+            normalized.name
+          );
+
+          result = rejection;
+        } else {
+          result = annotateToolResult(
+            normalized.name,
+            await executeTool(
+              normalized.name,
+              normalized.args
+            ),
+            knownProgramIds,
+            searchState
+          );
+
+          const found = extractVerifiedPrograms(
+            normalized.name,
+            result
+          );
+
+          if (found.length > 0) {
+            verifiedPrograms = found;
+          }
+        }
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify(result),
+        });
+      } catch (toolError) {
+        console.error(
+          '[WOS_AI_TOOL_ERROR]',
+          normalized.name,
+          toolError
+        );
+
+        messages.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: JSON.stringify({
+            success: false,
+            message:
+              'The requested WOS tool could not retrieve verified information.',
+          }),
+        });
+      }
+    }
+
+    current = await complete(false);
+    addChatUsage(usage, current);
+  }
+
+  return current;
+};
 
     let response = await complete();
 
@@ -658,9 +789,12 @@ CONTACT INFO RULE:
       attempt++
     ) {
       console.warn(
-        '[WOS_AI_LEAKED_TOOL_CALL]',
-        JSON.stringify({ attempt })
-      );
+  '[WOS_AI_LEAKED_TOOL_CALL]',
+  JSON.stringify({
+    attempt,
+    finalText,
+  })
+);
 
       // Re-sending the identical request tends to reproduce the identical
       // mistake, so tell the model explicitly what went wrong.
