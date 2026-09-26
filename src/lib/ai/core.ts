@@ -507,6 +507,26 @@ CONTACT INFO RULE:
     // turn them into a readable answer, we build one from these directly.
     let verifiedPrograms: VerifiedProgram[] = [];
 
+    const shouldForceProgramLookup = (message: string): boolean => {
+      const text = message.trim().toLowerCase();
+      if (!text) return false;
+
+      // Explicit catalog intent is always a program lookup.
+      const explicitCatalogTerms = [
+        'โปรแกรม',
+        'program',
+        'programs',
+        '\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23',
+        'service',
+        'services',
+        '\u0e41\u0e1e\u0e47\u0e01\u0e40\u0e01\u0e08',
+        'แพคเกจ',
+        'package',
+        'packages',
+      ];
+
+      return explicitCatalogTerms.some((term) => text.includes(term));
+    };
     // withTools=false is used to get a plain-text answer: with tools attached,
     // the typhoon2 template forces a function-call JSON reply whenever the last
     // message is from the user.
@@ -516,7 +536,14 @@ CONTACT INFO RULE:
             model: process.env.LITELLM_MODEL || 'gpt-5.6-luna',
             messages,
             tools: chatTools,
-            tool_choice: 'auto',
+            tool_choice: shouldForceProgramLookup(userMessage)
+              ? {
+                  type: 'function' as const,
+                  function: {
+                    name: 'searchPrograms',
+                  },
+                }
+              : 'auto',
           })
         : getOpenAI().chat.completions.create({
             model: process.env.LITELLM_MODEL || 'gpt-5.6-luna',
@@ -827,15 +854,11 @@ const runToolRounds = async (
      * 5. Final customer-facing response
      * -------------------------------------------------------
      */
-    if (finalText && !looksLikeLeakedToolCall(finalText)) {
-      return finalText;
-    }
-
-    // Either the model was still requesting tools after MAX_TOOL_ROUNDS (or
-    // returned nothing), or it kept leaking tool-call text after the retry.
-    // Never send the customer an empty message or raw JSON.
-    // Verified program data exists but the model would not phrase it: answer
-    // from the data itself rather than a generic apology.
+    // Verified program data always wins when it exists: the model
+    // (typhoon-local) has been observed ignoring successful tool results
+    // and answering generically instead of using the data it just fetched.
+    // Rather than trust the model to phrase found programs correctly,
+    // build the customer-facing answer straight from the verified data.
     const programAnswer = buildProgramAnswer(verifiedPrograms, userMessage);
     if (programAnswer) {
       console.warn(
@@ -845,6 +868,13 @@ const runToolRounds = async (
       return programAnswer;
     }
 
+    if (finalText && !looksLikeLeakedToolCall(finalText)) {
+      return finalText;
+    }
+
+    // Either the model was still requesting tools after MAX_TOOL_ROUNDS (or
+    // returned nothing), or it kept leaking tool-call text after the retry.
+    // Never send the customer an empty message or raw JSON.
     if (finalText) {
       console.error(
         '[WOS_AI] leaked tool-call text persisted after retry, sending fallback'
