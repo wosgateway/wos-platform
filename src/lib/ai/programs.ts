@@ -210,6 +210,17 @@ type SearchCandidate = {
    *     somewhere in the description.
    */
   generic: boolean;
+  /**
+   * True only for the one standalone-province candidate pushed in
+   * searchPrograms() ("what's available in <province>" with no other
+   * query content -- see the locationAliases/serviceCandidates.length===0
+   * branch there). This candidate's `value` is a province name, not a
+   * program name, so it is never going to appear in a title/description/
+   * partner-name field -- passesRelevanceGate() checks partner.province
+   * for it instead of the usual text fields. Left undefined/false for
+   * every other candidate; does not change generic-term handling at all.
+   */
+  location?: boolean;
 };
 
 /** Strip Thai tone marks only (ไม้เอก/โท/ตรี/จัตวา, U+0E48-U+0E4B).
@@ -516,11 +527,21 @@ function stripLocationMentions(query: string, aliases: string[]): string {
  * GENERIC_TERMS/NOISE_TERMS let that through. Requiring our own literal
  * (tone-mark/case-insensitive) substring check closes that without
  * needing changes to the RPC itself.
+ *
+ * A `location` candidate (see SearchCandidate) is a third, separate case:
+ * its value is a province name, which legitimately lives in
+ * partner.province rather than title/description/partner name, so it is
+ * checked against that field alone instead of falling through to the
+ * generic or specific text checks below.
  */
 function passesRelevanceGate(
   candidate: SearchCandidate,
   mapped: ProgramSearchResult
 ): boolean {
+  if (candidate.location) {
+    return containsTerm(mapped.partner?.province, candidate.value);
+  }
+
   if (candidate.generic) {
     return (
       containsTerm(mapped.title, candidate.value) ||
@@ -563,13 +584,21 @@ export async function searchPrograms(
 
   const serviceCandidates = buildSearchCandidates(serviceQuery);
 
+  console.log('[WOS_AI_DEBUG] searchPrograms input:', {
+    query,
+    locationAliases,
+    serviceQuery,
+    serviceCandidates,
+  });
+
   if (locationAliases.length > 0 && serviceCandidates.length === 0) {
     // The query is genuinely just "what's available in <province>" -
     // nothing else to search on, so the province itself is the only
-    // useful candidate. It's still constrained by the exact
-    // province-match filter below, and by passesRelevanceGate() acting
-    // as a no-op for a non-generic candidate.
-    pushCandidate({ value: locationAliases[0], generic: false });
+    // useful candidate. Marked location:true so passesRelevanceGate()
+    // checks it against partner.province instead of title/description/
+    // partner name (those never contain a bare province name) - see the
+    // SearchCandidate.location doc comment and passesRelevanceGate().
+    pushCandidate({ value: locationAliases[0], generic: false, location: true });
   }
 
   for (const candidate of serviceCandidates) {
@@ -577,6 +606,8 @@ export async function searchPrograms(
   }
 
   candidates.splice(12);
+
+  console.log('[WOS_AI_DEBUG] final candidates:', candidates);
 
   if (candidates.length === 0) {
     return [];
@@ -595,6 +626,16 @@ export async function searchPrograms(
 
     try {
       rawItems = await searchPackages(candidate.value, safeLimit);
+
+      console.log('[WOS_AI_DEBUG] candidate result:', {
+        candidate,
+        count: rawItems.length,
+        items: rawItems.map((item) => ({
+          id: item.id,
+          title: item.title,
+          partner: item.partners,
+        })),
+      });
     } catch (error) {
       console.error(
         '[WOS_AI_TOOL] searchPrograms candidate failed:',
