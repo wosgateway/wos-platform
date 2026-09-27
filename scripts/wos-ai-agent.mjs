@@ -4,6 +4,18 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
+// Load local development env for agent notifications without printing secrets.
+if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+  try {
+    const { config } = await import("dotenv");
+    const { fileURLToPath } = await import("node:url");
+    const envPath = fileURLToPath(new URL("../.env.local", import.meta.url));
+    config({ path: envPath, quiet: true });
+  } catch {
+    // Keep explicitly exported environment variables working if dotenv is unavailable.
+  }
+}
+
 const ROOT = process.cwd();
 const args = process.argv.slice(2);
 
