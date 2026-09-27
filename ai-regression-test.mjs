@@ -1,0 +1,246 @@
+#!/usr/bin/env node
+/**
+ * WOS.os AI Regression Test Suite (TASK 02)
+ *
+ * Hits /api/ai/chat with fixed real-world queries and checks the response
+ * against known-correct behavior, so a future change to AI Core / search
+ * relevance can't silently regress the 4 behaviors below:
+ *
+ *   1. A real, on-catalog Thai query should return a matched program.
+ *   2. An absurd/off-catalog query must NOT return an unrelated package
+ *      (the "man on Mars" false-positive class of bug).
+ *   3. A province-scoped query should filter by that province.
+ *   4. A generic/small-talk question should NOT force a catalog search.
+ *
+ * This is deliberately plain Node (built-in fetch, Node >=18) run directly
+ * with `node`, not PowerShell — sidesteps console code-page / encoding
+ * issues entirely for the Thai-language test strings. Save this file as
+ * UTF-8 (no BOM needed) and it will just work.
+ *
+ * USAGE
+ *   node ai-regression-test.mjs
+ *   node ai-regression-test.mjs --base-url http://localhost:3025
+ *   node ai-regression-test.mjs --base-url http://localhost:3001 --verbose
+ *
+ * EXIT CODE
+ *   0 = all hard-checks passed (some cases may still be flagged REVIEW)
+ *   1 = at least one hard-check failed
+ *
+ * NOTE ON ASSERTIONS
+ *   The AI's exact wording isn't fixed, so assertions are keyword/shape
+ *   based rather than exact-match. Two kinds of result:
+ *     PASS / FAIL  - a hard, automatable check (safe to gate CI/deploy on)
+ *     REVIEW       - printed in full for a human to eyeball; not currently
+ *                    safe to assert automatically without more signal
+ *                    (e.g. a debug trace of which tools were called)
+ *   If WOS ever exposes a debug header/field showing which tools fired
+ *   (e.g. { toolsCalled: ["searchPrograms"] }), wire that into
+ *   checkToolCalled() below to turn REVIEW cases into real PASS/FAIL.
+ */
+
+const args = process.argv.slice(2);
+function getArg(name, fallback) {
+  const idx = args.indexOf(`--${name}`);
+  if (idx !== -1 && args[idx + 1]) return args[idx + 1];
+  return fallback;
+}
+const BASE_URL = getArg("base-url", process.env.WOS_TEST_BASE_URL || "http://localhost:3001");
+const VERBOSE = args.includes("--verbose");
+const ENDPOINT = `${BASE_URL.replace(/\/$/, "")}/api/ai/chat`;
+
+// Phrases that indicate "found nothing relevant" in Thai responses.
+const NOT_FOUND_MARKERS = ["ไม่พบ", "ไม่มีโปรแกรม", "ไม่มีข้อมูล", "ขออภัย", "ไม่พบข้อมูล"];
+
+// Phrases that would indicate an unrelated catalog item leaked into an
+// answer that should have returned nothing (the Mars/hotel false-positive).
+const UNRELATED_CATALOG_MARKERS = ["โรงแรม", "รีสอร์ท", "onsen", "Onsen", "บ้านเจ้าคุณ"];
+
+function containsAny(text, markers) {
+  return markers.some((m) => text.includes(m));
+}
+
+async function askAI(message) {
+  const res = await fetch(ENDPOINT, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ message }),
+  });
+  const status = res.status;
+  let bodyText = "";
+  let bodyJson = null;
+  try {
+    bodyText = await res.text();
+    bodyJson = JSON.parse(bodyText);
+  } catch {
+    // non-JSON response, keep bodyText for inspection
+  }
+  const replyText =
+    bodyJson?.reply ?? bodyJson?.message ?? bodyJson?.content ?? bodyText ?? "";
+  return { status, replyText: String(replyText), raw: bodyJson ?? bodyText };
+}
+
+const cases = [
+  {
+    id: "T1a_strong_catalog_query",
+    label: "Strong query (exact catalog term + province): must match",
+    query: "มีโปรแกรมตรวจสุขภาพในจังหวัดอุดรธานีไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "response says not-found for a query expected to match" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1b_semantic_synonym_query",
+    label: "Semantic synonym query (category word, no exact catalog term): known relevance gap, not gated",
+    query: "มีโปรแกรมสุขภาพในอุดรธานีไหม",
+    kind: "review",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      // Root cause (found in src/lib/ai/programs.ts): "สุขภาพ" alone is in
+      // GENERIC_TERMS, so buildSearchCandidates() drops it as soon as the
+      // full raw sentence exists as a "specific" candidate -- and that raw
+      // sentence never literally matches any title/description, so this
+      // legitimately returns not-found today. Left as REVIEW (not gated)
+      // until intended semantic-synonym behavior is decided -- gating on
+      // this would hide the real bug instead of tracking it.
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: null, reason: "known gap: standalone category term (\"สุขภาพ\") does not semantically match \"ตรวจสุขภาพ\" yet" };
+      }
+      return { pass: null, reason: "eyeball: semantic match succeeded -- if this becomes reliably true, promote T1b to hard" };
+    },
+  },
+  {
+    id: "T2_mars_no_false_positive",
+    label: "Absurd query: 'program for humans on Mars' must not return an unrelated package",
+    query: "มีโปรแกรมสำหรับมนุษย์บนดาวอังคารไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, UNRELATED_CATALOG_MARKERS)) {
+        return {
+          pass: false,
+          reason: "response leaked an unrelated catalog item (hotel/onsen) for a nonsense query",
+        };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T3_province_scoped_query",
+    label: "Province-scoped query: results should be filtered to that province",
+    query: "มีโปรแกรมอะไรในอุดรธานีบ้าง",
+    kind: "review",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      // Root cause (found in src/lib/ai/programs.ts, searchPrograms()): a
+      // location-only candidate is pushed as generic:false, but
+      // passesRelevanceGate() for a non-generic candidate only checks
+      // title/description/partner name -- never partner.province -- so a
+      // bare province query can legitimately come back empty even when
+      // matching packages exist. Not auto-failed here since this needs a
+      // decision on the intended fix (e.g. gate should special-case a
+      // province-only candidate to trust the earlier province filter).
+      return { pass: null, reason: "eyeball: do all mentioned items look Udon-Thani-scoped? (known gap: bare province query may return empty even with real matches -- see passesRelevanceGate)" };
+    },
+  },
+  {
+    id: "T4_generic_question_no_forced_search",
+    label: "Generic small-talk question should not force a catalog search",
+    query: "สวัสดีครับ วันนี้เป็นยังไงบ้าง",
+    kind: "review",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      // Heuristic hard-check: a generic greeting shouldn't come back with a
+      // catalog "not found" apology either -- that shape implies a forced
+      // search ran and failed, which is itself a signal something's off.
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return {
+          pass: false,
+          reason: "greeting triggered a catalog not-found response -- looks like search was force-run",
+        };
+      }
+      return { pass: null, reason: "eyeball: does the reply look like normal conversation, not a catalog search?" };
+    },
+  },
+];
+
+function printHeader() {
+  console.log("=== WOS.os AI Regression Suite ===");
+  console.log(`Endpoint: ${ENDPOINT}`);
+  console.log("");
+}
+
+async function main() {
+  printHeader();
+  let hardFailures = 0;
+  const reviewItems = [];
+
+  for (const c of cases) {
+    process.stdout.write(`[${c.id}] ${c.label} ... `);
+    let result;
+    try {
+      const r = await askAI(c.query);
+      result = c.check(r);
+      result.response = r.replyText;
+      result.httpStatus = r.status;
+    } catch (err) {
+      result = { pass: false, reason: `request failed: ${err.message}` };
+    }
+
+    if (result.pass === true) {
+      console.log("PASS");
+    } else if (result.pass === false) {
+      console.log(`FAIL - ${result.reason}`);
+      // Only a "hard" case's failure counts toward the gating tally below.
+      // A "review" case can still return pass:false (e.g. an HTTP error),
+      // and that must surface as a visible FAIL line, but it must not
+      // corrupt the hard/total ratio -- a review case was never part of
+      // "total hard" in the first place, so subtracting its failure from
+      // that total could (and did) go negative.
+      if (c.kind === "hard") hardFailures++;
+    } else {
+      console.log(`REVIEW - ${result.reason}`);
+      reviewItems.push({ id: c.id, query: c.query, response: result.response });
+    }
+
+    if (VERBOSE && result.response) {
+      console.log(`  query: ${c.query}`);
+      console.log(`  reply: ${result.response.slice(0, 400)}${result.response.length > 400 ? "..." : ""}`);
+      console.log("");
+    }
+  }
+
+  if (reviewItems.length > 0) {
+    console.log("");
+    console.log("=== Items needing human review ===");
+    for (const item of reviewItems) {
+      console.log(`\n[${item.id}]`);
+      console.log(`  query : ${item.query}`);
+      console.log(`  reply : ${item.response}`);
+    }
+  }
+
+  console.log("");
+  console.log("=== Result ===");
+  console.log(`Hard checks: ${cases.filter((c) => c.kind === "hard").length - hardFailures}/${cases.filter((c) => c.kind === "hard").length} passed`);
+  console.log(`Review items: ${reviewItems.length} (see above, not auto-graded)`);
+
+  if (hardFailures > 0) {
+    console.log("");
+    console.log("REGRESSION DETECTED -> do not promote/deploy this build");
+    process.exit(1);
+  }
+
+  console.log("");
+  console.log("No hard regressions detected.");
+  process.exit(0);
+}
+
+main().catch((err) => {
+  console.error("Test runner crashed:", err);
+  process.exit(1);
+});
