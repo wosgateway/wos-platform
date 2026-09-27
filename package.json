@@ -10,7 +10,8 @@
     "production:gate": "node scripts/production-deployment-gate.mjs",
     "ai:regression": "node ai-regression-test.mjs",
     "start": "next start -p 3000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "production:rollback:check": "node scripts/production-rollback-check.mjs"
   },
   "dependencies": {
     "@notionhq/client": "^5.26.0",
