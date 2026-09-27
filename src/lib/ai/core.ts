@@ -10,6 +10,7 @@ import {
 import {
   annotateToolResult,
   collectUuidsFromMessages,
+  looksCorruptedOrMistranslated,
   NO_LOOKUP_TOOL,
   normalizeToolCall,
   validateToolArgs,
@@ -140,7 +141,12 @@ const ANSWER_INSTRUCTION =
 
 async function executeTool(
   name: string,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  // The customer's own latest message, verbatim from the request body.
+  // Unlike query/province below, this text never passes through the
+  // model's tool-call JSON generation, so it cannot suffer the same
+  // mistranslation/mojibake corruption - see the fallback below.
+  rawUserMessage: string
 ) {
   /**
    * ---------------------------------------------------------
@@ -148,11 +154,11 @@ async function executeTool(
    * ---------------------------------------------------------
    */
   if (name === 'searchPrograms') {
-    const query = String(args.query ?? '').trim();
+    const rawQuery = String(args.query ?? '').trim();
     // args.province is `null` (not undefined) when the model omits a
     // province, per the tool's ["string","null"] schema - String(null)
     // would otherwise turn that into the literal text "null".
-    const province =
+    const rawProvince =
       args.province == null ? '' : String(args.province).trim();
 
     const limit = Math.min(
@@ -160,12 +166,34 @@ async function executeTool(
       5
     );
 
-    if (!query) {
+    if (!rawQuery) {
       return {
         success: false,
         items: [],
         message: 'Search query is empty.',
       };
+    }
+
+    // Detect the two observed Typhoon/LiteLLM tool-calling failures for
+    // Thai string args (see tool-guard.ts): mojibake (a UTF-8 <->
+    // Latin-1/CP1252 mis-decode, e.g. province="Ó©...") or a silent
+    // translation to another script despite the schema requiring Thai
+    // (e.g. query="health check"). Log the raw values either way - this is
+    // the decisive signal for root-causing where in the pipeline
+    // (Typhoon/Ollama vs LiteLLM vs our own parsing) the corruption enters.
+    const queryBad = looksCorruptedOrMistranslated(rawQuery);
+    const provinceBad =
+      !!rawProvince &&
+      looksCorruptedOrMistranslated(rawProvince);
+
+    if (queryBad || provinceBad) {
+      console.warn(
+        '[WOS_AI_TOOL_ARG_CORRUPTED]',
+        JSON.stringify({
+          queryBad,
+          provinceBad,
+        })
+      );
     }
 
     // The model is asked to send the service keyword and the province as
@@ -174,12 +202,30 @@ async function executeTool(
     // searchPrograms()/detectLocation() in programs.ts scan the combined
     // string for a known province name, so recombine them here before the
     // lookup - the two fields are search *input*, not independent filters.
-    const searchQuery = province ? `${query} ${province}`.trim() : query;
+    //
+    // When either field looks corrupted/mistranslated, prefer the
+    // customer's own raw message instead: programs.ts's detectLocation()/
+    // buildSearchCandidates() are already built to parse natural language
+    // directly, so the raw message alone is enough to search on, and it is
+    // guaranteed not to carry the corruption that broke query/province.
+    const query = queryBad ? '' : rawQuery;
+    const province = provinceBad ? '' : rawProvince;
+    const searchQuery =
+      queryBad || provinceBad
+        ? rawUserMessage || (province ? `${query} ${province}`.trim() : query)
+        : province
+          ? `${query} ${province}`.trim()
+          : query;
 
     console.log(
-  '[WOS_AI_TOOL] searchPrograms args:',
-  JSON.stringify({ query, province, searchQuery })
-);
+      '[WOS_AI_TOOL] searchPrograms args:',
+      JSON.stringify({
+        queryPresent: Boolean(rawQuery),
+        provincePresent: Boolean(rawProvince),
+        searchQueryLength: searchQuery.length,
+        usedFallback: queryBad || provinceBad,
+      })
+    );
 
     const items = await searchPrograms(searchQuery, limit);
 
@@ -650,10 +696,30 @@ const runToolRounds = async (
       let parsed: unknown = {};
       let parseError = false;
 
+      const rawArguments = call.function.arguments || '{}';
+
+      // Log only safe metadata BEFORE JSON.parse and before any of our own
+      // code touches the arguments. We intentionally do not log the raw
+      // argument value because tool arguments may contain customer text.
+      // The Unicode code-point list helps distinguish Thai characters from
+      // suspicious non-ASCII sequences without exposing the original value.
+      console.log(
+        '[WOS_AI_DEBUG] raw tool_call.function.arguments (pre-parse):',
+        JSON.stringify({
+          name: call.function.name,
+          length: rawArguments.length,
+          byteLength: Buffer.byteLength(rawArguments, 'utf8'),
+          nonAsciiCodePoints: Array.from(rawArguments)
+            .map((ch) => ch.codePointAt(0) ?? 0)
+            .filter((cp) => cp > 0x7f)
+            .map((cp) => `U+${cp.toString(16).toUpperCase().padStart(4, '0')}`)
+            .filter((cp, index, arr) => arr.indexOf(cp) === index)
+            .slice(0, 32),
+        })
+      );
+
       try {
-        parsed = JSON.parse(
-          call.function.arguments || '{}'
-        );
+        parsed = JSON.parse(rawArguments);
       } catch {
         parseError = true;
       }
@@ -743,7 +809,8 @@ const runToolRounds = async (
             normalized.name,
             await executeTool(
               normalized.name,
-              normalized.args
+              normalized.args,
+              userMessage
             ),
             knownProgramIds,
             searchState

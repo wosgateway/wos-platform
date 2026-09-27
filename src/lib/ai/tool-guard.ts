@@ -9,10 +9,21 @@
 //   2. After an empty search the model invents a program id
 //      ("ProgramID", "program_id", "12345") and calls getProgramDetails,
 //      which reaches Postgres and fails with 22P02 (invalid uuid).
+//   3. A string argument that the tool schema requires in Thai (query,
+//      province) comes back either mistranslated to English (e.g.
+//      query="health check" for a customer who typed "ตรวจสุขภาพ") or as
+//      mojibake (e.g. province="Ó©..." instead of "อุดรธานี"). Both make
+//      the field useless - and mojibake actively wrong - for
+//      searchPrograms(), which relies on literal Thai substring matches
+//      throughout (see programs.ts's passesRelevanceGate()).
 //
 // These helpers repair (1), block (2) before any database call, and give the
 // model a deterministic instruction when a search returns nothing, so the
-// safety rule does not depend on the model remembering the prompt.
+// safety rule does not depend on the model remembering the prompt. For (3),
+// looksCorruptedOrMistranslated() lets the caller (core.ts) detect clear
+// encoding corruption and fall back to the customer's own raw message text,
+// which is read directly from the request body and never passes through the
+// model's tool-call JSON generation.
 // =====================================================================
 
 // Keep in sync with the tools declared in core.ts.
@@ -51,6 +62,23 @@ export const SEARCH_LIMIT_MESSAGE =
 
 export const INVALID_PROGRAM_ID_MESSAGE =
   'Invalid or unknown programId. Only use an id returned by searchPrograms in this conversation. Call searchPrograms first; never invent a program ID.';
+
+// A genuine Thai string never legitimately contains characters from the
+// Latin-1 Supplement block (U+0080-U+00FF) - Thai script itself lives at
+// U+0E00-U+0E7F. Two or more Latin-1-Supplement characters in a row is the
+// fingerprint of a UTF-8 <-> Latin-1/CP1252 mis-decode round trip (e.g. the
+// observed province="Ó©..." instead of "อุดรธานี").
+const MOJIBAKE_PATTERN = /[\u0080-\u00FF]{2,}/;
+/**
+ * True when a tool-call string argument contains clear signs of encoding
+ * corruption, such as a Unicode replacement character or Latin-1 mojibake.
+ * The caller should fall back to the customer's own raw message text.
+ */
+export function looksCorruptedOrMistranslated(value: string): boolean {
+  if (!value) return false;
+  if (value.includes('\uFFFD') || MOJIBAKE_PATTERN.test(value)) return true;
+  return false;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);

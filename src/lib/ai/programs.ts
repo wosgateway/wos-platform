@@ -430,9 +430,26 @@ const OTHER_PROVINCES = [
   'อุทัยธานี', 'อุบลราชธานี',
 ];
 
+// Common colloquial short forms that customers actually type - the official
+// name alone is not enough. Confirmed root cause of an empty-result bug:
+// query="อุดร" (the normal short way to say "อุดรธานี") returned zero
+// results because detectLocation() only matched the full official name.
+const PROVINCE_SHORT_FORMS: Record<string, string[]> = {
+  'อุดรธานี': ['อุดร'],
+  'นครราชสีมา': ['โคราช'],
+  'นครศรีธรรมราช': ['นครศรี'],
+  'สุราษฎร์ธานี': ['สุราษฎร์'],
+  'พระนครศรีอยุธยา': ['อยุธยา'],
+  'อุบลราชธานี': ['อุบล'],
+  'ประจวบคีรีขันธ์': ['ประจวบ'],
+};
+
 const LOCATION_ALIASES: string[][] = [
   BANGKOK_ALIASES,
-  ...OTHER_PROVINCES.map((province) => [province]),
+  ...OTHER_PROVINCES.map((province) => [
+    province,
+    ...(PROVINCE_SHORT_FORMS[province] ?? []),
+  ]),
 ];
 
 function normalizeLocation(value: string): string {
