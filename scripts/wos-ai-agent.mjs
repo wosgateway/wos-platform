@@ -5,7 +5,7 @@ import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
 import path from "node:path";
 
 // Load local development env for agent notifications without printing secrets.
-if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+if (!process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN || !process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID) {
   try {
     const { config } = await import("dotenv");
     const { fileURLToPath } = await import("node:url");
@@ -53,12 +53,20 @@ function run(command, commandArgs = []) {
 }
 
 function notify(message) {
-  if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) return;
+  if (!process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN || !process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID) return;
   try {
     execFileSync(
       "node",
       ["scripts/telegram-notify.mjs", message],
-      { cwd: ROOT, stdio: "inherit" }
+      {
+        cwd: ROOT,
+        stdio: "inherit",
+        env: {
+          ...process.env,
+          TELEGRAM_BOT_TOKEN: process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN,
+          TELEGRAM_CHAT_ID: process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID,
+        },
+      }
     );
   } catch {
     console.error("Telegram notification failed.");
