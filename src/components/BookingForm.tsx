@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslations } from 'next-intl';
 import { uploadBookingAttachment } from '@/lib/booking/upload-attachment';
 import { formatTHB } from '@/lib/format';
@@ -236,6 +236,8 @@ export function BookingForm({
   const [hotelRoomTypeFilter, setHotelRoomTypeFilter] = useState<string>('all');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hotelAvailability, setHotelAvailability] = useState<boolean | null>(null);
+  const [hotelAvailabilityLoading, setHotelAvailabilityLoading] = useState(false);
   const [attachmentWarning, setAttachmentWarning] = useState(false);
   const [done, setDone] = useState(false);
   const [orderResult, setOrderResult] = useState<{
@@ -274,6 +276,39 @@ export function BookingForm({
   const currentStepKey = stepKeys[step - 1] ?? 'schedule';
 
   const selectedHotel = hotelOptions.find((p) => p.id === form.hotelPartnerId);
+
+  useEffect(() => {
+    const nights = calcNights(form.hotelCheckinDate, form.hotelCheckoutDate);
+    if (!form.needHotel || !form.hotelPartnerId || !form.hotelCheckinDate || !form.hotelCheckoutDate || nights <= 0) {
+      setHotelAvailability(null);
+      setHotelAvailabilityLoading(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setHotelAvailabilityLoading(true);
+    setHotelAvailability(null);
+
+    fetch(`/api/hotel/availability?package_id=${encodeURIComponent(form.hotelPartnerId)}&checkin=${form.hotelCheckinDate}&checkout=${form.hotelCheckoutDate}&rooms=${form.roomQuantity || 1}`, {
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const data = await res.json().catch(() => null);
+        if (!res.ok) throw new Error(data?.error ?? 'failed to check hotel availability');
+        return data;
+      })
+      .then((data) => setHotelAvailability(data.available === true))
+      .catch((err) => {
+        if (err?.name !== 'AbortError') {
+          console.error('hotel availability check failed:', err);
+          setHotelAvailability(false);
+        }
+      })
+      .finally(() => setHotelAvailabilityLoading(false));
+
+    return () => controller.abort();
+  }, [form.needHotel, form.hotelPartnerId, form.hotelCheckinDate, form.hotelCheckoutDate, form.roomQuantity]);
+
   // Starting-price hint only, not a bound price — real transport price
   // is quoted by the team after a partner/vehicle is assigned.
   const transportStartingPrice =
@@ -401,6 +436,16 @@ export function BookingForm({
       if (!form.hotelCheckinDate || !form.hotelCheckoutDate || nights <= 0) {
         setError(t('errorHotelDates'));
         return false;
+      }
+      if (form.hotelPartnerId) {
+        if (hotelAvailabilityLoading) {
+          setError('กำลังตรวจสอบห้องว่าง กรุณารอสักครู่');
+          return false;
+        }
+        if (hotelAvailability !== true) {
+          setError('ห้องพักที่เลือกไม่มีห้องว่างครบตามวันที่/จำนวนห้องที่ระบุ');
+          return false;
+        }
       }
       return true;
     }
@@ -967,6 +1012,16 @@ export function BookingForm({
               ))}
             </select>
           </div>
+
+          {form.hotelPartnerId && form.hotelCheckinDate && form.hotelCheckoutDate ? (
+            <p className="text-sm font-medium text-slate-600">
+              {hotelAvailabilityLoading
+                ? '⏳ กำลังตรวจสอบห้องว่าง...'
+                : hotelAvailability === true
+                ? '✅ ห้องว่างตามวันที่และจำนวนห้องที่เลือก'
+                : '⚠️ ยังไม่สามารถยืนยันห้องว่างสำหรับช่วงนี้ได้'}
+            </p>
+          ) : null}
 
           {hotelNights > 0 ? (
             <p className="text-sm font-medium text-primary-dark">

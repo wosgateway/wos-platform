@@ -44,7 +44,8 @@ function getArg(name, fallback) {
   if (idx !== -1 && args[idx + 1]) return args[idx + 1];
   return fallback;
 }
-const BASE_URL = getArg("base-url", process.env.WOS_TEST_BASE_URL || "http://localhost:3001");
+const BASE_URL = getArg("base-url", process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011");
+const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "30000"));
 const VERBOSE = args.includes("--verbose");
 const ENDPOINT = `${BASE_URL.replace(/\/$/, "")}/api/ai/chat`;
 
@@ -60,11 +61,19 @@ function containsAny(text, markers) {
 }
 
 async function askAI(message) {
-  const res = await fetch(ENDPOINT, {
-    method: "POST",
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(ENDPOINT, {
+      signal: controller.signal,
+      method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ message }),
-  });
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
   const status = res.status;
   let bodyText = "";
   let bodyJson = null;
@@ -75,7 +84,12 @@ async function askAI(message) {
     // non-JSON response, keep bodyText for inspection
   }
   const replyText =
-    bodyJson?.reply ?? bodyJson?.message ?? bodyJson?.content ?? bodyText ?? "";
+    bodyJson?.answer ??
+    bodyJson?.reply ??
+    bodyJson?.message ??
+    bodyJson?.content ??
+    bodyText ??
+    "";
   return { status, replyText: String(replyText), raw: bodyJson ?? bodyText };
 }
 
@@ -177,6 +191,7 @@ function printHeader() {
 async function main() {
   printHeader();
   let hardFailures = 0;
+  let executionFailures = 0;
   const reviewItems = [];
 
   for (const c of cases) {
@@ -184,7 +199,11 @@ async function main() {
     let result;
     try {
       const r = await askAI(c.query);
-      result = c.check(r);
+      if (!r.replyText.trim()) {
+        result = { pass: false, reason: "empty AI response" };
+      } else {
+        result = c.check(r);
+      }
       result.response = r.replyText;
       result.httpStatus = r.status;
     } catch (err) {
@@ -195,13 +214,10 @@ async function main() {
       console.log("PASS");
     } else if (result.pass === false) {
       console.log(`FAIL - ${result.reason}`);
-      // Only a "hard" case's failure counts toward the gating tally below.
-      // A "review" case can still return pass:false (e.g. an HTTP error),
-      // and that must surface as a visible FAIL line, but it must not
-      // corrupt the hard/total ratio -- a review case was never part of
-      // "total hard" in the first place, so subtracting its failure from
-      // that total could (and did) go negative.
+      // Hard assertion failures and execution/infrastructure failures both gate the suite.
+      // Review cases remain non-gated only when they return pass:null.
       if (c.kind === "hard") hardFailures++;
+      else executionFailures++;
     } else {
       console.log(`REVIEW - ${result.reason}`);
       reviewItems.push({ id: c.id, query: c.query, response: result.response });
@@ -228,8 +244,9 @@ async function main() {
   console.log("=== Result ===");
   console.log(`Hard checks: ${cases.filter((c) => c.kind === "hard").length - hardFailures}/${cases.filter((c) => c.kind === "hard").length} passed`);
   console.log(`Review items: ${reviewItems.length} (see above, not auto-graded)`);
+  console.log(`Execution failures: ${executionFailures}`);
 
-  if (hardFailures > 0) {
+  if (hardFailures > 0 || executionFailures > 0) {
     console.log("");
     console.log("REGRESSION DETECTED -> do not promote/deploy this build");
     process.exit(1);

@@ -1,5 +1,18 @@
 #!/usr/bin/env node
 
+// Load local development env when Telegram vars are not already exported.
+// Secrets are used in-process only and are never printed.
+if (!process.env.TELEGRAM_BOT_TOKEN || !process.env.TELEGRAM_CHAT_ID) {
+  try {
+    const { config } = await import("dotenv");
+    const { fileURLToPath } = await import("node:url");
+    const envPath = fileURLToPath(new URL("../.env.local", import.meta.url));
+    config({ path: envPath, quiet: true });
+  } catch {
+    // Keep the explicit environment-variable path working even if dotenv is unavailable.
+  }
+}
+
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const chatId = process.env.TELEGRAM_CHAT_ID;
 const text = process.argv.slice(2).join(" ").trim();

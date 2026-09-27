@@ -119,12 +119,14 @@ function runTests() {
     "Bypass",
     "-File",
     ".\\preflight-build.ps1",
+    "-SkipBuild",
   ]);
   if (!preflight.ok) {
     fail(`Preflight failed (exit ${preflight.exitCode}).\n${preflight.output}`, "Preflight failed. No commit/push/deploy.");
   }
 
-  const regression = run("node", [".\\ai-regression-test.mjs", "--base-url", "http://localhost:3001"]);
+  const regressionBaseUrl = process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011";
+  const regression = run("node", [".\\ai-regression-test.mjs", "--base-url", regressionBaseUrl]);
   if (!regression.ok) {
     fail(`AI regression failed (exit ${regression.exitCode}).\n${regression.output}`, "AI regression failed. No commit/push/deploy.");
   }
