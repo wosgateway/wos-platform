@@ -176,6 +176,13 @@ const GENERIC_TERMS = new Set(
   DOMAIN_TERMS.map((term) => term.toLowerCase())
 );
 
+// Conservative semantic aliases for common customer wording. These are
+// explicit catalog-language bridges, not fuzzy expansion, so they cannot
+// turn arbitrary text into unrelated searches.
+const SEMANTIC_SEARCH_ALIASES: Array<[string, string]> = [
+  ['\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e', '\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e'],
+];
+
 /**
  * Unit/quantity/filler words that are technically "specific" (not in
  * DOMAIN_TERMS) but are just as unsafe as a generic term: they show up
@@ -330,6 +337,14 @@ function buildSearchCandidates(query: string): SearchCandidate[] {
 
   if (hasDomainTerm) {
     addCandidate(normalized, isGenericTerm(normalized));
+  }
+
+  // 1b. Add only explicit semantic aliases for known customer wording.
+  // Keep the alias specific enough to preserve the false-positive guard.
+  for (const [source, alias] of SEMANTIC_SEARCH_ALIASES) {
+    if (normalized.includes(source)) {
+      addCandidate(alias, false);
+    }
   }
 
   // 2. Remove obvious conversational words.
