@@ -236,6 +236,22 @@ function productionRecoveryCheck() {
   notify("WOS AI Dev Agent\n\n✅ PRODUCTION_RECOVERY_CHECK PASS\nOlder READY deployment candidate identified\nNo rollback performed");
 }
 
+function productionSmokeCheck() {
+  notify("WOS AI Dev Agent\\n\\n🟡 PRODUCTION_SMOKE_CHECK started\\nRead-only production post-deploy verification");
+  const check = run("npm.cmd", ["run", "production:smoke:check"]);
+  if (!check.ok) {
+    fail(
+      "Production smoke check failed.\\n" + check.output,
+      "Production post-deploy smoke check failed. No deployment or rollback was performed."
+    );
+  }
+
+  console.log(check.output);
+  console.log("PRODUCTION_SMOKE_CHECK PASS");
+  console.log("Read-only: no deployment or rollback performed.");
+  notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_SMOKE_CHECK PASS\\nProduction alias, READY state, HTTP 200, and HTML response verified\\nNo deployment/rollback performed");
+}
+
 function productionDeploy() {
   if (!hasFlag("--approve-deploy")) {
     fail("PRODUCTION_DEPLOY blocked: explicit --approve-deploy approval is required.");
@@ -319,7 +335,7 @@ function readOnly() {
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy | production-recovery-check | production-smoke-check");
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
@@ -327,6 +343,7 @@ if (hasFlag("--help")) {
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
   console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
   console.log("PRODUCTION_RECOVERY_CHECK: --mode production-recovery-check");
+  console.log("PRODUCTION_SMOKE_CHECK: --mode production-smoke-check");
   process.exit(0);
 }
 
@@ -337,5 +354,6 @@ else if (mode === "run-tests") runTests();
 else if (mode === "production-gate") productionGate();
 else if (mode === "production-deploy") productionDeploy();
 else if (mode === "production-recovery-check") productionRecoveryCheck();
+else if (mode === "production-smoke-check") productionSmokeCheck();
 else if (mode === "read-only") readOnly();
 else fail(`Unknown mode: ${mode}`);

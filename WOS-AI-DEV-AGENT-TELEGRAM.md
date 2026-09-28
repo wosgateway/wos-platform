@@ -50,3 +50,11 @@ Notification states:
 - It verifies the current production deployment and identifies an older READY deployment candidate.
 - No rollback or deployment is performed by this mode.
 - Any rollback action remains a separate human-approved operation.
+
+## Phase 2F — Production Post-Deploy Smoke Check
+- `npm run production:smoke:check` is a read-only verification of the live production target.
+- It verifies project `wos-platform-updated`, production target, READY state, and alias `www.wos.asia`.
+- It performs a GET request to `https://www.wos.asia/` and requires HTTP 200 with an HTML response.
+- It rejects an unexpectedly small response or common application/runtime error markers.
+- `--mode production-smoke-check` runs the same check through the AI Dev Agent and sends separate Telegram notifications.
+- No deployment or rollback is performed by this mode.
