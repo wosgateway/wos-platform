@@ -220,6 +220,22 @@ function productionGate() {
   notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_GATE PASS\\nPreflight + AI regression + production target guard completed\\nDeployment NOT performed\\nHuman approval still required before deploy");
 }
 
+function productionRecoveryCheck() {
+  notify("WOS AI Dev Agent\n\n🟡 PRODUCTION_RECOVERY_CHECK started\nRead-only rollback safety inspection");
+  const check = run("npm.cmd", ["run", "production:rollback:check"]);
+  if (!check.ok) {
+    fail(
+      "Production recovery check failed.\n" + check.output,
+      "Rollback safety check failed. No rollback action was performed."
+    );
+  }
+
+  console.log(check.output);
+  console.log("PRODUCTION_RECOVERY_CHECK PASS");
+  console.log("Read-only: no rollback performed.");
+  notify("WOS AI Dev Agent\n\n✅ PRODUCTION_RECOVERY_CHECK PASS\nOlder READY deployment candidate identified\nNo rollback performed");
+}
+
 function productionDeploy() {
   if (!hasFlag("--approve-deploy")) {
     fail("PRODUCTION_DEPLOY blocked: explicit --approve-deploy approval is required.");
@@ -310,6 +326,7 @@ if (hasFlag("--help")) {
   console.log("RUN_TESTS: --mode run-tests");
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
   console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
+  console.log("PRODUCTION_RECOVERY_CHECK: --mode production-recovery-check");
   process.exit(0);
 }
 
@@ -319,5 +336,6 @@ else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();
 else if (mode === "production-gate") productionGate();
 else if (mode === "production-deploy") productionDeploy();
+else if (mode === "production-recovery-check") productionRecoveryCheck();
 else if (mode === "read-only") readOnly();
 else fail(`Unknown mode: ${mode}`);

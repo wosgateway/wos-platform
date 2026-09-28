@@ -43,3 +43,10 @@ Notification states:
 - Vercel target is pinned to project `wos-platform-updated` and alias `www.wos.asia`.
 - After deployment, the new deployment is inspected and must be production, READY, and attached to `www.wos.asia`.
 - Failed gate or failed verification blocks the workflow; no automatic rollback is performed.
+
+
+## Phase 2E — Production Recovery Check
+- `--mode production-recovery-check` runs `production:rollback:check` in read-only mode.
+- It verifies the current production deployment and identifies an older READY deployment candidate.
+- No rollback or deployment is performed by this mode.
+- Any rollback action remains a separate human-approved operation.
