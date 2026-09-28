@@ -109,9 +109,27 @@ export function buildProgramAnswer(
   const thai = usesThai(userMessage);
   const body = list.map((p, i) => `${i + 1}. ${describe(p, thai)}`).join('\n\n');
 
-  return thai
-    ? `พบโปรแกรมที่ตรงกับคำถามของคุณ ${list.length} รายการค่ะ\n\n${body}\n\nหากสนใจหรืออยากสอบถามเพิ่มเติม แจ้งทีมงาน WOS ได้เลยค่ะ`
-    : `We found ${list.length} matching WOS program${list.length > 1 ? 's' : ''}:\n\n${body}\n\nIf you are interested or have questions, please let the WOS team know.`;
+  if (thai) {
+    const intro =
+      list.length === 1
+        ? 'ได้เลยค่ะ ใบเฟิร์นเช็กข้อมูลจาก WOS ให้แล้ว ตอนนี้มีโปรแกรมที่ตรงกับที่ถามอยู่ 1 รายการค่ะ'
+        : `ได้เลยค่ะ ใบเฟิร์นเช็กข้อมูลจาก WOS ให้แล้ว ตอนนี้มี ${list.length} โปรแกรมที่ตรงกับที่ถามค่ะ`;
+    const nextStep =
+      list.length === 1
+        ? 'ถ้าสนใจ ใบเฟิร์นช่วยดูรายละเอียดของโปรแกรมนี้ต่อให้ได้นะคะ'
+        : 'ถ้าสนใจตัวไหนเป็นพิเศษ บอกใบเฟิร์นได้เลยค่ะ เดี๋ยวช่วยดูรายละเอียดให้ต่อ';
+    return `${intro}\n\n${body}\n\n${nextStep}`;
+  }
+
+  const intro =
+    list.length === 1
+      ? 'Sure — I checked the verified WOS data, and there is one program that matches your question.'
+      : `Sure — I checked the verified WOS data, and found ${list.length} programs that match your question.`;
+  const nextStep =
+    list.length === 1
+      ? 'If you like, I can walk you through the details of this program.'
+      : 'If one of these catches your eye, tell me which one and I can walk you through the details.';
+  return `${intro}\n\n${body}\n\n${nextStep}`;
 }
 
 /** Generic apology in the customer's language (Thai/Lao script -> Thai). */

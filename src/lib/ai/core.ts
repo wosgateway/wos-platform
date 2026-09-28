@@ -45,6 +45,7 @@ function getOpenAI(): OpenAI {
     openaiClient = new OpenAI({
       apiKey,
       ...(baseURL ? { baseURL } : {}),
+      maxRetries: 0,
     });
   }
   return openaiClient;
@@ -54,10 +55,10 @@ function getOpenAI(): OpenAI {
  * WOS AI tools
  *
  * searchPrograms
- * �  ��0�"หา��:รแกรม�ี�� published + active
+ * ค้นหาโปรแกรมที่ published + active
  *
  * getProgramDetails
- * �  �ึ�!รายละ๬อีย�๬�"�!ม�อ�!��:รแกรม�ี���~�a��าก searchPrograms
+ * ดึงรายละเอียดโปรแกรมที่ได้จาก searchPrograms
  */
 const tools = [
   {
@@ -72,12 +73,12 @@ const tools = [
         query: {
           type: 'string',
           description:
-            'Short search keyword in THAI describing the SERVICE only (for example "knee check" -> "�"รว��๬���า", "dental implant" -> "ราก�xั�"๬�ียม"), even when the customer writes in English or Lao. Prefer 1-3 words. Do NOT put a province/location name here - if the customer mentioned one, put it in the separate "province" field instead. Never silently drop a province the customer mentioned; it must always end up in "province".',
+            'Short search keyword in THAI describing the SERVICE only (for example "knee check" -> "ตรวจเข่า", "dental implant" -> "รากฟันเทียม"), even when the customer writes in English or Lao. Prefer 1-3 words. Do NOT put a province/location name here - if the customer mentioned one, put it in the separate "province" field instead. Never silently drop a province the customer mentioned; it must always end up in "province".',
         },
         province: {
           type: ['string', 'null'],
           description:
-            'The Thai province the customer asked about, in THAI (for example "ห�"อ�!�าย", "อุ�ร��า�"ี", "�อ�"แก���"", "กรุ�!๬��~"), translating an English/Lao place name if needed. Set this whenever the customer\'s message - including earlier turns in this conversation - names a province/city. Use null only when no province was mentioned anywhere relevant. This field, not "query", is how province is communicated - it must never be dropped.',
+            'The Thai province the customer asked about, in THAI (for example "หนองคาย", "อุดรธานี", "ขอนแก่น", "กรุงเทพ"), translating an English/Lao place name if needed. Set this whenever the customer\'s message - including earlier turns in this conversation - names a province/city. Use null only when no province was mentioned anywhere relevant. This field, not "query", is how province is communicated - it must never be dropped.',
         },
         limit: {
           type: 'integer',
@@ -182,7 +183,7 @@ async function executeTool(
 
     // Detect the two observed Typhoon/LiteLLM tool-calling failures for
     // Thai string args (see tool-guard.ts): mojibake (a UTF-8 <->
-    // Latin-1/CP1252 mis-decode, e.g. province="�©...") or a silent
+    // Latin-1/CP1252 mis-decode, e.g. province="Ó©...") or a silent
     // translation to another script despite the schema requiring Thai
     // (e.g. query="health check"). Log the raw values either way - this is
     // the decisive signal for root-causing where in the pipeline
@@ -422,7 +423,7 @@ async function getContactInfoBlock(): Promise<string> {
     const cfg: Record<string, string> = {};
     for (const row of data as BotConfigRow[]) cfg[row.key] = row.value;
 
-    const block = `VERIFIED CONTACT INFORMATION (use only when the customer asks for a contact channel � never invent a channel not listed here, e.g. do not claim Facebook/Telegram exist if not listed):
+    const block = `VERIFIED CONTACT INFORMATION (use only when the customer asks for a contact channel — never invent a channel not listed here, e.g. do not claim Facebook/Telegram exist if not listed):
 - Phone (Thailand): ${cfg.contact_phone_th ?? 'not available'}
 - Phone (Laos): ${cfg.contact_phone_la ?? 'not available'}
 - LINE OA: ${cfg.contact_line_id ?? 'not available'} (link: ${cfg.contact_line_url ?? ''})
@@ -443,7 +444,7 @@ async function getContactInfoBlock(): Promise<string> {
 export async function runWosAI(
   userMessage: string,
   // Optional prior turns of this conversation, oldest first. AI Core
-  // owns context assembly � callers (the Chatwoot webhook, /api/ai/chat)
+  // owns context assembly — callers (the Chatwoot webhook, /api/ai/chat)
   // pass raw history; they must not build their own prompt around it.
   // Defaults to [] so existing single-string call sites keep working.
   history: WosAIHistoryMessage[] = []
@@ -499,7 +500,7 @@ LIVE PROGRAM TOOL RULES:
 - Never invent a program ID.
 - Never invent a program, partner, price, service, availability, schedule, duration, or benefit.
 - Always call searchPrograms with short THAI keywords, because program data is stored in Thai. Translate the customer's request into Thai first, even if the customer writes in English or Lao.
-- If searchPrograms returns no results, retry once with a broader Thai keyword (for example "๬���า" instead of "�"รว��๬���า") before concluding anything.
+- If searchPrograms returns no results, retry once with a broader Thai keyword (for example "เข่า" instead of "ตรวจเข่า") before concluding anything.
 - If the retry also returns no results, clearly say that no matching published WOS program was found.
 - If getProgramDetails returns no result, clearly say that verified details for that program are not currently available.
 - Do not claim that a program is available for a specific date or time unless a dedicated availability tool confirms it.
@@ -515,7 +516,7 @@ ${knowledgeContext}
 ${contactInfoBlock}
 
 CONTACT INFO RULE:
-- If the customer asks for a phone number, LINE, WhatsApp, or email, answer directly from the verified contact information above � do not say "the team will contact you" instead.
+- If the customer asks for a phone number, LINE, WhatsApp, or email, answer directly from the verified contact information above — do not say "the team will contact you" instead.
 - Never invent a contact channel that is not listed above.`;
 
     /**
@@ -577,14 +578,14 @@ CONTACT INFO RULE:
 
       // Explicit catalog intent is always a program lookup.
       const explicitCatalogTerms = [
-        '��:รแกรม',
+        'โปรแกรม',
         'program',
         'programs',
         '\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23',
         'service',
         'services',
         '\u0e41\u0e1e\u0e47\u0e01\u0e40\u0e01\u0e08',
-        'แ�~�๬ก��',
+        'แพ็กเกจ',
         'package',
         'packages',
       ];
@@ -594,10 +595,10 @@ CONTACT INFO RULE:
     // withTools=false is used to get a plain-text answer: with tools attached,
     // the typhoon2 template forces a function-call JSON reply whenever the last
     // message is from the user.
-    const complete = (withTools = true) =>
+    const createCompletion = (withTools: boolean) =>
       withTools
         ? getOpenAI().chat.completions.create({
-            model: process.env.LITELLM_MODEL || 'gpt-5.6-luna',
+            model: runtimeEnv('LITELLM_MODEL') || 'gpt-5.6-luna',
             messages,
             tools: chatTools,
             tool_choice: shouldForceProgramLookup(userMessage)
@@ -610,9 +611,32 @@ CONTACT INFO RULE:
               : 'auto',
           })
         : getOpenAI().chat.completions.create({
-            model: process.env.LITELLM_MODEL || 'gpt-5.6-luna',
+            model: runtimeEnv('LITELLM_MODEL') || 'gpt-5.6-luna',
             messages,
           });
+
+    // LiteLLM/provider failures can be transient while the gateway itself
+    // remains healthy. Retry only idempotent completion calls; tool execution
+    // happens after a successful response and is never retried here.
+    const complete = async (withTools = true) => {
+      const maxAttempts = 3;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+          return await createCompletion(withTools);
+        } catch (error) {
+          const status = (error as { status?: number } | null)?.status;
+          const retryable = [429, 500, 502, 503, 504].includes(status ?? 0);
+          if (!retryable || attempt === maxAttempts) throw error;
+          const delayMs = attempt === 1 ? 500 : 1200;
+          console.warn(
+            '[WOS_OPENAI_RETRY]',
+            JSON.stringify({ attempt, nextAttempt: attempt + 1, status, delayMs })
+          );
+          await new Promise((resolve) => setTimeout(resolve, delayMs));
+        }
+      }
+      throw new Error('Unreachable completion retry state');
+    };
 
     // Runs the tool-call rounds for one model response and returns the last
 // response (the one that should hold the final customer-facing text).
@@ -974,6 +998,36 @@ const runToolRounds = async (
       JSON.stringify(describeError(error))
     );
 
-    throw error;
+    // If the LLM gateway is temporarily unavailable, keep catalog requests
+    // useful by querying the verified operational catalog directly.
+    const fallbackCatalogTerms = [
+      'โปรแกรม', 'บริการ', 'แพ็กเกจ', 'package', 'packages',
+      'program', 'programs', 'service', 'services',
+    ];
+    const wantsCatalog = fallbackCatalogTerms.some((term) =>
+      userMessage.toLowerCase().includes(term.toLowerCase())
+    );
+
+    if (wantsCatalog) {
+      try {
+        const fallbackPrograms = await searchPrograms(userMessage, 5);
+        const fallbackAnswer = buildProgramAnswer(fallbackPrograms, userMessage);
+        if (fallbackAnswer) {
+          console.warn(
+            '[WOS_AI_LLM_FALLBACK_CATALOG]',
+            JSON.stringify({ programs: fallbackPrograms.length })
+          );
+          return fallbackAnswer;
+        }
+      } catch (fallbackError) {
+        console.error(
+          '[WOS_AI_LLM_FALLBACK_ERROR]',
+          JSON.stringify(describeError(fallbackError))
+        );
+      }
+    }
+
+    // Never expose an upstream 500/503 directly to the customer.
+    return buildFallbackReply(userMessage);
   }
 }
