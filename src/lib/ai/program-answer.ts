@@ -42,8 +42,13 @@ export function extractVerifiedPrograms(
 
 // Thai and Lao script -> Thai reply (program data is stored in Thai).
 // Everything else -> English.
+function usesLao(text: string, languageContext = ''): boolean {
+  return /[\u0E80-\u0EFF]/.test(text) || /[\u0E80-\u0EFF]/.test(languageContext);
+}
+
 function usesThai(text: string, languageContext = ''): boolean {
-  return /[\u0E00-\u0EFF]/.test(text) || /[\u0E00-\u0EFF]/.test(languageContext);
+  return !usesLao(text, languageContext) &&
+    (/[\u0E00-\u0E7F]/.test(text) || /[\u0E00-\u0E7F]/.test(languageContext));
 }
 
 function baht(n: number): string {
@@ -107,8 +112,19 @@ export function buildProgramAnswer(
     .slice(0, MAX_PROGRAMS_IN_ANSWER);
   if (list.length === 0) return null;
 
+  const lao = usesLao(userMessage, languageContext);
   const thai = usesThai(userMessage, languageContext);
   const body = list.map((p, i) => `${i + 1}. ${describe(p, thai)}`).join('\n\n');
+
+  if (lao) {
+    const intro = list.length === 1
+      ? 'ໄດ້ເລີຍຄ່ະ ຕອນນີ້ມີໂປຣແກຣມທີ່ກົງກັບທີ່ຖາມ 1 ລາຍການ'
+      : 'ໄດ້ເລີຍຄ່ະ ຕອນນີ້ພົບ ' + list.length + ' ໂປຣແກຣມທີ່ກົງກັບທີ່ຖາມ';
+    const nextStep = list.length === 1
+      ? 'ຖ້າສົນໃຈ ໃບເຟີນຊ່ວຍເບິ່ງລາຍລະອຽດ ແລະຂັ້ນຕອນຈອງຕໍ່ໃຫ້ໄດ້ຄ່ະ'
+      : 'ສົນໃຈໂປຣແກຣມໃດ ບອກໝາຍເລກໃຫ້ໃບເຟີນໄດ້ເລີຍ ແລ້ວຈະຊ່ວຍເບິ່ງລາຍລະອຽດຕໍ່ໃຫ້';
+    return intro + '\n\n' + body + '\n\n' + nextStep;
+  }
 
   if (thai) {
     const intro =
@@ -135,6 +151,9 @@ export function buildProgramAnswer(
 
 /** Generic apology in the customer's language (Thai/Lao script -> Thai). */
 export function buildFallbackReply(userMessage: string): string {
+  if (usesLao(userMessage)) {
+    return 'ຂໍໂທດຄ່ະ ຕອນນີ້ໃບເຟີນຍັງບໍ່ສາມາດຕອບຄຳຖາມນີ້ໄດ້. ສາມາດຕິດຕໍ່ທີມ WOS ເພື່ອຂໍຄວາມຊ່ວຍເຫຼືອໄດ້ຄ່ະ';
+  }
   return usesThai(userMessage)
     ? 'ขออภัยค่ะ ตอนนี้ยังไม่สามารถตอบคำถามนี้ได้ กรุณาติดต่อทีมงาน WOS ค่ะ'
     : 'Sorry, I could not complete that request right now. Please contact the WOS team for help.';

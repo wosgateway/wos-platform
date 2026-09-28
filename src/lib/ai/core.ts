@@ -21,6 +21,11 @@ import {
 } from './programs';
 import { searchWosNotionKnowledge } from './notion-knowledge';
 import { createServiceClient } from '@/lib/supabase/service';
+import {
+  detectWosLanguage,
+  getLanguageDictionaryHints,
+  languageName,
+} from './language-dictionary';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -432,7 +437,7 @@ function isAmbiguousProgramFollowUp(
   if (!text) return false;
 
   const explicitSelection =
-    /^(?:\d+|อันที่\s*\d+|ตัวที่\s*\d+|อันแรก|ตัวแรก|อันที่สอง|ตัวที่สอง|อันที่สาม|ตัวที่สาม)$/u.test(
+    /^(?:\d+|อันที่\s*\d+|ตัวที่\s*\d+|อันแรก|ตัวแรก|อันที่สอง|ตัวที่สอง|อันที่สาม|ตัวที่สาม|ອັນທີ່?\s*\d+|ຕົວທີ່?\s*\d+|ອັນທຳອິດ|ຕົວທຳອິດ)$/u.test(
       text
     );
 
@@ -450,6 +455,13 @@ function isAmbiguousProgramFollowUp(
     'ราคาเท่าไหร่',
     'รายละเอียดเป็นยังไง',
     'มีอะไรบ้าง',
+    'ສົນໃຈ',
+    'ສົນໃຈຕ້ອງເຮັດແນວໃດ',
+    'ຕ້ອງເຮັດແນວໃດ',
+    'ເຮັດແນວໃດຕໍ່',
+    'ຢາກຈອງ',
+    'ຈະຈອງແນວໃດ',
+    'ລາຄາເທົ່າໃດ',
   ].some((phrase) => text.includes(phrase));
 }
 
@@ -461,10 +473,17 @@ function parseProgramSelection(
   const text = message.trim().toLowerCase();
 
   const directNumber = text.match(/^(\d+)$/);
-  const namedNumber = text.match(/^(?:อันที่|ตัวที่)\s*(\d+)$/u);
+  const namedNumber = text.match(/^(?:อันที่|ตัวที่)\s*(\d+)$/u) ??
+    text.match(/^(?:ອັນທີ່|ຕົວທີ່|ອັນທີ|ຕົວທີ)\s*(\d+)$/u);
   const aliases: Record<string, number> = {
     'อันแรก': 1,
     'ตัวแรก': 1,
+    'ອັນທຳອິດ': 1,
+    'ຕົວທຳອິດ': 1,
+    'ອັນທີ່ສອງ': 2,
+    'ຕົວທີ່ສອງ': 2,
+    'ອັນທີ່ສາມ': 3,
+    'ຕົວທີ່ສາມ': 3,
     'อันที่สอง': 2,
     'ตัวที่สอง': 2,
     'อันที่สาม': 3,
@@ -626,6 +645,9 @@ export async function runWosAI(
     }
 
     const recentOptions = extractRecentConversationOptions(cleanHistory);
+    const languageHistory = cleanHistory.map((m) => m.content);
+    const customerLanguage = detectWosLanguage(userMessage, languageHistory);
+    const dictionaryHints = await getLanguageDictionaryHints(userMessage, customerLanguage);
     const currentSelection = parseProgramSelection(userMessage, recentOptions);
     const selectedOption = resolveProgramSelection(
       userMessage,
@@ -671,7 +693,13 @@ export async function runWosAI(
     ) {
       const labels = recentOptions
         .map((option) => `${option.index}. ${option.label}`)
-        .join(' หรือ ');
+        .join(customerLanguage === 'lo' ? ' ຫຼື ' : ' หรือ ');
+      if (customerLanguage === 'lo') {
+        return `ໄດ້ເລີຍ 😊 ສົນໃຈໂປຣແກຣມໃດຄະ? ຕອນນີ້ມີ ${labels} ບອກໝາຍເລກໃຫ້ໃບເຟີນໄດ້ເລີຍ ແລ້ວຈະຊ່ວຍພາໄປຕໍ່ໃຫ້ຄ່ະ`;
+      }
+      if (customerLanguage === 'en') {
+        return `Sure 😊 Which program are you interested in? We currently have ${labels}. Tell me the number and I’ll help you continue.`;
+      }
       return `ได้เลยค่ะ 😊 สนใจตัวไหนคะ? ตอนนี้มี ${labels} ถ้าบอกหมายเลขให้ใบเฟิร์นได้เลย เดี๋ยวช่วยพาไปต่อให้ค่ะ`;
     }
 
@@ -679,7 +707,7 @@ export async function runWosAI(
     // can be answered directly from the live catalog without depending on
     // another LLM round. This also preserves the active selection when the
     // LLM gateway is temporarily unavailable.
-    const asksPrice = selectedOption && /ราคา|ค่าใช้จ่าย|กี่บาท/u.test(userMessage);
+    const asksPrice = selectedOption && /ราคา|ค่าใช้จ่าย|กี่บาท|ລາຄາ|ຄ່າໃຊ້ຈ່າຍ|ກີ່ກີບ|ກີ່ບາດ|price|cost|how much/iu.test(userMessage);
     if (asksPrice) {
       try {
         const selectedPrograms = await searchPrograms(selectedOption.label, 1);
@@ -702,12 +730,18 @@ export async function runWosAI(
     // WOS rather than routing them directly to the partner.
     const asksWhoToContact =
       selectedOption &&
-      /(?:ต้อง)?\s*ติดต่อใคร|ติดต่อ.*ใคร/u.test(userMessage) &&
-      !/(?:เบอร์|โทร|โทรศัพท์|line|ไลน์|whatsapp|วอทส์แอป|อีเมล|email)/iu.test(
+      /(?:ต้อง)?\s*ติดต่อใคร|ติดต่อ.*ใคร|ຕ້ອງຕິດຕໍ່ໃຜ|ຈະຕິດຕໍ່ໃຜ|who.*contact/iu.test(userMessage) &&
+      !/(?:เบอร์|โทร|โทรศัพท์|line|ไลน์|whatsapp|วอทส์แอป|อีเมล|email|ເບີ|ໂທ|ວອດສແອັບ|ອີເມວ)/iu.test(
         userMessage
       );
 
     if (asksWhoToContact) {
+      if (customerLanguage === 'lo') {
+        return 'ຖ້າຈະຈອງໂປຣແກຣມ "' + selectedOption.label + '" ບໍ່ຈຳເປັນຕ້ອງຕິດຕໍ່ພາຣທ໌ເນີໂດຍກົງຄ່ະ 😊 ສາມາດຈອງຜ່ານ WOS ໄດ້ເລີຍ. ຖ້າຈອງເອງບໍ່ສະດວກ ບອກໃບເຟີນໄດ້ ແລ້ວຈະຊ່ວຍປະສານທີມ WOS ໃຫ້ຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'To book "' + selectedOption.label + '", you do not need to contact the partner directly. You can book through WOS. If you need help completing the booking, I can help connect you with the WOS team.';
+      }
       return `ถ้าจะจองโปรแกรม "${selectedOption.label}" ไม่ต้องติดต่อพาร์ทเนอร์โดยตรงนะคะ 😊 จองผ่าน WOS ได้เลยค่ะ ถ้าทำขั้นตอนจองเองไม่สะดวก บอกใบเฟิร์นได้ เดี๋ยวช่วยประสานทีม WOS ให้ค่ะ`;
     }
 
@@ -723,7 +757,18 @@ export async function runWosAI(
 - Do not invent a selected program. Ask a concise clarification when the customer's request is ambiguous.
 `;
 
-    const instructions = `${WOS_AI_SYSTEM_PROMPT}
+    const languageInstructions =
+      'CURRENT CUSTOMER LANGUAGE: ' + languageName(customerLanguage) + '\n' +
+      '- Reply in the current customer language unless the customer explicitly asks to switch.\n' +
+      '- Lao customer messages must receive natural Lao, not Thai and not word-for-word machine translation.\n' +
+      '- Thai customer messages must receive natural Thai.\n' +
+      '- English customer messages must receive natural English.\n' +
+      '- Short replies such as "1", "2", or a short follow-up inherit the conversation language from recent turns.\n' +
+      '- If the customer switches language explicitly, follow the new language while preserving program and journey context.\n' +
+      '- The dictionary is a lexical reference only. It never overrides verified WOS facts and must not invent business data.\n' +
+      'DICTIONARY REFERENCE:\n' + dictionaryHints;
+
+    const instructions = `${WOS_AI_SYSTEM_PROMPT}\n\n${languageInstructions}
 
 KNOWLEDGE RETRIEVAL RULES:
 - Use the verified WOS knowledge below whenever it is relevant.
