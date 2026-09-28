@@ -203,6 +203,23 @@ function runTests() {
   notify("WOS AI Dev Agent\n\n✅ RUN_TESTS PASS\nPreflight + AI regression completed\nHuman approval still required for commit/push/deploy");
 }
 
+function productionGate() {
+  const skipBuild = hasFlag("--skip-build");
+  notify(`WOS AI Dev Agent\\n\\n🔵 PRODUCTION_GATE started\\nRunning production deployment gate${skipBuild ? " (build skipped)" : ""}`);
+  const gate = run("npm.cmd", ["run", "production:gate", ...(skipBuild ? ["--", "--skip-build"] : [])]);
+  if (!gate.ok) {
+    fail(
+      `Production Deployment Gate failed.\\n${gate.output}`,
+      "Production Deployment Gate failed. Deployment remains blocked."
+    );
+  }
+  console.log(gate.output);
+  console.log("PRODUCTION_GATE PASS");
+  console.log("Deployment has NOT been performed.");
+  console.log("Separate human approval is still required before deployment.");
+  notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_GATE PASS\\nPreflight + AI regression + production target guard completed\\nDeployment NOT performed\\nHuman approval still required before deploy");
+}
+
 function readOnly() {
   const requiredFiles = [
     "package.json",
@@ -266,11 +283,12 @@ function readOnly() {
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate");
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
   console.log("RUN_TESTS: --mode run-tests");
+  console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
   process.exit(0);
 }
 
@@ -278,5 +296,6 @@ if (mode === "edit-dev") editDev();
 else if (mode === "plan") plan();
 else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();
+else if (mode === "production-gate") productionGate();
 else if (mode === "read-only") readOnly();
 else fail(`Unknown mode: ${mode}`);
