@@ -32,13 +32,19 @@ import { createServiceClient } from '@/lib/supabase/service';
 
 let openaiClient: OpenAI | null = null;
 
+function runtimeEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  return value.replace(/^"([\s\S]*)"$/, '$1').replace(/^'([\s\S]*)'$/, '$1');
+}
+
 function getOpenAI(): OpenAI {
   if (!openaiClient) {
+    const apiKey = runtimeEnv('LITELLM_API_KEY') || runtimeEnv('OPENAI_API_KEY');
+    const baseURL = runtimeEnv('LITELLM_BASE_URL');
     openaiClient = new OpenAI({
-      apiKey: process.env.LITELLM_API_KEY || process.env.OPENAI_API_KEY,
-      ...(process.env.LITELLM_BASE_URL
-        ? { baseURL: process.env.LITELLM_BASE_URL }
-        : {}),
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
     });
   }
   return openaiClient;
