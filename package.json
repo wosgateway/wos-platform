@@ -8,6 +8,7 @@
     "preflight": "node scripts/preflight-automation.mjs",
     "production:guard": "node scripts/production-guard.mjs",
     "production:gate": "node scripts/production-deployment-gate.mjs",
+    "production:deploy": "node scripts/production-deploy.mjs",
     "ai:regression": "node ai-regression-test.mjs",
     "ai:dev-agent": "node scripts/wos-ai-agent.mjs",
     "start": "next start -p 3000",

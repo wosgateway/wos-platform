@@ -21,9 +21,25 @@ Notification states:
 - NEED APPROVAL
 - INFO
 
-## Phase 2B � Human Approval Git Safety
+## Phase 2B � Human Approval Git Safety
 - `npm run ai:dev-agent:git -- --mode verify` checks diff, protected paths, and branch without changing files.
 - Commit requires `--approve-commit` plus an explicit file allowlist and commit message.
-- Push requires a separate `--approve-push`, a clean working tree, an upstream branch, and a non-default branch.
+- Push requires a separate `--approve-push`, no tracked/staged changes, an upstream branch, and a non-default branch; pre-existing untracked WIP is allowed and is not included in the push.
 - Commit never pushes. Push never deploys.
 - Production deployment remains outside this gate and requires the Production Deployment Gate plus separate human approval.
+
+
+## Phase 2C — Production Gate Integration
+- `--mode production-gate` runs the Production Deployment Gate and never deploys.
+- The gate covers Preflight, AI Regression, and Production Target Guard.
+- Human approval remains required before production deployment.
+
+## Phase 2D — Controlled Production Deploy
+- `--mode production-deploy --approve-deploy` is the only Agent deployment path.
+- Deployment is blocked without the explicit `--approve-deploy` flag.
+- Tracked/staged Git changes are blocked; pre-existing untracked WIP is not included.
+- The deploy script archives exact Git `HEAD` into a temporary staging directory, so unrelated untracked WIP cannot be deployed.
+- The full Production Deployment Gate runs before Vercel deployment.
+- Vercel target is pinned to project `wos-platform-updated` and alias `www.wos.asia`.
+- After deployment, the new deployment is inspected and must be production, READY, and attached to `www.wos.asia`.
+- Failed gate or failed verification blocks the workflow; no automatic rollback is performed.

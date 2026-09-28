@@ -220,6 +220,26 @@ function productionGate() {
   notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_GATE PASS\\nPreflight + AI regression + production target guard completed\\nDeployment NOT performed\\nHuman approval still required before deploy");
 }
 
+function productionDeploy() {
+  if (!hasFlag("--approve-deploy")) {
+    fail("PRODUCTION_DEPLOY blocked: explicit --approve-deploy approval is required.");
+  }
+
+  notify("WOS AI Dev Agent\n\n🔴 PRODUCTION_DEPLOY started\nExplicit human approval supplied");
+  const deploy = run("npm.cmd", ["run", "production:deploy", "--", "--approve-deploy"]);
+  if (!deploy.ok) {
+    fail(
+      "Production deploy failed.\n" + deploy.output,
+      "Production deployment failed or was blocked. Check the deployment gate and Vercel verification."
+    );
+  }
+
+  console.log(deploy.output);
+  console.log("PRODUCTION_DEPLOY PASS");
+  console.log("Production deployment completed and verified.");
+  notify("WOS AI Dev Agent\n\n✅ PRODUCTION_DEPLOY PASS\nProduction deployment completed and verified\nAlias: www.wos.asia");
+}
+
 function readOnly() {
   const requiredFiles = [
     "package.json",
@@ -283,12 +303,13 @@ function readOnly() {
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy");
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
   console.log("RUN_TESTS: --mode run-tests");
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
+  console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
   process.exit(0);
 }
 
@@ -297,5 +318,6 @@ else if (mode === "plan") plan();
 else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();
 else if (mode === "production-gate") productionGate();
+else if (mode === "production-deploy") productionDeploy();
 else if (mode === "read-only") readOnly();
 else fail(`Unknown mode: ${mode}`);

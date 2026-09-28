@@ -47,6 +47,8 @@ function getArg(name, fallback) {
 const BASE_URL = getArg("base-url", process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011");
 const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "30000"));
 const VERBOSE = args.includes("--verbose");
+// Use a dedicated test IP so repeated regression runs do not consume the real client rate-limit bucket.
+const TEST_IP = process.env.WOS_AI_REGRESSION_IP || "198.18.0.42";
 const ENDPOINT = `${BASE_URL.replace(/\/$/, "")}/api/ai/chat`;
 
 // Phrases that indicate "found nothing relevant" in Thai responses.
@@ -68,7 +70,10 @@ async function askAI(message) {
     res = await fetch(ENDPOINT, {
       signal: controller.signal,
       method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": TEST_IP,
+      },
     body: JSON.stringify({ message }),
     });
   } finally {
