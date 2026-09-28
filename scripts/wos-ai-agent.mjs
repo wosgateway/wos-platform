@@ -223,6 +223,27 @@ function operationalStatus() {
   notify(`WOS AI Dev Agent\n\nOPERATIONAL_STATUS PASS\nRead-only audit completed\nNo changes performed`);
 }
 
+function auditHistory() {
+  const limit = arg("--limit");
+  const since = arg("--since");
+  const json = hasFlag("--json");
+  notify("WOS AI Dev Agent\n\nAUDIT_HISTORY started\nRead-only Git and Production history");
+  const auditArgs = ["run", "ai:dev-agent:audit"];
+  if (limit) auditArgs.push("--", "--limit", limit);
+  if (since) auditArgs.push("--", "--since", since);
+  if (json) auditArgs.push("--", "--json");
+  const audit = run("npm.cmd", auditArgs);
+  if (!audit.ok) {
+    fail(
+      "Audit/history requires review.\n" + audit.output,
+      "Audit/history requires review. No changes were performed."
+    );
+  }
+  console.log(audit.output);
+  console.log("AUDIT_HISTORY PASS");
+  console.log("Read-only: no files, Git history, or Production state changed.");
+  notify("WOS AI Dev Agent\n\nAUDIT_HISTORY PASS\nGit and Production history reviewed\nNo changes performed");
+}
 function productionGate() {
   const skipBuild = hasFlag("--skip-build");
   notify(`WOS AI Dev Agent\\n\\n🔵 PRODUCTION_GATE started\\nRunning production deployment gate${skipBuild ? " (build skipped)" : ""}`);
@@ -416,6 +437,7 @@ if (hasFlag("--help")) {
   console.log("VERIFY_CHANGE: --mode verify-change");
   console.log("RUN_TESTS: --mode run-tests");
   console.log("OPERATIONAL_STATUS: --mode operational-status [--include-regression]");
+  console.log("AUDIT_HISTORY: --mode audit-history [--limit <n>] [--since <date>] [--json]");
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
   console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
   console.log("PRODUCTION_ROLLBACK: --mode production-rollback --approve-rollback --deployment <id-or-url>");
@@ -427,6 +449,7 @@ if (hasFlag("--help")) {
 
 if (mode === "edit-dev") editDev();
 else if (mode === "operational-status") operationalStatus();
+else if (mode === "audit-history") auditHistory();
 else if (mode === "plan") plan();
 else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();

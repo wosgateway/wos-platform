@@ -18,7 +18,8 @@
     "production:rollback": "node scripts/production-rollback.mjs",
     "ai:dev-agent:git": "node scripts/wos-ai-agent-git-gate.mjs",
     "production:recover": "node scripts/production-recover.mjs",
-    "ai:dev-agent:status": "node scripts/wos-ai-agent-status.mjs"
+    "ai:dev-agent:status": "node scripts/wos-ai-agent-status.mjs",
+    "ai:dev-agent:audit": "node scripts/wos-ai-agent-audit.mjs"
   },
   "dependencies": {
     "@notionhq/client": "^5.26.0",

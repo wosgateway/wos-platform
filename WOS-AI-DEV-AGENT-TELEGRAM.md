@@ -93,3 +93,13 @@ Notification states:
 - `node scripts/wos-ai-agent-status.mjs --incident` prints the operational incident runbook without changing files or Production.
 - Production incidents follow smoke check → recovery check → explicit target selection → human approval → controlled recovery → post-recovery smoke verification.
 - No automatic rollback, retry, alternate target selection, commit, push, or deployment is introduced by Phase 2I.
+
+## Phase 2J — Audit / History
+- `npm run ai:dev-agent:audit` is a read-only audit/history view for Git and Production deployment history.
+- It reports branch, HEAD, remote HEAD, upstream state, working-tree state, recent Git commits, and recent Production deployments.
+- Production history is read from the pinned Vercel project `wos-platform-updated`; only deployments marked with the Production target are shown.
+- `--limit <n>` controls history entries (1–100); `--since <date>` scopes Git history; `--json` emits machine-readable output.
+- `--mode audit-history [--limit <n>] [--since <date>] [--json]` exposes the same audit through WOS AI Dev Agent.
+- The audit never commits, pushes, deploys, rolls back, recovers, or changes files.
+- Secrets and environment values are never printed.
+- Audit output is observational history only and does not replace explicit human approval for state-changing actions.
