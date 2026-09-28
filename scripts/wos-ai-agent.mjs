@@ -285,6 +285,28 @@ function productionRollback() {
   notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_ROLLBACK PASS\\nExplicit rollback target verified\\nFollow-up smoke check required");
 }
 
+function productionRecover() {
+  if (!hasFlag("--approve-recovery")) {
+    fail("PRODUCTION_RECOVERY blocked: explicit --approve-recovery approval is required.");
+  }
+  const target = arg("--deployment");
+  if (!target) {
+    fail("PRODUCTION_RECOVERY blocked: explicit --deployment <deployment-id-or-url> is required.");
+  }
+  notify("WOS AI Dev Agent\n\nPRODUCTION_RECOVERY started\nExplicit human approval supplied");
+  const recovery = run("npm.cmd", ["run", "production:recover", "--", "--approve-recovery", "--deployment", target]);
+  if (!recovery.ok) {
+    fail(
+      "Production recovery failed or was blocked.\n" + recovery.output,
+      "Production recovery failed or was blocked. No automatic retry or alternate target selection performed."
+    );
+  }
+  console.log(recovery.output);
+  console.log("PRODUCTION_RECOVERY PASS");
+  console.log("Rollback completed and post-recovery smoke check passed.");
+  notify("WOS AI Dev Agent\n\nPRODUCTION_RECOVERY PASS\nRollback target verified\nPost-recovery smoke check passed");
+}
+
 function productionDeploy() {
   if (!hasFlag("--approve-deploy")) {
     fail("PRODUCTION_DEPLOY blocked: explicit --approve-deploy approval is required.");
@@ -368,7 +390,7 @@ function readOnly() {
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy | production-rollback | production-recovery-check | production-smoke-check");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy | production-rollback | production-recovery-check | production-smoke-check | production-recover");
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
@@ -378,6 +400,7 @@ if (hasFlag("--help")) {
   console.log("PRODUCTION_ROLLBACK: --mode production-rollback --approve-rollback --deployment <id-or-url>");
   console.log("PRODUCTION_RECOVERY_CHECK: --mode production-recovery-check");
   console.log("PRODUCTION_SMOKE_CHECK: --mode production-smoke-check");
+  console.log("PRODUCTION_RECOVER: --mode production-recover --approve-recovery --deployment <id-or-url>");
   process.exit(0);
 }
 
@@ -388,6 +411,7 @@ else if (mode === "run-tests") runTests();
 else if (mode === "production-gate") productionGate();
 else if (mode === "production-deploy") productionDeploy();
 else if (mode === "production-rollback") productionRollback();
+else if (mode === "production-recover") productionRecover();
 else if (mode === "production-recovery-check") productionRecoveryCheck();
 else if (mode === "production-smoke-check") productionSmokeCheck();
 else if (mode === "read-only") readOnly();

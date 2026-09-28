@@ -42,7 +42,7 @@ function safeRelative(file) {
   if (/(^|[\\/])\.env(?:\.|$)/i.test(normalized)) fail(`Blocked environment file: ${file}`);
   const normalizedForward = normalized.split(path.sep).join("/").toLowerCase();
   if (/production|prod(?:uction)?[-_]?config/i.test(normalized) && normalizedForward !== "scripts/production-deploy.mjs" && normalizedForward !== "scripts/production-smoke-check.mjs" &&
-    normalizedForward !== "scripts/production-rollback.mjs") fail(`Blocked production path: ${file}`);
+    normalizedForward !== "scripts/production-rollback.mjs" && normalizedForward !== "scripts/production-recover.mjs") fail(`Blocked production path: ${file}`);
   if (!existsSync(absolute)) fail(`File does not exist: ${file}`);
   return path.relative(ROOT, absolute).split(path.sep).join("/");
 }
@@ -50,7 +50,7 @@ function safeRelative(file) {
 function protectedName(name) {
   const normalized = name.replaceAll("\\", "/").toLowerCase();
   if (normalized === "scripts/production-deploy.mjs" || normalized === "scripts/production-smoke-check.mjs" ||
-      normalized === "scripts/production-rollback.mjs") return false;
+      normalized === "scripts/production-rollback.mjs" || normalized === "scripts/production-recover.mjs") return false;
   return /(^|[\\/])(?:\.env(?:\.|$)|\.git(?:[\\/]|$)|node_modules(?:[\\/]|$)|production|prod(?:uction)?[-_]?config)/i.test(name);
 }
 

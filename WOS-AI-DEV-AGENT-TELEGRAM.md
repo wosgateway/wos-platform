@@ -71,3 +71,14 @@ Notification states:
 - --mode production-rollback --approve-rollback --deployment <deployment-id-or-url> exposes the same controlled action through WOS AI Dev Agent.
 - After rollback, --mode production-smoke-check must be run before declaring recovery complete.
 - Rollback is an operational action, not a deployment or rebuild; Vercel documents Instant Rollback as traffic rerouting to an existing immutable deployment.
+
+
+## Phase 2H — Controlled Production Recovery
+- `npm run production:recover -- --approve-recovery --deployment <deployment-id-or-url>` is the single recovery orchestration path.
+- `--approve-recovery` and an explicit rollback target are mandatory.
+- Recovery delegates to the existing controlled rollback safety checks; it does not select a target automatically.
+- After a successful rollback, the same workflow immediately runs the production smoke check.
+- Recovery is PASS only when the approved target is active and the post-recovery smoke check passes.
+- There is no automatic retry or alternate-target selection.
+- `--mode production-recover --approve-recovery --deployment <id-or-url>` exposes the same controlled workflow through WOS AI Dev Agent.
+- Tracked/staged Git changes remain blocked by the rollback safety gate; untracked WIP is not used by recovery.
