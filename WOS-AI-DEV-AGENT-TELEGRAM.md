@@ -20,3 +20,10 @@ Notification states:
 - FAIL
 - NEED APPROVAL
 - INFO
+
+## Phase 2B — Human Approval Git Safety
+- `npm run ai:dev-agent:git -- --mode verify` checks diff, protected paths, and branch without changing files.
+- Commit requires `--approve-commit` plus an explicit file allowlist and commit message.
+- Push requires a separate `--approve-push`, a clean working tree, an upstream branch, and a non-default branch.
+- Commit never pushes. Push never deploys.
+- Production deployment remains outside this gate and requires the Production Deployment Gate plus separate human approval.

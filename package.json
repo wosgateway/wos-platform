@@ -12,7 +12,8 @@
     "ai:dev-agent": "node scripts/wos-ai-agent.mjs",
     "start": "next start -p 3000",
     "lint": "next lint",
-    "production:rollback:check": "node scripts/production-rollback-check.mjs"
+    "production:rollback:check": "node scripts/production-rollback-check.mjs",
+    "ai:dev-agent:git": "node scripts/wos-ai-agent-git-gate.mjs"
   },
   "dependencies": {
     "@notionhq/client": "^5.26.0",
