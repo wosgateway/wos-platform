@@ -58,3 +58,16 @@ Notification states:
 - It rejects an unexpectedly small response or common application/runtime error markers.
 - `--mode production-smoke-check` runs the same check through the AI Dev Agent and sends separate Telegram notifications.
 - No deployment or rollback is performed by this mode.
+## Phase 2G — Controlled Production Rollback
+- npm run production:rollback -- --approve-rollback --deployment <deployment-id-or-url> is the only rollback execution path.
+- --approve-rollback is mandatory; the target deployment must be supplied explicitly.
+- The script verifies the current production alias before changing anything.
+- The explicit target must belong to project wos-platform-updated, be READY, and be older than current production.
+- The target must not already be the current production deployment.
+- Tracked or staged Git changes block rollback; untracked WIP is not used by the rollback action.
+- Vercel rollback is executed only after all preconditions pass.
+- The script then re-inspects www.wos.asia and requires the alias to point to the exact approved target.
+- There is no automatic retry and no automatic alternate-target selection.
+- --mode production-rollback --approve-rollback --deployment <deployment-id-or-url> exposes the same controlled action through WOS AI Dev Agent.
+- After rollback, --mode production-smoke-check must be run before declaring recovery complete.
+- Rollback is an operational action, not a deployment or rebuild; Vercel documents Instant Rollback as traffic rerouting to an existing immutable deployment.
