@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server';
-import { runWosAI } from '@/lib/ai/core';
+import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { simpleRateLimit } from '@/lib/rate-limit';
 
 // Multiple tool rounds + Notion + OpenAI can exceed the default limit.
@@ -114,7 +114,33 @@ export async function POST(request: Request) {
       );
     }
 
-    const answer = await runWosAI(message.trim());
+    // Optional conversation history is accepted for the public AI endpoint
+    // so browser/integration clients can preserve multi-turn context just
+    // like the Chatwoot adapter does. Keep the same 10-turn cap as Chatwoot
+    // and accept only plain user/assistant text.
+    const rawHistory =
+      typeof body === 'object' && body !== null
+        ? (body as { history?: unknown }).history
+        : undefined;
+
+    const history: WosAIHistoryMessage[] = Array.isArray(rawHistory)
+      ? rawHistory
+          .filter((item): item is Record<string, unknown> => {
+            return (
+              typeof item === 'object' &&
+              item !== null &&
+              (item.role === 'user' || item.role === 'assistant') &&
+              typeof item.content === 'string'
+            );
+          })
+          .map((item) => ({
+            role: item.role as 'user' | 'assistant',
+            content: String(item.content).slice(0, MAX_MESSAGE_LENGTH),
+          }))
+          .slice(-10)
+      : [];
+
+    const answer = await runWosAI(message.trim(), history);
 
     return jsonResponse({
       answer,

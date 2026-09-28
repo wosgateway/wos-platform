@@ -42,8 +42,8 @@ export function extractVerifiedPrograms(
 
 // Thai and Lao script -> Thai reply (program data is stored in Thai).
 // Everything else -> English.
-function usesThai(text: string): boolean {
-  return /[\u0E00-\u0EFF]/.test(text);
+function usesThai(text: string, languageContext = ''): boolean {
+  return /[\u0E00-\u0EFF]/.test(text) || /[\u0E00-\u0EFF]/.test(languageContext);
 }
 
 function baht(n: number): string {
@@ -99,25 +99,26 @@ function describe(p: VerifiedProgram, thai: boolean): string {
 
 export function buildProgramAnswer(
   programs: VerifiedProgram[],
-  userMessage: string
+  userMessage: string,
+  languageContext = ''
 ): string | null {
   const list = programs
     .filter((p) => p.title && p.title.trim())
     .slice(0, MAX_PROGRAMS_IN_ANSWER);
   if (list.length === 0) return null;
 
-  const thai = usesThai(userMessage);
+  const thai = usesThai(userMessage, languageContext);
   const body = list.map((p, i) => `${i + 1}. ${describe(p, thai)}`).join('\n\n');
 
   if (thai) {
     const intro =
       list.length === 1
-        ? 'ได้เลยค่ะ ใบเฟิร์นเช็กข้อมูลจาก WOS ให้แล้ว ตอนนี้มีโปรแกรมที่ตรงกับที่ถามอยู่ 1 รายการค่ะ'
-        : `ได้เลยค่ะ ใบเฟิร์นเช็กข้อมูลจาก WOS ให้แล้ว ตอนนี้มี ${list.length} โปรแกรมที่ตรงกับที่ถามค่ะ`;
+        ? 'ได้เลยค่ะ ตอนนี้มีโปรแกรมที่ตรงกับที่ถามอยู่ 1 รายการค่ะ'
+        : `ได้เลยค่ะ ตอนนี้มี ${list.length} โปรแกรมที่ตรงกับที่ถามค่ะ`;
     const nextStep =
       list.length === 1
-        ? 'ถ้าสนใจ ใบเฟิร์นช่วยดูรายละเอียดของโปรแกรมนี้ต่อให้ได้นะคะ'
-        : 'ถ้าสนใจตัวไหนเป็นพิเศษ บอกใบเฟิร์นได้เลยค่ะ เดี๋ยวช่วยดูรายละเอียดให้ต่อ';
+        ? 'ถ้าสนใจ เดี๋ยวใบเฟิร์นช่วยดูรายละเอียดและขั้นตอนจองต่อให้ได้นะคะ'
+        : 'สนใจตัวไหนเป็นพิเศษ บอกหมายเลขให้ใบเฟิร์นได้เลยค่ะ เดี๋ยวช่วยดูรายละเอียดต่อให้';
     return `${intro}\n\n${body}\n\n${nextStep}`;
   }
 

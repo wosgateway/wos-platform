@@ -390,6 +390,138 @@ export type WosAIHistoryMessage = {
   content: string;
 };
 
+type ConversationOption = {
+  index: number;
+  label: string;
+};
+
+function extractRecentConversationOptions(
+  history: WosAIHistoryMessage[]
+): ConversationOption[] {
+  for (let i = history.length - 1; i >= 0; i--) {
+    const message = history[i];
+    if (message.role !== 'assistant') continue;
+
+    const options: ConversationOption[] = [];
+    const re = /^\s*(\d+)[.)]\s*(.+)$/gm;
+    for (const match of message.content.matchAll(re)) {
+      const index = Number(match[1]);
+      const raw = match[2]?.trim();
+      if (!Number.isInteger(index) || index < 1 || !raw) continue;
+
+      // Keep the human-facing label compact. Program lists normally use
+      // "ชื่อโปรแกรม — Partner / จังหวัด"; the full line is still useful
+      // to the model, but the title is what we use for deterministic
+      // selection recovery.
+      const label = raw.split(/\s+—\s+|\s+-\s+/)[0]?.trim() || raw;
+      options.push({ index, label });
+    }
+
+    if (options.length >= 2) return options.slice(0, 5);
+  }
+
+  return [];
+}
+
+function isAmbiguousProgramFollowUp(
+  message: string,
+  options: ConversationOption[]
+): boolean {
+  if (options.length < 2) return false;
+  const text = message.trim().toLowerCase();
+  if (!text) return false;
+
+  const explicitSelection =
+    /^(?:\d+|อันที่\s*\d+|ตัวที่\s*\d+|อันแรก|ตัวแรก|อันที่สอง|ตัวที่สอง|อันที่สาม|ตัวที่สาม)$/u.test(
+      text
+    );
+
+  if (explicitSelection) return false;
+
+  return [
+    'สนใจ',
+    'สนใจต้องทำไง',
+    'ต้องทำไง',
+    'ทำไงต่อ',
+    'แล้วทำไง',
+    'อยากจอง',
+    'จองยังไง',
+    'ต้องจองยังไง',
+    'ราคาเท่าไหร่',
+    'รายละเอียดเป็นยังไง',
+    'มีอะไรบ้าง',
+  ].some((phrase) => text.includes(phrase));
+}
+
+function parseProgramSelection(
+  message: string,
+  options: ConversationOption[]
+): ConversationOption | null {
+  if (options.length === 0) return null;
+  const text = message.trim().toLowerCase();
+
+  const directNumber = text.match(/^(\d+)$/);
+  const namedNumber = text.match(/^(?:อันที่|ตัวที่)\s*(\d+)$/u);
+  const aliases: Record<string, number> = {
+    'อันแรก': 1,
+    'ตัวแรก': 1,
+    'อันที่สอง': 2,
+    'ตัวที่สอง': 2,
+    'อันที่สาม': 3,
+    'ตัวที่สาม': 3,
+  };
+
+  const index = directNumber
+    ? Number(directNumber[1])
+    : namedNumber
+      ? Number(namedNumber[1])
+      : aliases[text];
+
+  if (!index) return null;
+  return options.find((option) => option.index === index) ?? null;
+}
+
+function resolveProgramSelection(
+  message: string,
+  history: WosAIHistoryMessage[],
+  options: ConversationOption[]
+): ConversationOption | null {
+  const current = parseProgramSelection(message, options);
+  if (current) return current;
+
+  // Keep the selected program active for later short follow-ups such as
+  // "ราคาเท่าไหร่" or "ต้องติดต่อใคร". Find the most recent multi-option
+  // assistant list, then inspect the turns AFTER that list for the latest
+  // explicit selection.
+  let optionListIndex = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    const item = history[i];
+    if (item.role === 'assistant' && extractRecentConversationOptions([item]).length >= 2) {
+      optionListIndex = i;
+      break;
+    }
+  }
+
+  if (optionListIndex >= 0) {
+    for (let i = optionListIndex + 1; i < history.length; i++) {
+      const item = history[i];
+      if (item.role !== 'user') continue;
+      const selected = parseProgramSelection(item.content, options);
+      if (selected) return selected;
+    }
+  }
+
+  // Fallback for integrations that trim/reorder history around assistant
+  // replies: the latest explicit numeric user selection still wins.
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role !== 'user') continue;
+    const selected = parseProgramSelection(history[i].content, options);
+    if (selected) return selected;
+  }
+
+  return null;
+}
+
 // =====================================================
 // Dynamic contact-info block from Supabase `bot_config`.
 //
@@ -483,6 +615,114 @@ export async function runWosAI(
      * 2. Build AI instructions
      * -------------------------------------------------------
      */
+    const cleanHistory = sanitizeHistory(history);
+    if (cleanHistory.length !== history.length) {
+      console.warn(
+        '[WOS_AI_HISTORY_SANITIZED]',
+        JSON.stringify({
+          removed: history.length - cleanHistory.length,
+        })
+      );
+    }
+
+    const recentOptions = extractRecentConversationOptions(cleanHistory);
+    const currentSelection = parseProgramSelection(userMessage, recentOptions);
+    const selectedOption = resolveProgramSelection(
+      userMessage,
+      cleanHistory,
+      recentOptions
+    );
+
+    // A numeric/indexed selection is deterministic conversation state. Resolve
+    // it directly against the live catalog so a small model cannot turn "1"
+    // back into a broad search or ask the customer to confirm the selection.
+    if (currentSelection) {
+      try {
+        const selectedPrograms = await searchPrograms(currentSelection.label, 3);
+        const matched = selectedPrograms.find((program) => {
+          const title = String(program.title ?? '').trim();
+          return title === currentSelection.label ||
+            title.includes(currentSelection.label) ||
+            currentSelection.label.includes(title);
+        });
+        if (matched) {
+          const selectedAnswer = buildProgramAnswer(
+            [matched],
+            userMessage,
+            cleanHistory.map((m) => m.content).join('\n')
+          );
+          if (selectedAnswer) return selectedAnswer;
+        }
+      } catch (selectionError) {
+        console.warn(
+          '[WOS_AI_SELECTION_LOOKUP_FAILED]',
+          selectionError instanceof Error ? selectionError.message : String(selectionError)
+        );
+      }
+    }
+
+    // A customer saying "สนใจต้องทำไง" after a multi-item list is not a
+    // request to search the catalog again. It is an unresolved selection.
+    // Resolve this deterministically so the model cannot silently choose the
+    // first result.
+    if (
+      !selectedOption &&
+      isAmbiguousProgramFollowUp(userMessage, recentOptions)
+    ) {
+      const labels = recentOptions
+        .map((option) => `${option.index}. ${option.label}`)
+        .join(' หรือ ');
+      return `ได้เลยค่ะ 😊 สนใจตัวไหนคะ? ตอนนี้มี ${labels} ถ้าบอกหมายเลขให้ใบเฟิร์นได้เลย เดี๋ยวช่วยพาไปต่อให้ค่ะ`;
+    }
+
+    // Price is operational data, so a selected-program price question
+    // can be answered directly from the live catalog without depending on
+    // another LLM round. This also preserves the active selection when the
+    // LLM gateway is temporarily unavailable.
+    const asksPrice = selectedOption && /ราคา|ค่าใช้จ่าย|กี่บาท/u.test(userMessage);
+    if (asksPrice) {
+      try {
+        const selectedPrograms = await searchPrograms(selectedOption.label, 1);
+        const selectedAnswer = buildProgramAnswer(
+          selectedPrograms.slice(0, 1),
+          userMessage,
+          cleanHistory.map((m) => m.content).join('\n')
+        );
+        if (selectedAnswer) return selectedAnswer;
+      } catch (priceError) {
+        console.warn(
+          '[WOS_AI_SELECTED_PRICE_LOOKUP_FAILED]',
+          priceError instanceof Error ? priceError.message : String(priceError)
+        );
+      }
+    }
+
+    // "ต้องติดต่อใคร" during a selected-program journey is a booking-flow
+    // question, not a request for a phone number. Keep the customer inside
+    // WOS rather than routing them directly to the partner.
+    const asksWhoToContact =
+      selectedOption &&
+      /(?:ต้อง)?\s*ติดต่อใคร|ติดต่อ.*ใคร/u.test(userMessage) &&
+      !/(?:เบอร์|โทร|โทรศัพท์|line|ไลน์|whatsapp|วอทส์แอป|อีเมล|email)/iu.test(
+        userMessage
+      );
+
+    if (asksWhoToContact) {
+      return `ถ้าจะจองโปรแกรม "${selectedOption.label}" ไม่ต้องติดต่อพาร์ทเนอร์โดยตรงนะคะ 😊 จองผ่าน WOS ได้เลยค่ะ ถ้าทำขั้นตอนจองเองไม่สะดวก บอกใบเฟิร์นได้ เดี๋ยวช่วยประสานทีม WOS ให้ค่ะ`;
+    }
+
+    const conversationState = recentOptions.length > 0
+      ? `CONVERSATION STATE (derived from recent verified conversation text):
+- Recent program options: ${recentOptions.map((option) => `${option.index} = ${option.label}`).join('; ')}
+- Selected option this turn: ${selectedOption?.label ?? 'none'}
+- If the customer selected an option, keep that program as the active subject. Do not switch to another program unless the customer explicitly changes it.
+- If no option is selected and the customer asks a generic follow-up, ask one concise clarification instead of choosing a program.
+`
+      : `CONVERSATION STATE:
+- No indexed program selection is available from recent conversation text.
+- Do not invent a selected program. Ask a concise clarification when the customer's request is ambiguous.
+`;
+
     const instructions = `${WOS_AI_SYSTEM_PROMPT}
 
 KNOWLEDGE RETRIEVAL RULES:
@@ -507,8 +747,10 @@ LIVE PROGRAM TOOL RULES:
 - Do not expose partner commercial terms, commission rates, internal IDs, admin data, security information, or other internal WOS operational information.
 - Internal program IDs may be used by tools but must not be shown to customers.
 - When the customer asks a broad question, search first rather than guessing.
+- When CONVERSATION STATE identifies a selected indexed option, search for that exact program label (not a generic category) and keep that program as the active subject.
 - When the customer asks about a specific program and the search result identifies it, retrieve the details before answering when useful.
 - Answer in the customer's language whenever practical.
+- If the latest customer message is short or numeric, use the recent conversation state to interpret it; do not infer a new language or topic from the short message alone.
 
 VERIFIED WOS KNOWLEDGE:
 ${knowledgeContext}
@@ -531,23 +773,17 @@ CONTACT INFO RULE:
     // Drop assistant turns that are leaked tool-call JSON (already sent to
     // customers before the output guard existed) so the model does not
     // imitate its own earlier mistake.
-    const cleanHistory = sanitizeHistory(history);
-    if (cleanHistory.length !== history.length) {
-  console.warn(
-    '[WOS_AI_HISTORY_SANITIZED]',
-    JSON.stringify({
-      removed: history.length - cleanHistory.length,
-    })
-  );
-}
+    const modelUserMessage = selectedOption
+      ? `ลูกค้าเลือกโปรแกรม "${selectedOption.label}" จากรายการก่อนหน้า`
+      : userMessage;
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: instructions },
+      { role: 'system', content: `${instructions}\n\n${conversationState}` },
       ...cleanHistory.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
       })),
-      { role: 'user', content: userMessage },
+      { role: 'user', content: modelUserMessage },
     ];
 
     const chatTools = tools.map((tool) => ({
@@ -601,14 +837,15 @@ CONTACT INFO RULE:
             model: runtimeEnv('LITELLM_MODEL') || 'gpt-5.6-luna',
             messages,
             tools: chatTools,
-            tool_choice: shouldForceProgramLookup(userMessage)
-              ? {
-                  type: 'function' as const,
-                  function: {
-                    name: 'searchPrograms',
-                  },
-                }
-              : 'auto',
+            tool_choice:
+              shouldForceProgramLookup(modelUserMessage) || Boolean(selectedOption)
+                ? {
+                    type: 'function' as const,
+                    function: {
+                      name: 'searchPrograms',
+                    },
+                  }
+                : 'auto',
           })
         : getOpenAI().chat.completions.create({
             model: runtimeEnv('LITELLM_MODEL') || 'gpt-5.6-luna',
@@ -913,6 +1150,36 @@ const runToolRounds = async (
     let finalText =
       response.choices[0]?.message?.content?.trim() || '';
 
+    // Language continuity guard. Typhoon-local can occasionally answer a
+    // Thai multi-turn conversation in English when the latest user message
+    // is only a number/short phrase. Re-ask once with an explicit Thai
+    // instruction before anything reaches Chatwoot.
+    const thaiConversation =
+      /[\u0E00-\u0EFF]/.test(userMessage) ||
+      cleanHistory.some((m) => /[\u0E00-\u0EFF]/.test(m.content));
+    const englishReplyMarkers = [
+      /^sure[\s—-]/i,
+      /i checked the verified wos data/i,
+      /if you like,? i can/i,
+      /there is one program that matches/i,
+      /found \d+ programs that match/i,
+    ];
+    const looksEnglishInThaiConversation =
+      thaiConversation &&
+      englishReplyMarkers.some((pattern) => pattern.test(finalText));
+
+    if (looksEnglishInThaiConversation) {
+      console.warn('[WOS_AI_LANGUAGE_RETRY]', JSON.stringify({ target: 'th' }));
+      messages.push({
+        role: 'user',
+        content:
+          '[System reminder] This conversation is in Thai. Rewrite your previous answer in natural Thai, keeping the verified program facts exactly the same. Do not switch to English. Do not add new facts.',
+      });
+      response = await complete(false);
+      addChatUsage(usage, response);
+      finalText = response.choices[0]?.message?.content?.trim() || '';
+    }
+
     /**
      * Output guard: the model sometimes writes a tool call as plain text
      * (e.g. {"type":"function","function":"searchPrograms",...}) instead of
@@ -968,17 +1235,29 @@ const runToolRounds = async (
     // and answering generically instead of using the data it just fetched.
     // Rather than trust the model to phrase found programs correctly,
     // build the customer-facing answer straight from the verified data.
-    const programAnswer = buildProgramAnswer(verifiedPrograms, userMessage);
+    const languageContext = cleanHistory
+      .map((m) => m.content)
+      .join('\n');
+    const programAnswer = buildProgramAnswer(
+      verifiedPrograms,
+      userMessage,
+      languageContext
+    );
+
+    // Prefer the model's natural wording when it produced a grounded answer.
+    // The deterministic server-built answer is a safety fallback, not the
+    // normal customer experience. This prevents every program response from
+    // sounding like a canned catalog template.
+    if (finalText && !looksLikeLeakedToolCall(finalText)) {
+      return finalText;
+    }
+
     if (programAnswer) {
       console.warn(
         '[WOS_AI] using server-built answer from verified program data',
         JSON.stringify({ programs: verifiedPrograms.length })
       );
       return programAnswer;
-    }
-
-    if (finalText && !looksLikeLeakedToolCall(finalText)) {
-      return finalText;
     }
 
     // Either the model was still requesting tools after MAX_TOOL_ROUNDS (or
@@ -1011,7 +1290,11 @@ const runToolRounds = async (
     if (wantsCatalog) {
       try {
         const fallbackPrograms = await searchPrograms(userMessage, 5);
-        const fallbackAnswer = buildProgramAnswer(fallbackPrograms, userMessage);
+        const fallbackAnswer = buildProgramAnswer(
+          fallbackPrograms,
+          userMessage,
+          history.map((m) => m.content).join('\n')
+        );
         if (fallbackAnswer) {
           console.warn(
             '[WOS_AI_LLM_FALLBACK_CATALOG]',
