@@ -131,6 +131,53 @@ function editDev() {
   notify(`WOS AI Dev Agent\n\n🟢 EDIT_DEV PASS\nFile: ${path.relative(ROOT, file)}\nNo commit/push/deploy`);
 }
 
+function plan() {
+  const task = arg("--task");
+  if (!task) fail("PLAN requires --task.");
+  const branchResult = run("git", ["branch", "--show-current"]);
+  const statusResult = run("git", ["status", "--short"]);
+  if (!branchResult.ok || !statusResult.ok) fail("PLAN stopped: unable to inspect repository state.");
+  console.log("WOS AI Dev Agent Plan");
+  console.log("");
+  console.log(`Task: ${task}`);
+  console.log(`Branch: ${branchResult.output}`);
+  console.log("");
+  console.log("Plan:");
+  console.log("1. Inspect repository and current working tree");
+  console.log("2. Identify the smallest DEV-only change set");
+  console.log("3. Apply only explicit EDIT_DEV changes");
+  console.log("4. Run validation and AI regression");
+  console.log("5. Stop for human approval before commit/push/deploy");
+  console.log("");
+  console.log(`Working tree: ${statusResult.output || "clean"}`);
+  console.log("Protected: .env, secrets, .git, node_modules, production paths");
+  console.log("PLAN ONLY: no files changed; no commit/push/deploy performed.");
+  notify(`WOS AI Dev Agent\n\nℹ️ PLAN\nTask: ${task}\nNo files changed`);
+}
+
+function verifyChange() {
+  const statusResult = run("git", ["status", "--short"]);
+  const diffCheck = run("git", ["diff", "--check"]);
+  const changed = run("git", ["diff", "--name-only"]);
+  const staged = run("git", ["diff", "--cached", "--name-only"]);
+  if (!statusResult.ok || !diffCheck.ok || !changed.ok || !staged.ok) fail("VERIFY_CHANGE stopped: unable to inspect git state.");
+  const names = `${changed.output}\n${staged.output}`.trim();
+  const protectedPath = names.split(/\r?\n/).filter(Boolean).find((name) => /(^|[\\/])(?:\.env(?:\.|$)|\.git(?:[\\/]|$)|node_modules(?:[\\/]|$)|production|prod(?:uction)?[-_]?config)/i.test(name));
+  if (protectedPath) fail(`VERIFY_CHANGE blocked protected path: ${protectedPath}`);
+  console.log("WOS AI Dev Agent Change Verification");
+  console.log("");
+  console.log(`Git diff check: ${diffCheck.ok ? "PASS" : "FAIL"}`);
+  console.log(`Changed files: ${names || "none"}`);
+  console.log("Secret values are not printed.");
+  console.log("No commit, push, or deploy performed.");
+  if (!names) {
+    console.log("VERIFY_CHANGE PASS: no changes to validate.");
+    return;
+  }
+  console.log("VERIFY_CHANGE PASS: change set is within repository safety boundaries.");
+  notify(`WOS AI Dev Agent\n\n🟢 VERIFY_CHANGE PASS\nChanged files: ${names.split(/\\r?\\n/).filter(Boolean).length}\nNo commit/push/deploy`);
+}
+
 function runTests() {
   notify("WOS AI Dev Agent\n\n🔵 RUN_TESTS started\nRunning preflight + AI regression");
   const preflight = run("powershell.exe", [
@@ -219,13 +266,17 @@ function readOnly() {
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | edit-dev | run-tests");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests");
+  console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
+  console.log("VERIFY_CHANGE: --mode verify-change");
   console.log("RUN_TESTS: --mode run-tests");
   process.exit(0);
 }
 
 if (mode === "edit-dev") editDev();
+else if (mode === "plan") plan();
+else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();
 else if (mode === "read-only") readOnly();
 else fail(`Unknown mode: ${mode}`);

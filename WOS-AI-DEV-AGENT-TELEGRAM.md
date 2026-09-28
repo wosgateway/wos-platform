@@ -13,7 +13,7 @@ Security:
 - Keep notification scripts free of secrets.
 
 Workflow:
-READ_ONLY -> EDIT_DEV -> RUN_TESTS -> human approval -> COMMIT -> human approval -> PUSH -> human approval -> DEPLOY
+READ_ONLY -> PLAN -> EDIT_DEV -> VERIFY_CHANGE -> RUN_TESTS -> human approval -> COMMIT -> human approval -> PUSH -> human approval -> DEPLOY
 
 Notification states:
 - PASS
