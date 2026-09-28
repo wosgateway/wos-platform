@@ -15,6 +15,7 @@
     "lint": "next lint",
     "production:rollback:check": "node scripts/production-rollback-check.mjs",
     "production:smoke:check": "node scripts/production-smoke-check.mjs",
+    "production:rollback": "node scripts/production-rollback.mjs",
     "ai:dev-agent:git": "node scripts/wos-ai-agent-git-gate.mjs"
   },
   "dependencies": {

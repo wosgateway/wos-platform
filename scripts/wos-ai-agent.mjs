@@ -252,6 +252,39 @@ function productionSmokeCheck() {
   notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_SMOKE_CHECK PASS\\nProduction alias, READY state, HTTP 200, and HTML response verified\\nNo deployment/rollback performed");
 }
 
+function productionRollback() {
+  if (!hasFlag("--approve-rollback")) {
+    fail("PRODUCTION_ROLLBACK blocked: explicit --approve-rollback approval is required.");
+  }
+
+  const target = arg("--deployment");
+  if (!target) {
+    fail("PRODUCTION_ROLLBACK blocked: explicit --deployment <deployment-id-or-url> is required.");
+  }
+
+  notify("WOS AI Dev Agent\\n\\n🔴 PRODUCTION_ROLLBACK started\\nExplicit human approval supplied");
+  const rollback = run("npm.cmd", [
+    "run",
+    "production:rollback",
+    "--",
+    "--approve-rollback",
+    "--deployment",
+    target,
+  ]);
+  if (!rollback.ok) {
+    fail(
+      "Production rollback failed or was blocked.\\n" + rollback.output,
+      "Production rollback failed or was blocked. No automatic retry performed."
+    );
+  }
+
+  console.log(rollback.output);
+  console.log("PRODUCTION_ROLLBACK PASS");
+  console.log("Rollback completed and target verification passed.");
+  console.log("Run production-smoke-check before declaring recovery complete.");
+  notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_ROLLBACK PASS\\nExplicit rollback target verified\\nFollow-up smoke check required");
+}
+
 function productionDeploy() {
   if (!hasFlag("--approve-deploy")) {
     fail("PRODUCTION_DEPLOY blocked: explicit --approve-deploy approval is required.");
@@ -335,13 +368,14 @@ function readOnly() {
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy | production-recovery-check | production-smoke-check");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy | production-rollback | production-recovery-check | production-smoke-check");
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
   console.log("RUN_TESTS: --mode run-tests");
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
   console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
+  console.log("PRODUCTION_ROLLBACK: --mode production-rollback --approve-rollback --deployment <id-or-url>");
   console.log("PRODUCTION_RECOVERY_CHECK: --mode production-recovery-check");
   console.log("PRODUCTION_SMOKE_CHECK: --mode production-smoke-check");
   process.exit(0);
@@ -353,6 +387,7 @@ else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();
 else if (mode === "production-gate") productionGate();
 else if (mode === "production-deploy") productionDeploy();
+else if (mode === "production-rollback") productionRollback();
 else if (mode === "production-recovery-check") productionRecoveryCheck();
 else if (mode === "production-smoke-check") productionSmokeCheck();
 else if (mode === "read-only") readOnly();
