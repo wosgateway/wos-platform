@@ -94,10 +94,12 @@ function commit() {
 function push() {
   if (!has("--approve-push")) fail("PUSH requires explicit --approve-push human approval.");
   const branch = run("git", ["branch", "--show-current"]);
-  const status = run("git", ["status", "--short"]);
+  const tracked = run("git", ["diff", "--name-only"]);
+  const staged = run("git", ["diff", "--cached", "--name-only"]);
   const upstream = run("git", ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"]);
   if (!branch.ok || !branch.output) fail("Unable to determine current branch.");
-  if (!status.ok || status.output) fail("PUSH blocked: working tree is not clean.");
+  if (!tracked.ok || tracked.output) fail("PUSH blocked: tracked working-tree changes are present.");
+  if (!staged.ok || staged.output) fail("PUSH blocked: staged changes are present.");
   if (!upstream.ok) fail("PUSH blocked: no upstream branch configured.");
   if (branch.output === "main" || branch.output === "master") fail("PUSH blocked on protected default branch.");
   const result = run("git", ["push", "origin", branch.output]);
