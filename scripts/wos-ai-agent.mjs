@@ -203,6 +203,26 @@ function runTests() {
   notify("WOS AI Dev Agent\n\n✅ RUN_TESTS PASS\nPreflight + AI regression completed\nHuman approval still required for commit/push/deploy");
 }
 
+function operationalStatus() {
+  const includeRegression = hasFlag("--include-regression");
+  notify(`WOS AI Dev Agent\n\nOPERATIONAL_STATUS started\nRead-only system and production audit`);
+  const status = run("npm.cmd", [
+    "run",
+    "ai:dev-agent:status",
+    ...(includeRegression ? ["--", "--include-regression"] : []),
+  ]);
+  if (!status.ok) {
+    fail(
+      "Operational status requires review.\n" + status.output,
+      "Operational status requires review. No changes were performed."
+    );
+  }
+  console.log(status.output);
+  console.log("OPERATIONAL_STATUS PASS");
+  console.log("Read-only: no files, Git history, or Production state changed.");
+  notify(`WOS AI Dev Agent\n\nOPERATIONAL_STATUS PASS\nRead-only audit completed\nNo changes performed`);
+}
+
 function productionGate() {
   const skipBuild = hasFlag("--skip-build");
   notify(`WOS AI Dev Agent\\n\\n🔵 PRODUCTION_GATE started\\nRunning production deployment gate${skipBuild ? " (build skipped)" : ""}`);
@@ -390,11 +410,12 @@ function readOnly() {
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | production-gate | production-deploy | production-rollback | production-recovery-check | production-smoke-check | production-recover");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | operational-status | production-gate | production-deploy | production-rollback | production-recovery-check | production-smoke-check | production-recover");
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
   console.log("RUN_TESTS: --mode run-tests");
+  console.log("OPERATIONAL_STATUS: --mode operational-status [--include-regression]");
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
   console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
   console.log("PRODUCTION_ROLLBACK: --mode production-rollback --approve-rollback --deployment <id-or-url>");
@@ -405,6 +426,7 @@ if (hasFlag("--help")) {
 }
 
 if (mode === "edit-dev") editDev();
+else if (mode === "operational-status") operationalStatus();
 else if (mode === "plan") plan();
 else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();

@@ -82,3 +82,14 @@ Notification states:
 - There is no automatic retry or alternate-target selection.
 - `--mode production-recover --approve-recovery --deployment <id-or-url>` exposes the same controlled workflow through WOS AI Dev Agent.
 - Tracked/staged Git changes remain blocked by the rollback safety gate; untracked WIP is not used by recovery.
+
+
+## Phase 2I — Operational Control
+- `npm run ai:dev-agent:status` is a read-only operational audit.
+- It reports branch, HEAD, remote HEAD, upstream state, Git diff check, working-tree state, Production target guard, live production smoke status, and rollback candidate status.
+- Untracked WIP is reported only; it is not used by controlled deploy or recovery paths.
+- AI regression is optional with `--include-regression` because it requires the local regression test server.
+- `--mode operational-status [--include-regression]` exposes the same audit through WOS AI Dev Agent and sends separate Agent notifications.
+- `node scripts/wos-ai-agent-status.mjs --incident` prints the operational incident runbook without changing files or Production.
+- Production incidents follow smoke check → recovery check → explicit target selection → human approval → controlled recovery → post-recovery smoke verification.
+- No automatic rollback, retry, alternate target selection, commit, push, or deployment is introduced by Phase 2I.
