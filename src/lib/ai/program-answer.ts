@@ -149,12 +149,18 @@ export function buildProgramAnswer(
   return `${intro}\n\n${body}\n\n${nextStep}`;
 }
 
-/** Generic apology in the customer's language (Thai/Lao script -> Thai). */
+/**
+ * Safe escalation fallback. When verified WOS data is insufficient, Fern must
+ * stop rather than guess or repeat a stale refusal. This wording deliberately
+ * says the information needs WOS-team verification; it does not claim that a
+ * human has already received a ticket because AI Core has no escalation-write
+ * tool yet.
+ */
 export function buildFallbackReply(userMessage: string): string {
   if (usesLao(userMessage)) {
-    return 'ຂໍໂທດຄ່ະ ຕອນນີ້ໃບເຟີນຍັງບໍ່ສາມາດຕອບຄຳຖາມນີ້ໄດ້. ສາມາດຕິດຕໍ່ທີມ WOS ເພື່ອຂໍຄວາມຊ່ວຍເຫຼືອໄດ້ຄ່ະ';
+    return 'ຂໍໂທດຄ່ະ ເລື່ອງນີ້ໃບເຟີນຍັງບໍ່ມີຂໍ້ມູນທີ່ຢືນຢັນໄດ້ ແລະບໍ່ຢາກເດົາໃຫ້ຂໍ້ມູນຜິດ. ໃບເຟີນຂໍໃຫ້ທີມ WOS ກວດສອບແລະດຳເນີນການຕໍ່ໃຫ້ຄ່ະ';
   }
   return usesThai(userMessage)
-    ? 'ขออภัยค่ะ ตอนนี้ยังไม่สามารถตอบคำถามนี้ได้ กรุณาติดต่อทีมงาน WOS ค่ะ'
-    : 'Sorry, I could not complete that request right now. Please contact the WOS team for help.';
+    ? 'เรื่องนี้ใบเฟิร์นยังไม่มีข้อมูลที่ยืนยันได้ค่ะ ไม่อยากเดาให้ข้อมูลผิด เดี๋ยวขอให้ทีม WOS ตรวจสอบและดำเนินการต่อให้ค่ะ'
+    : 'I do not have verified information for this yet, and I do not want to guess. I’ll have the WOS team verify it and continue from there.';
 }

@@ -62,7 +62,7 @@ function containsAny(text, markers) {
   return markers.some((m) => text.includes(m));
 }
 
-async function askAI(message) {
+async function askAI(message, history = []) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
   let res;
@@ -70,11 +70,11 @@ async function askAI(message) {
     res = await fetch(ENDPOINT, {
       signal: controller.signal,
       method: "POST",
-    headers: {
+      headers: {
         "Content-Type": "application/json",
         "x-forwarded-for": TEST_IP,
       },
-    body: JSON.stringify({ message }),
+      body: JSON.stringify({ message, history }),
     });
   } finally {
     clearTimeout(timeout);
@@ -160,6 +160,71 @@ const cases = [
       }
       if (!containsAny(r.replyText, ["ตรวจเข่า", "INDY CLINICS"])) {
         return { pass: false, reason: "symptom + province query did not return the verified Udon knee-check catalog result" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1e_selected_program_booking",
+    label: "Selected program booking: must not produce the old generic 'cannot book' refusal",
+    query: "จองโปรแกรมตรวจเข่าให้หน่อย",
+    history: [
+      {
+        role: "assistant",
+        content: "1. ตรวจเข่า — INDY CLINICS / อุดรธานี\n\n2. ตรวจสุขภาพ — DNA Wellness Center / อุดรธานี",
+      },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      const refusal = /ไม่สามารถจอง|cannot book|unable to book|ติดต่อทีมงาน WOS เพื่อขอข้อมูลเพิ่มเติมเกี่ยวกับโปรแกรม/iu;
+      if (refusal.test(r.replyText)) return { pass: false, reason: "selected-program booking still falls into the old generic refusal response" };
+      if (!containsAny(r.replyText, ["WOS", "จอง"])) return { pass: false, reason: "booking response did not explain the WOS booking path" };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1f_repeat_reset",
+    label: "Repeated-answer complaint: must reset instead of echoing the previous refusal",
+    query: "ทำไมคุณตอบซ้ำๆ",
+    history: [
+      {
+        role: "assistant",
+        content: "ขออภัยค่ะ ใบเฟิร์นไม่สามารถจองโปรแกรม “ตรวจเข่า” ให้คุณได้โดยตรง เนื่องจากต้องปฏิบัติตามกฎของ WOS",
+      },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ไม่สามารถจอง|cannot book|unable to book/iu.test(r.replyText)) return { pass: false, reason: "repeat complaint echoed the stale booking refusal" };
+      if (!/ซ้ำ|เริ่มใหม่|reset|repeat/i.test(r.replyText)) return { pass: false, reason: "repeat complaint did not acknowledge/reset the repeated answer" };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1g_transport_query",
+    label: "Transport question: must not be converted into a generic booking refusal",
+    query: "มีรถรับส่งบ่",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ไม่สามารถจอง|cannot book|unable to book/iu.test(r.replyText)) return { pass: false, reason: "transport question produced a generic booking refusal" };
+      if (!/รถรับส่ง|จุดรับ|จุดส่ง|วัน|เวลา|ລົດຮັບສົ່ງ|ຈຸດຮັບ|ຈຸດສົ່ງ|ວັນ|ເວລາ/iu.test(r.replyText)) return { pass: false, reason: "transport response did not explain the WOS transport flow or collect required trip details" };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1h_unknown_question_escalation",
+    label: "Unsupported question: must escalate to WOS instead of guessing or looping",
+    query: "WOS มีนโยบายพิเศษสำหรับกรณีที่ไม่มีอยู่ในข้อมูลระบบตอนนี้ไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ไม่สามารถจอง|cannot book|unable to book|กฎของ WOS|policy says/iu.test(r.replyText)) {
+        return { pass: false, reason: "unsupported question fell into a generic refusal/policy hallucination" };
+      }
+      if (!/WOS|ตรวจสอบ|ดำเนินการต่อ|ยืนยัน|ข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "unsupported question did not provide a WOS verification/escalation path" };
       }
       return { pass: true };
     },

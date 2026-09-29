@@ -28,6 +28,7 @@ import {
   getLanguageDictionaryHints,
   languageName,
 } from './language-dictionary';
+import { getSymptomSearchAliases } from './symptom-intent';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -202,8 +203,8 @@ async function executeTool(
     // args.province is `null` (not undefined) when the model omits a
     // province, per the tool's ["string","null"] schema - String(null)
     // would otherwise turn that into the literal text "null".
-    const rawProvince =
-      args.province == null ? '' : String(args.province).trim();
+    const rawProvinceValue = args.province == null ? '' : String(args.province).trim();
+    const rawProvince = /^(?:null|undefined)$/i.test(rawProvinceValue) ? '' : rawProvinceValue;
 
     const limit = Math.min(
       Math.max(Number(args.limit ?? 5), 1),
@@ -264,13 +265,16 @@ async function executeTool(
     // buildSearchCandidates() are already built to parse natural language
     // directly, so the raw message alone is enough to search on, and it is
     // guaranteed not to carry the corruption that broke query/province.
+    const symptomAliases = getSymptomSearchAliases(rawUserMessage);
+    const symptomOverride = symptomAliases[0] ?? '';
     const query = queryBad ? '' : rawQuery;
     const province = provinceBad ? '' : rawProvince;
-    const searchQuery =
-      queryBad || provinceBad
-        ? rawUserMessage || (province ? `${query} ${province}`.trim() : query)
+    const searchQuery = symptomOverride
+      ? (symptomOverride + (province ? ' ' + province : '')).trim()
+      : queryBad || provinceBad
+        ? rawUserMessage || (province ? query + ' ' + province : query)
         : province
-          ? `${query} ${province}`.trim()
+          ? (query + ' ' + province).trim()
           : query;
 
     console.log(
@@ -791,6 +795,100 @@ export async function runWosAI(
           priceError instanceof Error ? priceError.message : String(priceError)
         );
       }
+    }
+
+    // A customer may explicitly point out that Fern is repeating herself.
+    // Do not send that meta-conversation through the LLM: the old assistant
+    // reply is part of history and a small local model can simply imitate it.
+    // Reset the conversation naturally, then let the next real request drive
+    // the catalog/tool flow again.
+    const asksWhyRepeating =
+      /(?:ทำไม|เพราะอะไร).*?(?:ตอบซ้ำ|ซ้ำๆ|พูดซ้ำ|ตอบเหมือนเดิม)|(?:ตอบซ้ำ|ซ้ำๆ|พูดซ้ำ).*?(?:ทำไม|อีกแล้ว)|why.*(?:repeat|same answer)|you keep repeating/iu.test(
+        userMessage
+      );
+
+    if (asksWhyRepeating) {
+      if (customerLanguage === 'lo') {
+        return 'ຈິງດ້ວຍຄ່ະ ເມື່ອກີ້ໃບເຟີນຕອບຊ້ຳເກີນໄປ. ຂໍເລີ່ມໃໝ່ຈາກຄຳຖາມຂອງລູກຄ້າເລີຍຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'You are right — I repeated myself. Let me reset and answer from your actual question instead.';
+      }
+      return 'จริงด้วยค่ะ เมื่อกี้ใบเฟิร์นตอบซ้ำเกินไป ขอโทษนะคะ เดี๋ยวใบเฟิร์นเริ่มใหม่และตอบจากคำถามจริงของคุณเลยค่ะ';
+    }
+
+    // Transport is a WOS journey capability, not necessarily a package
+    // returned by the program catalog. Answer the basic "มีรถรับส่งไหม?"
+    // question from approved WOS knowledge, then collect the minimum details
+    // needed before any real availability/price claim.
+    const asksTransport =
+      /รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(
+        userMessage
+      );
+
+    if (asksTransport) {
+      if (customerLanguage === 'lo') {
+        return 'WOS ສາມາດຊ່ວຍປະສານລົດຮັບ-ສົ່ງໄດ້ ເມື່ອມີບໍລິການພ້ອມໃຫ້ບໍລິການຄ່ະ. ກ່ອນກວດລົດຈິງ ໃບເຟີນຂໍຈຸດຮັບ, ຈຸດສົ່ງ, ວັນ-ເວລາ, ຈຳນວນຄົນ ແລະບອກໄດ້ວ່າຕ້ອງການໄປທ່ຽວດຽວ ຫຼື ໄປ-ກັບຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'WOS can coordinate transport when a suitable service is available. Before I check the actual service, please tell me the pickup point, drop-off point, date and time, number of travelers, and whether you need one-way or round-trip service.';
+      }
+      return 'มีบริการประสานรถรับส่งผ่าน WOS ได้ค่ะ เมื่อมีบริการที่พร้อมให้บริการนะคะ ก่อนที่ใบเฟิร์นจะเช็กเที่ยวรถจริง ขอจุดรับ จุดส่ง วันที่และเวลา จำนวนผู้เดินทาง และแจ้งด้วยว่าต้องการเที่ยวเดียวหรือไป-กลับค่ะ';
+    }
+
+    // A booking request is a journey step, not a reason to refuse the
+    // customer. WOS is the booking point, so when a program has already
+    // been selected, answer this deterministically instead of letting the
+    // local model turn the lack of a booking-write tool into a generic
+    // "I cannot book" refusal.
+    const asksToBook =
+      /(?:จอง|นัด|จองให้|ขอจอง|ต้องการจอง|book|booking|reserve|reservation|ຈອງ|ນັດ)/iu.test(
+        userMessage
+      );
+
+    if (asksToBook && !selectedOption) {
+      // If the customer names the program in the booking request itself,
+      // resolve it from the live catalog instead of making the model guess
+      // whether the booking target is the first item in old conversation
+      // history. If several programs match, ask which one; never pick one.
+      try {
+        const bookingMatches = await searchPrograms(userMessage, 3);
+        if (bookingMatches.length === 1) {
+          const label = bookingMatches[0].title ?? 'โปรแกรมที่เลือก';
+          if (customerLanguage === 'lo') {
+            return 'ໄດ້ເລີຍຄ່ະ ສຳລັບ "' + label + '" ສາມາດຈອງຜ່ານ WOS ໄດ້. ໃບເຟີນຊ່ວຍພາໄປຕໍ່ຕາມຂັ້ນຕອນຈອງຄ່ະ';
+          }
+          if (customerLanguage === 'en') {
+            return 'Absolutely. For "' + label + '", booking is handled through WOS. I can help you continue with the booking steps.';
+          }
+          return 'ได้เลยค่ะ สำหรับ "' + label + '" จองผ่าน WOS ได้เลยนะคะ ใบเฟิร์นช่วยพาไปต่อในขั้นตอนจองให้ค่ะ';
+        }
+
+        if (bookingMatches.length > 1) {
+          const labels = bookingMatches
+            .map((item, index) => `${index + 1}. ${item.title}`)
+            .join('\n');
+          if (customerLanguage === 'en') {
+            return 'Sure. Before booking, please choose which program you want:\n' + labels;
+          }
+          return 'ได้เลยค่ะ ก่อนจองขอให้เลือกโปรแกรมก่อนนะคะ:\n' + labels;
+        }
+      } catch (bookingError) {
+        console.warn(
+          '[WOS_AI_BOOKING_LOOKUP_FAILED]',
+          bookingError instanceof Error ? bookingError.message : String(bookingError)
+        );
+      }
+    }
+
+    if (selectedOption && asksToBook) {
+      if (customerLanguage === 'lo') {
+        return 'ໄດ້ເລີຍຄ່ະ ສຳລັບ "' + selectedOption.label + '" ສາມາດຈອງຜ່ານ WOS ໄດ້. ໃບເຟີນຈະຊ່ວຍພາໄປຕໍ່ຕາມຂັ້ນຕອນຈອງຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'Absolutely. For "' + selectedOption.label + '", booking is handled through WOS. I can help you continue with the booking steps.';
+      }
+      return 'ได้เลยค่ะ สำหรับ "' + selectedOption.label + '" จองผ่าน WOS ได้เลยนะคะ ใบเฟิร์นช่วยพาไปต่อในขั้นตอนจองให้ค่ะ';
     }
 
     // "ต้องติดต่อใคร" during a selected-program journey is a booking-flow
