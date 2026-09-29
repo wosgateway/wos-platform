@@ -307,7 +307,10 @@ async function executeTool(
     const province = rawDetectedProvince || modelProvince;
     const checkin = String(args.checkin ?? '').trim();
     const checkout = String(args.checkout ?? '').trim();
-    const rooms = Math.min(Math.max(Number(args.rooms ?? 1), 1), 10);
+    const rawRoomMatch = rawUserMessage.match(/(?:^|\\s)(\\d{1,2})\\s*(?:ห้อง|room|rooms)\\b/i);
+    const rawRooms = rawRoomMatch ? Number(rawRoomMatch[1]) : null;
+    const modelRooms = Number(args.rooms ?? 1);
+    const rooms = Math.min(Math.max(rawRooms && Number.isFinite(rawRooms) ? rawRooms : modelRooms, 1), 10);
     const limit = Math.min(Math.max(Number(args.limit ?? 5), 1), 5);
 
     if (!province || !/^\d{4}-\d{2}-\d{2}$/.test(checkin) || !/^\d{4}-\d{2}-\d{2}$/.test(checkout)) {
