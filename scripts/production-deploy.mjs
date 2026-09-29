@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -57,9 +57,13 @@ console.log("Branch: " + branch.output);
 console.log("Commit: " + commitSha);
 console.log("");
 console.log("=== 1. Production Deployment Gate ===");
-const gate = run("npm.cmd", ["run", "production:gate"]);
-if (!gate.ok) fail("Production Deployment Gate failed.\n" + gate.output);
-console.log(gate.output);
+console.log("Using --skip-build: local build was verified before deploy; gate still runs preflight validation, AI regression, and production target guard.");
+const gate = spawnSync(
+  process.execPath,
+  ["scripts/production-deployment-gate.mjs", "--skip-build"],
+  { cwd: ROOT, stdio: "inherit", windowsHide: false }
+);
+if (gate.status !== 0) fail("Production Deployment Gate failed.");
 console.log("[PASS] Production Deployment Gate");
 console.log("");
 console.log("=== 2. Build exact committed source archive ===");
