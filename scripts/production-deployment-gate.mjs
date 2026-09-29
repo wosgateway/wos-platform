@@ -1,34 +1,33 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 
 const args = new Set(process.argv.slice(2));
 const skipBuild = args.has("--skip-build");
 
 function runNpm(script, extraArgs = []) {
-  const command = ["npm.cmd", "run", script, ...extraArgs];
-  try {
-    const output = process.platform === "win32"
-      ? execFileSync("cmd.exe", ["/d", "/s", "/c", command.join(" ")], {
-          cwd: process.cwd(),
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"],
-        })
-      : execFileSync("npm", ["run", script, ...extraArgs], {
-          cwd: process.cwd(),
-          encoding: "utf8",
-          stdio: ["ignore", "pipe", "pipe"],
-        });
+  const directScripts = {
+    preflight: ["scripts/preflight-automation.mjs"],
+    "ai:regression": ["ai-regression-test.mjs"],
+    "production:guard": ["scripts/production-guard.mjs"],
+  };
+  const direct = directScripts[script];
+  const child = direct
+    ? { command: process.execPath, args: [...direct, ...extraArgs.filter((arg) => arg !== "--")] }
+    : process.platform === "win32"
+      ? { command: "npm.cmd", args: ["run", script, ...extraArgs] }
+      : { command: "npm", args: ["run", script, ...extraArgs] };
 
-    return { ok: true, output: output.trim() };
-  } catch (error) {
-    return {
-      ok: false,
-      output: error.stdout?.toString().trim()
-        || error.stderr?.toString().trim()
-        || error.message,
-    };
-  }
+  const result = spawnSync(child.command, child.args, {
+    cwd: process.cwd(),
+    stdio: "inherit",
+    windowsHide: false,
+  });
+
+  return {
+    ok: result.status === 0,
+    output: result.error?.message || "",
+  };
 }
 
 function fail(stage, detail) {
