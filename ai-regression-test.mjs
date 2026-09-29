@@ -44,7 +44,7 @@ function getArg(name, fallback) {
   if (idx !== -1 && args[idx + 1]) return args[idx + 1];
   return fallback;
 }
-const BASE_URL = getArg("base-url", process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011");
+const BASE_URL = getArg("base-url", process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3001");
 const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "30000"));
 const VERBOSE = args.includes("--verbose");
 // Use a dedicated test IP so repeated regression runs do not consume the real client rate-limit bucket.
