@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
@@ -71,10 +71,11 @@ if (!archiveResult.ok) {
   rmSync(tempRoot, { recursive: true, force: true });
   fail("Could not create committed-source archive.\n" + archiveResult.output);
 }
-const mkdirResult = run("cmd.exe", ["/d", "/s", "/c", "mkdir \"" + extracted + "\""]);
-if (!mkdirResult.ok) {
+try {
+  mkdirSync(extracted, { recursive: true });
+} catch (error) {
   rmSync(tempRoot, { recursive: true, force: true });
-  fail("Could not create deployment staging directory.");
+  fail("Could not create deployment staging directory.\\n" + (error?.message || String(error)));
 }
 const extractResult = run("tar.exe", ["-xf", archive, "-C", extracted]);
 if (!extractResult.ok) {
