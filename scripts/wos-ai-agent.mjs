@@ -192,7 +192,7 @@ function runTests() {
     fail(`Preflight failed (exit ${preflight.exitCode}).\n${preflight.output}`, "Preflight failed. No commit/push/deploy.");
   }
 
-  const regressionBaseUrl = process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011";
+  const regressionBaseUrl = arg("--base-url") || process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011";
   const regression = run("node", [".\\ai-regression-test.mjs", "--base-url", regressionBaseUrl]);
   if (!regression.ok) {
     fail(`AI regression failed (exit ${regression.exitCode}).\n${regression.output}`, "AI regression failed. No commit/push/deploy.");
@@ -448,7 +448,7 @@ if (hasFlag("--help")) {
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
-  console.log("RUN_TESTS: --mode run-tests");
+  console.log("RUN_TESTS: --mode run-tests [--base-url <local-test-url>]");
   console.log("OPERATIONAL_STATUS: --mode operational-status [--include-regression]");
   console.log("REPOSITORY_INTELLIGENCE: --mode repo-intelligence [--query <task>] [--limit <n>] [--json]");
   console.log("AUDIT_HISTORY: --mode audit-history [--limit <n>] [--since <date>] [--json]");
