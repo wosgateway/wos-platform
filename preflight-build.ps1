@@ -262,18 +262,16 @@ if ($dockerignore -notmatch '(?m)^\.env\*$') {
   Pass ".env* excluded from Docker build context"
 }
 
-$backupFiles = Get-ChildItem -Recurse -File -Force |
-  Where-Object {
-    $_.FullName -notmatch '\\node_modules\\' -and
-    $_.FullName -notmatch '\\.next\\' -and
-    $_.Name -match '\.(bak|bak\d+|backup)$|\.before-'
-  }
+$backupFiles = @(& git ls-files) |
+  Where-Object { $_ -match '(?i)(\.bak\d*|\.backup|\.before-)(/|\\|$)' }
 
-if ($backupFiles.Count -gt 0) {
+$untrackedBackupFiles = @(& git status --porcelain=v1 --untracked-files=all) |
+  Where-Object { $_ -match '(?i)(\.bak\d*|\.backup|\.before-)(/|\\|$)' }
+
+if ($backupFiles.Count -gt 0 -or $untrackedBackupFiles.Count -gt 0) {
   Warn "Backup/temp-like files exist in repository/build context:"
-  foreach ($file in $backupFiles) {
-    Write-Host "       $($file.FullName.Replace((Get-Location).Path + '\',''))" -ForegroundColor Yellow
-  }
+  $backupFiles | ForEach-Object { Write-Host "       $_" -ForegroundColor Yellow }
+  $untrackedBackupFiles | ForEach-Object { Write-Host "       $_" -ForegroundColor Yellow }
 } else {
   Pass "No backup/temp-like files detected"
 }
@@ -284,36 +282,21 @@ if ($backupFiles.Count -gt 0) {
 Write-Host ""
 Write-Host "=== Secret Hygiene ===" -ForegroundColor Cyan
 
-$scanFiles = Get-ChildItem -Recurse -File -Force |
-  Where-Object {
-    $_.FullName -notmatch '\\node_modules\\' -and
-    $_.FullName -notmatch '\\.next\\' -and
-    $_.FullName -notmatch '\\.git\\' -and
-    $_.Name -notmatch '^\.env' -and
-    $_.Extension -in @(
-      ".ts", ".tsx", ".js", ".jsx", ".json", ".ps1", ".yml", ".yaml",
-      ".md", ".txt", ".sql"
-    )
-  }
-
 $secretHit = $false
 
-foreach ($file in $scanFiles) {
-  $content = [System.IO.File]::ReadAllText($file.FullName)
+# Use git grep over tracked source instead of recursively reading hundreds of
+# files through PowerShell. This keeps preflight deterministic and fast on
+# Windows while preserving the same two high-signal secret patterns.
+$apiSecretHit = & git grep -n -I -E 'sk-[A-Za-z0-9]{20,}' -- ':!*.env*' ':!package-lock.json' 2>$null
+if ($LASTEXITCODE -eq 0 -and $apiSecretHit) {
+  $apiSecretHit | ForEach-Object { Write-Host "Potential API secret pattern: $_" -ForegroundColor Red }
+  $secretHit = $true
+}
 
-  if (-not $content) {
-    continue
-  }
-
-  if ($content -match '(?i)sk-[A-Za-z0-9]{20,}') {
-    Write-Host "Potential API secret pattern: $($file.FullName)" -ForegroundColor Red
-    $secretHit = $true
-  }
-
-  if ($content -match '(?i)service_role.{0,30}eyJ[A-Za-z0-9_-]{20,}') {
-    Write-Host "Potential Supabase service-role secret pattern: $($file.FullName)" -ForegroundColor Red
-    $secretHit = $true
-  }
+$serviceRoleHit = & git grep -n -I -E 'service_role.{0,30}eyJ[A-Za-z0-9_-]{20,}' -- ':!*.env*' ':!package-lock.json' 2>$null
+if ($LASTEXITCODE -eq 0 -and $serviceRoleHit) {
+  $serviceRoleHit | ForEach-Object { Write-Host "Potential Supabase service-role secret pattern: $_" -ForegroundColor Red }
+  $secretHit = $true
 }
 
 if ($secretHit) {

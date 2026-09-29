@@ -10,13 +10,7 @@ const skipBuild = args.has("--skip-build");
 
 function run(command, commandArgs = []) {
   try {
-    const executable = process.platform === "win32" && command === "npm.cmd"
-      ? "cmd.exe"
-      : command;
-    const executableArgs = process.platform === "win32" && command === "npm.cmd"
-      ? ["/d", "/s", "/c", `npm.cmd ${commandArgs.join(" ")}`]
-      : commandArgs;
-    const output = execFileSync(executable, executableArgs, {
+    const output = execFileSync(command, commandArgs, {
       cwd: ROOT,
       encoding: "utf8",
       stdio: ["ignore", "pipe", "pipe"],
@@ -58,7 +52,9 @@ for (const file of requiredFiles) {
 const node = run("node", ["--version"]);
 if (node.ok) pass(`Node ${node.output}`); else fail("Node.js unavailable");
 
-const npm = run(process.platform === "win32" ? "npm.cmd" : "npm", ["--version"]);
+const npm = process.platform === "win32"
+  ? run("powershell.exe", ["-NoProfile", "-Command", "& npm.cmd --version"])
+  : run("npm", ["--version"]);
 if (npm.ok) pass(`npm ${npm.output}`); else fail("npm unavailable");
 
 const docker = run("docker", ["info", "--format", "{{.ServerVersion}}"]);
