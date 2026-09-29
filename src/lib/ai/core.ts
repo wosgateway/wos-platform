@@ -149,7 +149,17 @@ const tools = [
  * form right next to the data they are looking at.
  */
 const ANSWER_INSTRUCTION =
-  'Now answer the customer in plain natural language in the customer\'s language. Do NOT output JSON, field names, or code. Mention the program name, the provider (partner) name, the province, the price (show the special_price as the current price and original_price as the regular price if is_promotion is true) and the duration when available. Do not show internal ids or image links. Do not call another tool unless the answer still needs one.';
+  'Now answer the customer in plain natural language in the customer\'s language. Do NOT output JSON, field names, or code. Mention the program name, the provider (partner) name, the province, the price (show the special_price as the current price and original_price as the regular price if is_promotion is true) and the duration when available. Do not show internal ids or image links. Do not call another tool unless the answer still needs one. If the customer is speaking Thai, answer as Fern using feminine Thai phrasing (ค่ะ/คะ when appropriate); never use ครับ or ผม. Keep the wording conversational rather than sounding like a database record.';
+
+function normalizeFernThaiReply(text: string, isThaiConversation: boolean): string {
+  if (!isThaiConversation || !/[\u0E00-\u0EFF]/.test(text)) return text;
+  // Typhoon-local can ignore the female-persona instruction even when the
+  // system prompt is explicit. Normalize only the assistant's final text;
+  // customer wording/history is never modified.
+  return text
+    .replace(/ผม(?=\s*(?:ช่วย|ขอ|แนะนำ|คิดว่า|ขอเสนอ|สามารถ))/g, 'ใบเฟิร์น')
+    .replace(/ครับ/g, 'ค่ะ');
+}
 
 async function executeTool(
   name: string,
@@ -1225,6 +1235,11 @@ const runToolRounds = async (
       finalText = response.choices[0]?.message?.content?.trim() || '';
     }
 
+    // Enforce Fern's Thai feminine voice at the final customer-facing
+    // boundary. This is intentionally after all model retries so a local
+    // model cannot reintroduce masculine particles in its last response.
+    finalText = normalizeFernThaiReply(finalText, thaiConversation);
+
     /**
      * Output guard: the model sometimes writes a tool call as plain text
      * (e.g. {"type":"function","function":"searchPrograms",...}) instead of
@@ -1260,6 +1275,8 @@ const runToolRounds = async (
 
       finalText = response.choices[0]?.message?.content?.trim() || '';
     }
+
+    finalText = normalizeFernThaiReply(finalText, thaiConversation);
 
     console.log(
       '[WOS_AI_USAGE]',
