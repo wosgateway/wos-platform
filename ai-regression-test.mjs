@@ -133,6 +133,38 @@ const cases = [
     },
   },
   {
+    id: "T1c_symptom_catalog_query",
+    label: "Symptom query: knee pain should reach the verified knee-check catalog service",
+    query: "ช่วงนี้ปวดเข่าเวลาเดินขึ้นบันได มีโปรแกรมอะไรที่เกี่ยวข้องไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "symptom query returned not-found instead of a relevant catalog result" };
+      }
+      if (!containsAny(r.replyText, ["ตรวจเข่า", "INDY CLINICS"])) {
+        return { pass: false, reason: "symptom query did not expose the verified knee-check catalog result" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1d_symptom_province_scope",
+    label: "Symptom + province: knee pain in Udon should stay province-scoped",
+    query: "ปวดเข่าในอุดรธานี มีโปรแกรมอะไรที่เกี่ยวข้องไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "symptom + province query returned not-found" };
+      }
+      if (!containsAny(r.replyText, ["ตรวจเข่า", "INDY CLINICS"])) {
+        return { pass: false, reason: "symptom + province query did not return the verified Udon knee-check catalog result" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T2_mars_no_false_positive",
     label: "Absurd query: 'program for humans on Mars' must not return an unrelated package",
     query: "มีโปรแกรมสำหรับมนุษย์บนดาวอังคารไหม",

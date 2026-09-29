@@ -3,6 +3,7 @@ import {
   fetchPackageById,
   searchPackages,
 } from '@/lib/data';
+import { getSymptomSearchAliases } from '@/lib/ai/symptom-intent';
 
 /**
  * These objects are sent straight back to the model as tool results, so keep
@@ -345,6 +346,13 @@ function buildSearchCandidates(query: string): SearchCandidate[] {
     if (normalized.includes(source)) {
       addCandidate(alias, false);
     }
+  }
+
+  // 1c. Convert a small set of explicit symptom phrases into catalog
+  // service language. This is an intent bridge only; it never diagnoses the
+  // customer or invents a condition.
+  for (const alias of getSymptomSearchAliases(normalized)) {
+    addCandidate(alias, false);
   }
 
   // 2. Remove obvious conversational words.

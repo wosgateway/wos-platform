@@ -203,6 +203,19 @@ function runTests() {
   notify("WOS AI Dev Agent\n\n✅ RUN_TESTS PASS\nPreflight + AI regression completed\nHuman approval still required for commit/push/deploy");
 }
 
+function repoIntelligence() {
+  const query = arg("--query");
+  const limit = arg("--limit");
+  const childArgs = ["scripts/wos-ai-agent-repo.mjs"];
+  if (query) childArgs.push("--query", query);
+  if (limit) childArgs.push("--limit", limit);
+  if (hasFlag("--json")) childArgs.push("--json");
+  const result = run("node", childArgs);
+  if (!result.ok) fail("Repository intelligence failed.\n" + result.output, "Repository intelligence failed. No changes performed.");
+  console.log(result.output);
+  notify("WOS AI Dev Agent\n\nREPOSITORY_INTELLIGENCE PASS\nRead-only repository mapping completed\nNo changes performed");
+}
+
 function operationalStatus() {
   const includeRegression = hasFlag("--include-regression");
   notify(`WOS AI Dev Agent\n\nOPERATIONAL_STATUS started\nRead-only system and production audit`);
@@ -437,6 +450,7 @@ if (hasFlag("--help")) {
   console.log("VERIFY_CHANGE: --mode verify-change");
   console.log("RUN_TESTS: --mode run-tests");
   console.log("OPERATIONAL_STATUS: --mode operational-status [--include-regression]");
+  console.log("REPOSITORY_INTELLIGENCE: --mode repo-intelligence [--query <task>] [--limit <n>] [--json]");
   console.log("AUDIT_HISTORY: --mode audit-history [--limit <n>] [--since <date>] [--json]");
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
   console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
@@ -447,7 +461,8 @@ if (hasFlag("--help")) {
   process.exit(0);
 }
 
-if (mode === "edit-dev") editDev();
+if (mode === "repo-intelligence") repoIntelligence();
+else if (mode === "edit-dev") editDev();
 else if (mode === "operational-status") operationalStatus();
 else if (mode === "audit-history") auditHistory();
 else if (mode === "plan") plan();
