@@ -483,7 +483,7 @@ function normalizeLocation(value: string): string {
     .trim();
 }
 
-function detectLocation(query: string): string[] {
+export function detectLocation(query: string): string[] {
   const normalized = normalizeLocation(query);
 
   for (const aliases of LOCATION_ALIASES) {
@@ -496,6 +496,14 @@ function detectLocation(query: string): string[] {
     }
   }
 
+  return [];
+}
+
+/** Resolve a province directly from the customer's original text before any model translation. */
+export function detectLocationFromRawText(query: string): string[] {
+  for (const aliases of LOCATION_ALIASES) {
+    if (aliases.some((alias) => query.includes(alias))) return aliases;
+  }
   return [];
 }
 

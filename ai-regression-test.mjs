@@ -165,6 +165,35 @@ const cases = [
     },
   },
   {
+    id: "T2_hotel_availability_read",
+    label: "Hotel availability: exact dates + Udon must return only verified available hotel data",
+    query: "มีโรงแรมในอุดรธานีว่างไหม เช็คอิน 2026-09-29 เช็คเอาต์ 2026-10-01 1 ห้อง",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "hotel availability query returned not-found despite verified inventory" };
+      }
+      if (!containsAny(r.replyText, ["Udon Hotel", "1,300", "1300"])) {
+        return { pass: false, reason: "hotel availability response did not expose the verified Udon Hotel / 1,300 THB rate" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T2b_hotel_oversell_guard",
+    label: "Hotel availability: request above inventory must not claim rooms are available",
+    query: "มีโรงแรมในอุดรธานีไหม เช็คอิน 2026-09-29 เช็คเอาต์ 2026-10-01 6 ห้อง",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, ["1,300", "1300", "2,600", "2600", "Udon Hotel"])) {
+        return { pass: false, reason: "oversized room request exposed the verified hotel as available despite only 5 rooms being configured" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T2_mars_no_false_positive",
     label: "Absurd query: 'program for humans on Mars' must not return an unrelated package",
     query: "มีโปรแกรมสำหรับมนุษย์บนดาวอังคารไหม",

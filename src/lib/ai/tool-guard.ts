@@ -34,6 +34,7 @@ export const NO_LOOKUP_TOOL = 'answerDirectly';
 export const KNOWN_TOOL_NAMES = [
   'searchPrograms',
   'getProgramDetails',
+  'searchHotelAvailability',
   NO_LOOKUP_TOOL,
 ] as const;
 

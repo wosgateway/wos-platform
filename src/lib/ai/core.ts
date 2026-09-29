@@ -18,8 +18,10 @@ import {
 import {
   searchPrograms,
   getProgramDetails,
+  detectLocationFromRawText,
 } from './programs';
 import { searchWosNotionKnowledge } from './notion-knowledge';
+import { searchHotelAvailability } from './hotel-availability';
 import { createServiceClient } from '@/lib/supabase/service';
 import {
   detectWosLanguage,
@@ -94,6 +96,26 @@ const tools = [
         },
       },
       required: ['query', 'province', 'limit'],
+      additionalProperties: false,
+    },
+  },
+
+  {
+    type: 'function' as const,
+    name: 'searchHotelAvailability',
+    description:
+      'Check REAL hotel room availability for exact check-in/check-out dates. Use this when the customer asks whether a hotel room is available, wants to stay somewhere on specific dates, or asks for rooms/hotels with availability. Never invent availability, price, hotel names, or dates. This tool is READ-ONLY: it does not create a booking.',
+    strict: true,
+    parameters: {
+      type: 'object',
+      properties: {
+        province: { type: 'string', description: 'Thai province for the hotel search.' },
+        checkin: { type: 'string', description: 'Check-in date in YYYY-MM-DD.' },
+        checkout: { type: 'string', description: 'Check-out date in YYYY-MM-DD.' },
+        rooms: { type: 'integer', description: 'Number of rooms requested.', minimum: 1, maximum: 10 },
+        limit: { type: 'integer', description: 'Maximum hotels to return.', minimum: 1, maximum: 5 },
+      },
+      required: ['province', 'checkin', 'checkout', 'rooms', 'limit'],
       additionalProperties: false,
     },
   },
@@ -270,6 +292,39 @@ async function executeTool(
       count: items.length,
       items,
       ...(items.length > 0 ? { instruction: ANSWER_INSTRUCTION } : {}),
+    };
+  }
+
+  /**
+   * ---------------------------------------------------------
+   * searchHotelAvailability
+   * ---------------------------------------------------------
+   */
+  if (name === 'searchHotelAvailability') {
+    const detectedProvinces = detectLocationFromRawText(rawUserMessage);
+    const rawDetectedProvince = detectedProvinces[0] ?? '';
+    const modelProvince = String(args.province ?? '').trim();
+    const province = rawDetectedProvince || modelProvince;
+    const checkin = String(args.checkin ?? '').trim();
+    const checkout = String(args.checkout ?? '').trim();
+    const rooms = Math.min(Math.max(Number(args.rooms ?? 1), 1), 10);
+    const limit = Math.min(Math.max(Number(args.limit ?? 5), 1), 5);
+
+    if (!province || !/^\d{4}-\d{2}-\d{2}$/.test(checkin) || !/^\d{4}-\d{2}-\d{2}$/.test(checkout)) {
+      return {
+        success: false,
+        items: [],
+        message: 'Hotel availability requires a province and exact check-in/check-out dates in YYYY-MM-DD.',
+      };
+    }
+
+    const items = await searchHotelAvailability({ province, checkin, checkout, rooms, limit });
+    return {
+      success: true,
+      count: items.length,
+      items,
+      instruction:
+        'Answer naturally. This is verified READ-ONLY hotel availability for the requested dates. Never say a room is available unless it appears in these results. Mention hotel/partner name, room type when available, dates, rooms, price per night and estimated total when provided. If a single nightly price cannot be established, say the nightly rate varies and do not invent a total. Do not create a booking or claim that a booking was made.',
     };
   }
 
@@ -883,6 +938,13 @@ CONTACT INFO RULE:
 
       return explicitCatalogTerms.some((term) => text.includes(term));
     };
+    const shouldForceHotelAvailability = (message: string): boolean => {
+      const text = message.trim().toLowerCase();
+      const hasHotel = ['hotel', 'hotels', 'room', 'rooms', 'โรงแรม', 'ห้องพัก', 'ที่พัก'].some((term) => text.includes(term));
+      const hasDate = /\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\d{4}-\d{2}-\d{2}/.test(text) || ['เข้าพัก', 'เช็คอิน', 'เช็กอิน', 'checkout', 'check-out', 'คืน'].some((term) => text.includes(term));
+      return hasHotel && hasDate;
+    };
+
     // withTools=false is used to get a plain-text answer: with tools attached,
     // the typhoon2 template forces a function-call JSON reply whenever the last
     // message is from the user.
@@ -893,14 +955,17 @@ CONTACT INFO RULE:
             messages,
             tools: chatTools,
             tool_choice:
-              shouldForceProgramLookup(modelUserMessage) || Boolean(selectedOption)
+              shouldForceHotelAvailability(modelUserMessage)
                 ? {
                     type: 'function' as const,
-                    function: {
-                      name: 'searchPrograms',
-                    },
+                    function: { name: 'searchHotelAvailability' },
                   }
-                : 'auto',
+                : shouldForceProgramLookup(modelUserMessage) || Boolean(selectedOption)
+                  ? {
+                      type: 'function' as const,
+                      function: { name: 'searchPrograms' },
+                    }
+                  : 'auto',
           })
         : getOpenAI().chat.completions.create({
             model: runtimeEnv('LITELLM_MODEL') || 'gpt-5.6-luna',
