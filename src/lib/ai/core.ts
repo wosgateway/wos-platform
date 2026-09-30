@@ -921,12 +921,12 @@ export async function runWosAI(
 
     if (selectedOption && asksToBook) {
       if (customerLanguage === 'lo') {
-        return 'ໄດ້ເລີຍຄ່ະ ສຳລັບ "' + selectedOption.label + '" ສາມາດຈອງຜ່ານ WOS ໄດ້. ໃບເຟີນຈະຊ່ວຍພາໄປຕໍ່ຕາມຂັ້ນຕອນຈອງຄ່ະ';
+        return 'ໄດ້ເລີຍຄ່ະ 😊 ສຳລັບ "' + selectedOption.label + '" ໃບເຟີນຈະຊ່ວຍພາເຂົ້າສູ່ຂັ້ນຕອນຈອງຜ່ານ WOS. ກ່ອນຈອງ ຂໍວັນ-ເວລາທີ່ຕ້ອງການ, ຊື່-ນາມສະກຸນ ແລະເບີໂທ ຖ້າຍັງບໍ່ໄດ້ແຈ້ງຄ່ະ';
       }
       if (customerLanguage === 'en') {
-        return 'Absolutely. For "' + selectedOption.label + '", booking is handled through WOS. I can help you continue with the booking steps.';
+        return 'Absolutely. For "' + selectedOption.label + '", booking is handled through WOS. To continue, please share your preferred service date/time, full name, and phone number if you have not already provided them. I will not treat it as booked until WOS confirms the booking.';
       }
-      return 'ได้เลยค่ะ สำหรับ "' + selectedOption.label + '" จองผ่าน WOS ได้เลยนะคะ ใบเฟิร์นช่วยพาไปต่อในขั้นตอนจองให้ค่ะ';
+      return 'ได้เลยค่ะ สำหรับ "' + selectedOption.label + '" ใบเฟิร์นพาเข้าสู่ขั้นตอนจองผ่าน WOS ให้ค่ะ ขอวันและเวลาที่ต้องการรับบริการ ชื่อ-นามสกุล และเบอร์โทร ถ้ายังไม่ได้แจ้งข้อมูลไว้ก่อนนะคะ เมื่อ WOS ยืนยันแล้วจึงถือว่าจองสำเร็จค่ะ';
     }
 
     // "ต้องติดต่อใคร" during a selected-program journey is a booking-flow
