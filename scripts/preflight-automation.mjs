@@ -40,6 +40,7 @@ const requiredFiles = [
   ".dockerignore",
   "preflight-build.ps1",
   "ai-regression-test.mjs",
+  "scripts/resolve-ai-test-url.mjs",
   "scripts/wos-ai-agent.mjs",
   "scripts/telegram-notify.mjs",
 ];

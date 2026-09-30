@@ -78,7 +78,8 @@ $requiredFiles = @(
   "src\lib\ai\core.ts",
   "src\lib\ai\catalog.ts",
   "src\lib\ai\notion-knowledge.ts",
-  "src\app\api\ai\chat\route.ts"
+  "src\app\api\ai\chat\route.ts",
+  "scripts\resolve-ai-test-url.mjs"
 )
 
 foreach ($file in $requiredFiles) {

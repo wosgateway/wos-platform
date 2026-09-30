@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
+import { resolveAiTestBaseUrlFromArgs } from "./resolve-ai-test-url.mjs";
 
 const ROOT = process.cwd();
 const args = process.argv.slice(2);
@@ -87,8 +88,8 @@ const recovery = run("npm.cmd", ["run", "production:rollback:check"]);
 line("Recovery candidate check", recovery);
 
 if (includeRegression) {
-  const baseUrl = process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011";
-  const regression = run("node", ["ai-regression-test.mjs", "--base-url", baseUrl]);
+  const regressionBaseUrl = resolveAiTestBaseUrlFromArgs(args);
+  const regression = run("node", ["ai-regression-test.mjs", "--base-url", regressionBaseUrl]);
   line("AI regression", regression);
 } else {
   console.log("[INFO] AI regression: not run (use --include-regression when the test server is available).");

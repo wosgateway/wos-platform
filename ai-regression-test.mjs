@@ -20,7 +20,8 @@
  * USAGE
  *   node ai-regression-test.mjs
  *   node ai-regression-test.mjs --base-url http://localhost:3025
- *   node ai-regression-test.mjs --base-url http://localhost:3001 --verbose
+ *   node ai-regression-test.mjs --base-url http://127.0.0.1:3016 --verbose
+ *   node ai-regression-test.mjs   # auto-detects the running WOS webhook container
  *
  * EXIT CODE
  *   0 = all hard-checks passed (some cases may still be flagged REVIEW)
@@ -38,13 +39,15 @@
  *   checkToolCalled() below to turn REVIEW cases into real PASS/FAIL.
  */
 
+import { resolveAiTestBaseUrlFromArgs } from "./scripts/resolve-ai-test-url.mjs";
+
 const args = process.argv.slice(2);
 function getArg(name, fallback) {
   const idx = args.indexOf(`--${name}`);
   if (idx !== -1 && args[idx + 1]) return args[idx + 1];
   return fallback;
 }
-const BASE_URL = getArg("base-url", process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3001");
+const BASE_URL = resolveAiTestBaseUrlFromArgs(args);
 const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "30000"));
 const VERBOSE = args.includes("--verbose");
 // Use a dedicated test IP so repeated regression runs do not consume the real client rate-limit bucket.

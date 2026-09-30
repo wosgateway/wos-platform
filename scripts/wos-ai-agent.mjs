@@ -203,8 +203,10 @@ function runTests() {
     fail(`Preflight failed (exit ${preflight.exitCode}).\n${preflight.output}`, "Preflight failed. No commit/push/deploy.");
   }
 
-  const regressionBaseUrl = arg("--base-url") || process.env.WOS_TEST_BASE_URL || "http://127.0.0.1:3011";
-  const regression = run("node", [".\\ai-regression-test.mjs", "--base-url", regressionBaseUrl]);
+  const regressionArgs = ["node", ".\\ai-regression-test.mjs"];
+  const regressionBaseUrl = arg("--base-url") || process.env.WOS_TEST_BASE_URL;
+  if (regressionBaseUrl) regressionArgs.push("--base-url", regressionBaseUrl);
+  const regression = run("node", regressionArgs);
   if (!regression.ok) {
     fail(`AI regression failed (exit ${regression.exitCode}).\n${regression.output}`, "AI regression failed. No commit/push/deploy.");
   }
