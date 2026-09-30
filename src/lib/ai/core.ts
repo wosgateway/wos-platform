@@ -1472,10 +1472,19 @@ const runToolRounds = async (
       languageContext
     );
 
-    // Prefer the model's natural wording when it produced a grounded answer.
-    // The deterministic server-built answer is a safety fallback, not the
-    // normal customer experience. This prevents every program response from
-    // sounding like a canned catalog template.
+    // For catalog/program results, prefer the server-built response because
+    // every fact in it is taken directly from verified WOS data. This also
+    // prevents the local model from replacing a successful catalog lookup
+    // with a generic conversational answer. The builder keeps the wording
+    // warm and human while preserving exact operational values.
+    if (programAnswer) {
+      console.log(
+        '[WOS_AI] using verified catalog answer',
+        JSON.stringify({ programs: verifiedPrograms.length })
+      );
+      return programAnswer;
+    }
+
     if (finalText && !looksLikeLeakedToolCall(finalText)) {
       return finalText;
     }
