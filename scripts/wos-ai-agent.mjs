@@ -53,7 +53,18 @@ function run(command, commandArgs = []) {
 }
 
 function notify(message) {
-  if (!process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN || !process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID) return;
+  const botToken =
+    process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN || process.env.TELEGRAM_BOT_TOKEN;
+  const chatId =
+    process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID || process.env.TELEGRAM_CHAT_ID;
+  const source =
+    process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN && process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID
+      ? 'WOS_AI_AGENT_TELEGRAM_*'
+      : process.env.TELEGRAM_BOT_TOKEN && process.env.TELEGRAM_CHAT_ID
+        ? 'TELEGRAM_*'
+        : 'none';
+  console.log(`[WOS_AI_AGENT] Telegram env source=${source}`);
+  if (!botToken || !chatId) return;
   try {
     execFileSync(
       "node",
@@ -63,8 +74,8 @@ function notify(message) {
         stdio: "inherit",
         env: {
           ...process.env,
-          TELEGRAM_BOT_TOKEN: process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN,
-          TELEGRAM_CHAT_ID: process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID,
+          TELEGRAM_BOT_TOKEN: botToken,
+          TELEGRAM_CHAT_ID: chatId,
         },
       }
     );
