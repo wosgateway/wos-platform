@@ -696,7 +696,15 @@ function isHealthServiceOverview(message: string): boolean {
 }
 
 function isHotelRequirementQuestion(message: string): boolean {
-  return /(?:โรงแรม|ที่พัก|ห้องพัก|ห้องเตียง|hotel|accommodation|room|stay|ກະໂຮງແຮມ|ໂຮງແຮມ|ທີ່ພັກ|ຫ້ອງພັກ|ຕຽງ|hotel|room|stay)/iu.test(message);
+  return /(?:โรงแรม|ที่พัก|ห้องพัก|ห้องเตียง|hotel|accommodation|room|stay|ກະໂຮງແຮມ|ໂຮງແຮມ|ທີ່ພັກ|ຫ້ອງພັກ|ຕຽງ)/iu.test(message);
+}
+
+function isTreatmentJourneyQuestion(message: string): boolean {
+  return /(?:อยากไปรักษา|ต้องการรักษา|ไปรักษา|รักษาที่ไหน|พบแพทย์|หาหมอ|ปรึกษาหมอ|ผ่าตัด|treatment|see a doctor|doctor consultation|surgery|ຢາກໄປຮັກສາ|ຕ້ອງການຮັກສາ|ໄປຮັກສາ|ພົບໝໍ|ປຶກສາໝໍ|ຜ່າຕັດ)/iu.test(message);
+}
+
+function isBookingProcessQuestion(message: string): boolean {
+  return /(?:ขั้นตอน(?:จอง|การจอง)?|จองยังไง|จองอย่างไร|ต้องทำยังไง.*จอง|ทำยังไง.*จอง|booking process|how.*book|how.*booking|ຂັ້ນຕອນ.*ຈອງ|ຈອງແນວໃດ|ຈະຈອງແນວໃດ)/iu.test(message);
 }
 
 // =====================================================
@@ -817,6 +825,31 @@ export async function runWosAI(
     const languageHistory = cleanHistory.map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
 
+    // Journey-intent guards run before catalog/model processing. A selected
+    // health program must never swallow a new transport/hotel request.
+    const asksTransportEarly = /รถ|รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດ|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(userMessage);
+    if (asksTransportEarly) {
+      if (customerLanguage === 'lo') {
+        return 'WOS ສາມາດຊ່ວຍປະສານລົດຮັບ-ສົ່ງໄດ້ຄ່ະ 😊 ກ່ອນກວດບໍລິການຈິງ ຂໍຈຸດຮັບ, ຈຸດສົ່ງ, ວັນ-ເວລາ, ຈຳນວນຄົນ ແລະປະເພດລົດ/ບໍລິການຖ້າຮູ້ແລ້ວ. ຖ້າໄປທ່ຽວດຽວ ຫຼື ເໝົາລາຍວັນ ບອກໄດ້ເລີຍຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'WOS can coordinate transport when a suitable service is available 😊 Please share the pickup point, drop-off point, date/time, number of travelers, vehicle/service type if known, and whether you need one-way service or a daily charter.';
+      }
+      return 'ได้ค่ะ 😊 เรื่องรถ ใบเฟิร์นขอเก็บข้อมูลเบื้องต้นก่อนนะคะ: จุดรับ จุดส่ง วัน/เวลา จำนวนคน ประเภทรถหรือบริการถ้าทราบ และต้องการเที่ยวเดียวหรือเหมารายวันค่ะ เดี๋ยวสรุปให้ทีม WOS ตรวจสอบต่อ';
+    }
+
+    const asksHotelEarly = isHotelRequirementQuestion(userMessage);
+    const hasHotelDateEarly = /\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(userMessage);
+    if (asksHotelEarly && !hasHotelDateEarly) {
+      if (customerLanguage === 'lo') {
+        return 'ໄດ້ຄ່ະ 😊 ສຳລັບທີ່ພັກ ຂໍວັນເຂົ້າ-ອອກ ຫຼື ຈຳນວນຄືນ, ຈຳນວນຄົນ, ປະເພດຫ້ອງ/ຕຽງ ແລະງົບປະມານໂດຍປະມານກ່ອນຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'Sure 😊 For a hotel, please share your stay dates or number of nights, number of guests, room/bed type, approximate budget, and any important preferences. WOS can then check current availability and final pricing.';
+      }
+      return 'ได้ค่ะ 😊 เรื่องโรงแรม ใบเฟิร์นขอข้อมูลเบื้องต้นก่อนนะคะ: วันเข้าพัก-ออกหรือจำนวนคืน จำนวนคน ต้องการห้อง/เตียงแบบไหน และงบประมาณคร่าว ๆ เท่าไร เดี๋ยวทีม WOS ตรวจสอบห้องว่างและราคาปัจจุบันต่อค่ะ';
+    }
+
     // Broad health-service questions must always hit the verified catalog.
     // This prevents a local model from turning an available health program
     // into a false "no verified information" answer after a topic change.
@@ -895,6 +928,31 @@ export async function runWosAI(
         return `Sure 😊 Which program are you interested in? We currently have ${labels}. Tell me the number and I’ll help you continue.`;
       }
       return `ได้เลยค่ะ 😊 สนใจตัวไหนคะ? ตอนนี้มี ${labels} ถ้าบอกหมายเลขให้ใบเฟิร์นได้เลย เดี๋ยวช่วยพาไปต่อให้ค่ะ`;
+    }
+
+    // Treatment questions are a journey/consultation intent, not a
+    // request to repeat whichever catalog item happened to be selected
+    // earlier. Keep the conversation moving toward WOS coordination.
+    if (isTreatmentJourneyQuestion(userMessage)) {
+      if (customerLanguage === 'lo') {
+        return 'ໄດ້ເລີຍຄ່ະ 😊 ຖ້າຕ້ອງການມາຮັກສາຢູ່ໄທ WOS ຊ່ວຍປະສານໃຫ້ໄດ້ຄ່ະ. ຂໍຮູ້ອາການ ຫຼື ສາຂາທີ່ຕ້ອງການພົບໝໍ, ຈາກນັ້ນທີມ WOS ຈະຊ່ວຍກວດຫາສະຖານພະຍາບານ ແລະ ນັດໝາຍຕາມຂໍ້ມູນທີ່ຢືນຢັນໄດ້ຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'Absolutely 😊 If you want treatment in Thailand, WOS can help coordinate the next steps. Tell me your symptoms or the medical specialty you want to see, and the WOS team can check suitable verified providers and appointment options. Fern won’t diagnose or promise a treatment outcome.';
+      }
+      return 'ได้เลยค่ะ 😊 ถ้าต้องการมารักษาที่ไทย WOS ช่วยประสานขั้นตอนให้ได้ค่ะ บอกอาการหรือสาขาที่อยากพบแพทย์ก่อนก็ได้ เดี๋ยวทีม WOS ช่วยตรวจสอบสถานพยาบาลและคิวนัดจากข้อมูลที่ยืนยันได้ให้ค่ะ ใบเฟิร์นจะไม่วินิจฉัยโรคหรือรับรองผลการรักษานะคะ';
+    }
+
+    // A selected program + "ขั้นตอนยังไง/จองยังไง" should explain the
+    // journey instead of repeating the program card.
+    if (selectedOption && isBookingProcessQuestion(userMessage)) {
+      if (customerLanguage === 'lo') {
+        return 'ໄດ້ຄ່ະ 😊 ສຳລັບ "' + selectedOption.label + '" ຂັ້ນຕອນໂດຍຫຍໍ້ຄື: 1) ແຈ້ງວັນ-ເວລາທີ່ຕ້ອງການ 2) ແຈ້ງຊື່-ນາມສະກຸນ ແລະ ເບີໂທ 3) WOS ກວດຄິວ/ລາຄາປັດຈຸບັນ 4) ຮັບລາຍລະອຽດການຈອງ/ໃບສະເໜີ 5) ຊຳລະມັດຈຳຕາມຂໍ້ມູນທີ່ WOS ຢືນຢັນ 6) ສົ່ງສະລິບ ແລະ ລໍຖ້າ WOS ຢືນຢັນການນັດ. ການຈອງຈະຖືວ່າສຳເລັດເມື່ອ WOS ຢືນຢັນແລ້ວຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'Sure 😊 For "' + selectedOption.label + '", the usual WOS flow is: 1) share your preferred date/time, 2) provide your full name and phone number, 3) WOS checks the current queue/price, 4) review the booking/quote details, 5) pay the required deposit using WOS instructions, and 6) upload the payment slip and wait for WOS confirmation. It is only considered booked after WOS confirms it.';
+      }
+      return 'ได้เลยค่ะ 😊 สำหรับ "' + selectedOption.label + '" ขั้นตอนโดยสรุปคือ 1) แจ้งวันและเวลาที่ต้องการ 2) ชื่อ-นามสกุลและเบอร์โทร 3) WOS ตรวจสอบคิวและข้อมูลปัจจุบัน 4) ดูรายละเอียดการจอง/ใบเสนอราคา 5) ชำระมัดจำตามข้อมูลที่ WOS ยืนยัน 6) ส่งสลิป แล้วรอ WOS ยืนยันนัดค่ะ การจองจะถือว่าสำเร็จเมื่อ WOS ยืนยันแล้วนะคะ';
     }
 
     // Price is operational data, so a selected-program price question
