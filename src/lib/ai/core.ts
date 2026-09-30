@@ -29,6 +29,7 @@ import {
   detectWosLanguage,
   getLanguageDictionaryHints,
   languageName,
+  type WosLanguage,
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
 
@@ -184,6 +185,52 @@ function normalizeFernThaiReply(text: string, isThaiConversation: boolean): stri
   return text
     .replace(/ผม(?=\s*(?:ช่วย|ขอ|แนะนำ|คิดว่า|ขอเสนอ|สามารถ))/g, 'ใบเฟิร์น')
     .replace(/ครับ/g, 'ค่ะ');
+}
+
+// Small local models can occasionally fall into a repetition loop, especially
+// in Lao multi-turn conversations. Never send an obviously corrupted loop to
+// the customer. This is deliberately structural rather than language-specific
+// so it protects Thai/Lao/English equally without trying to judge wording.
+function looksLikeRepeatedLoop(text: string): boolean {
+  const normalized = text.replace(/\s+/g, ' ').trim();
+  if (normalized.length < 80) return false;
+
+  // Same 20+ character phrase repeated three or more times is a strong signal
+  // of the failure mode we have observed from Typhoon/Ollama.
+  for (let size = 20; size <= 80; size += 10) {
+    for (let start = 0; start + size <= normalized.length; start += 5) {
+      const chunk = normalized.slice(start, start + size);
+      if (chunk.length < 20) continue;
+      const occurrences = normalized.split(chunk).length - 1;
+      if (occurrences >= 3) return true;
+    }
+  }
+
+  // Guard against a single very long answer made almost entirely from the
+  // same short phrase separated by punctuation/spaces.
+  const words = normalized.split(/\s+/).filter(Boolean);
+  if (words.length >= 18) {
+    const counts = new Map<string, number>();
+    for (const word of words) counts.set(word, (counts.get(word) ?? 0) + 1);
+    const maxCount = Math.max(...counts.values());
+    if (maxCount >= 8 && maxCount / words.length >= 0.35) return true;
+  }
+
+  return false;
+}
+
+function buildTripPlanningReply(userMessage: string, language: WosLanguage): string | null {
+  const asksTrip =
+    /(?:ไป|เที่ยว|พัก|ทริป).*(?:อุดร|อุดรธานี)|(?:อุดร|อุดรธานี).*(?:วัน|คืน|ทริป)|(?:trip|travel).*(?:udon|3 days|three days)|(?:ອຸດອນ).*(?:ມື້|ທ່ຽວ)/iu.test(userMessage);
+  if (!asksTrip) return null;
+
+  if (language === 'lo') {
+    return 'ໄດ້ເລີຍຄ່ະ 😊 ຖ້າຈະໄປອຸດອນ 3 ມື້ ໃບເຟີນຊ່ວຍວາງແຜນໃຫ້ໄດ້ຄ່ະ. ກ່ອນຈັດແຜນ ຂໍວັນທີ່ຈະໄປ, ງົບປະມານຄ່າເດີນທາງ/ທີ່ພັກໂດຍປະມານ, ແລະສິ່ງທີ່ສົນໃຈ ເຊັ່ນ ສຸຂະພາບ, ອາຫານ, ທ່ຽວ ຫຼື ຊອບປິ້ງຄ່ະ';
+  }
+  if (language === 'en') {
+    return 'Absolutely 😊 If you are going to Udon for 3 days, Fern can help shape the trip around your needs. Please tell me your travel dates, approximate budget for transport/accommodation, and what you care about most — health, food, sightseeing, shopping, or a mix.';
+  }
+  return 'ได้เลยค่ะ 😊 ถ้าจะไปอุดร 3 วัน ใบเฟิร์นช่วยวางแผนให้เข้ากับสิ่งที่คุณต้องการได้ค่ะ ขอวันเดินทาง งบประมาณคร่าว ๆ สำหรับที่พัก/เดินทาง และสิ่งที่สนใจเป็นหลัก เช่น สุขภาพ อาหาร เที่ยว ช้อปปิ้ง หรืออยากผสมหลายอย่างค่ะ';
 }
 
 function shouldResetHistoricalProvince(message: string): boolean {
@@ -756,6 +803,14 @@ export async function runWosAI(
     const recentOptions = extractRecentConversationOptions(cleanHistory);
     const languageHistory = cleanHistory.map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
+
+    // Trip-planning is intentionally a concierge handoff, not an invented
+    // itinerary. We can collect the minimum planning inputs now and later
+    // replace this with verified transport/hotel/restaurant/attraction
+    // matching as the WOS partner network grows.
+    const tripPlanningReply = buildTripPlanningReply(userMessage, customerLanguage);
+    if (tripPlanningReply) return tripPlanningReply;
+
     const dictionaryHints = await getLanguageDictionaryHints(userMessage, customerLanguage);
 
     const currentSelection = parseProgramSelection(userMessage, recentOptions);
@@ -1479,6 +1534,15 @@ const runToolRounds = async (
       response = await complete(false);
       addChatUsage(usage, response);
       finalText = response.choices[0]?.message?.content?.trim() || '';
+    }
+
+    // A local-model repetition loop is never customer-facing. If it happens,
+    // use the safe WOS escalation response rather than forwarding corrupted
+    // Lao/Thai/English text. This is checked before persona normalization so
+    // repeated particles cannot hide the underlying failure.
+    if (looksLikeRepeatedLoop(finalText)) {
+      console.error('[WOS_AI_REPETITION_GUARD]', JSON.stringify({ length: finalText.length }));
+      finalText = buildFallbackReply(userMessage);
     }
 
     // Enforce Fern's Thai feminine voice at the final customer-facing
