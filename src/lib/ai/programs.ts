@@ -801,6 +801,22 @@ export async function searchPrograms(
   return Array.from(resultMap.values()).slice(0, safeLimit);
 }
 
+export async function getCatalogProvinces(): Promise<string[]> {
+  try {
+    const items = await fetchActivePackages(100);
+    const provinces = new Set<string>();
+    for (const item of items) {
+      const mapped = mapSearchResult(item);
+      const province = mapped.partner?.province?.trim();
+      if (province) provinces.add(province);
+    }
+    return Array.from(provinces).sort((a, b) => a.localeCompare(b, 'th'));
+  } catch (error) {
+    console.error('[WOS_AI_TOOL] catalog province browse failed:', error);
+    return [];
+  }
+}
+
 export async function getProgramDetails(
   programId: string
 ): Promise<ProgramDetailsResult | null> {

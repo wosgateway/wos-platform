@@ -437,10 +437,11 @@ export async function POST(req: NextRequest) {
   }
 
   // --- Fire the instant Admin notification (LINE/Telegram/webhook). ---
-  // Skip entirely on a replay — the admin was already notified when
-  // this order was first created; re-sending would just be noise (or
-  // worse, look like a second real booking) for what's actually the
-  // same request retried.
+  // IMPORTANT: do NOT skip idempotent replays. The DB transaction can
+  // succeed while a notification channel times out, and the browser may
+  // retry the same client_request_id. If we skip the replay, that order
+  // can become permanently un-notified. Replays return the same order,
+  // so re-dispatching is safer than silently losing an admin alert.
   //
   // Best-effort and non-blocking to the *customer* (they already have
   // their order_number either way), but we do await it here rather
@@ -449,8 +450,12 @@ export async function POST(req: NextRequest) {
   // response, so an un-awaited call here would silently never fire.
   // notifyNewOrder() itself never throws, so this can't turn into a
   // 500 for the customer even if every channel is down.
-  if (!data.idempotent_replay) {
-    try {
+  try {
+    console.log('order notification dispatch: starting', {
+      orderId: data.order_id,
+      orderNumber: data.order_number,
+      idempotentReplay: data.idempotent_replay,
+    });
       // order_items has no admin-readable RLS policy (see
       // BookingsManager.tsx comment) — must read via the service-role
       // client, which we already have in scope here.
@@ -488,7 +493,6 @@ export async function POST(req: NextRequest) {
       // the customer-facing response.
       console.error('order notification dispatch failed:', notifyErr);
     }
-  }
 
   return NextResponse.json(
     {

@@ -99,6 +99,7 @@ async function sendTelegram(message: string): Promise<void> {
         const body = await res.text().catch(() => '');
         throw new Error(`Telegram sendMessage responded ${res.status}: ${body}`);
       }
+      console.log('Telegram order notification sent successfully.');
       return;
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
@@ -138,6 +139,7 @@ async function sendLineMessage(message: string): Promise<void> {
 }
 
 export async function notifyNewOrder(payload: NotifyOrderPayload): Promise<void> {
+  console.log('notifyNewOrder: triggered', { orderId: payload.orderId, orderNumber: payload.orderNumber });
   const message = buildMessageText(payload);
   const results = await Promise.allSettled([
     sendGenericWebhook(payload),

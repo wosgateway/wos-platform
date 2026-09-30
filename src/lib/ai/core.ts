@@ -18,6 +18,7 @@ import {
 import {
   searchPrograms,
   getProgramDetails,
+  getCatalogProvinces,
   detectLocationFromRawText,
 } from './programs';
 import { searchWosNotionKnowledge } from './notion-knowledge';
@@ -85,10 +86,10 @@ const tools = [
         },
         province: {
           type: ['string', 'null'],
-          description:
-            'The Thai province the customer asked about, in THAI (for example "หนองคาย", "อุดรธานี", "ขอนแก่น", "กรุงเทพ"), translating an English/Lao place name if needed. Set this whenever the customer\'s message - including earlier turns in this conversation - names a province/city. Use null only when no province was mentioned anywhere relevant. This field, not "query", is how province is communicated - it must never be dropped.',
-        },
-        limit: {
+                  description:
+            'The Thai province the customer is asking about, in THAI. Use a province from the latest customer message when one is explicitly named. Do NOT inherit a province from earlier turns for a new broad/overview question such as which provinces are available or what programs/services are available generally. Historical context may guide continuity only when the latest message is clearly a follow-up to the same selected program or location.'
+      },
+      limit: {
           type: 'integer',
           description:
             'Maximum number of search results. Use 5 or fewer.',
@@ -184,6 +185,13 @@ function normalizeFernThaiReply(text: string, isThaiConversation: boolean): stri
     .replace(/ครับ/g, 'ค่ะ');
 }
 
+function shouldResetHistoricalProvince(message: string): boolean {
+  const hasExplicitProvince = detectLocationFromRawText(message).length > 0;
+  if (hasExplicitProvince) return false;
+  const asksProvinceOverview = /\u0e08\u0e31\u0e07\u0e2b\u0e27\u0e31\u0e14.*(?:\u0e2b\u0e19\u0e32\u0e22|\u0e2d\u0e30\u0e44\u0e23|\u0e44\u0e2b\u0e19|\u0e1a\u0e49\u0e32\u0e07)|(?:\u0e21\u0e35|\u0e43\u0e2b\u0e49\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23).*\u0e08\u0e31\u0e07\u0e2b\u0e27\u0e31\u0e14/i.test(message);
+  if (asksProvinceOverview) return true;
+  return /(?:\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21|\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23).*(?:\u0e2d\u0e30\u0e44\u0e23|\u0e44\u0e2b\u0e19|\u0e1a\u0e49\u0e32\u0e07|\u0e41\u0e19\u0e30\u0e19\u0e33)|(?:what programs|what services|available programs|available services|which provinces|what provinces)/i.test(message);
+}
 async function executeTool(
   name: string,
   args: Record<string, unknown>,
@@ -205,11 +213,28 @@ async function executeTool(
     // would otherwise turn that into the literal text "null".
     const rawProvinceValue = args.province == null ? '' : String(args.province).trim();
     const rawProvince = /^(?:null|undefined)$/i.test(rawProvinceValue) ? '' : rawProvinceValue;
+    const ignoreHistoricalProvince = shouldResetHistoricalProvince(rawUserMessage);
+    const effectiveProvince = ignoreHistoricalProvince ? '' : rawProvince;
 
     const limit = Math.min(
       Math.max(Number(args.limit ?? 5), 1),
       5
     );
+
+    const provinceOverview = /(?:มี|ขอ|อยากทราบ|บอก)\s*(?:จังหวัด|จังหวัดไหน|จังหวัดอะไร)/i.test(rawUserMessage)
+      || /which provinces|what provinces/i.test(rawUserMessage);
+
+    if (provinceOverview) {
+      const provinces = await getCatalogProvinces();
+      console.log('[WOS_AI_TOOL] province overview:', JSON.stringify({ count: provinces.length }));
+      return {
+        success: true,
+        count: provinces.length,
+        provinces,
+        items: [],
+        instruction: 'Answer the customer in natural language. This is the verified list of provinces currently represented by active WOS catalog programs. List the provinces clearly. Do not invent provinces or add provinces that are not in the verified list. If the list is empty, say WOS is checking the current catalog.',
+      };
+    }
 
     if (!rawQuery) {
       return {
@@ -233,14 +258,14 @@ async function executeTool(
       !/[\u0E00-\u0E7F]/.test(rawQuery);
     const provinceLanguageMismatch =
       rawUserHasThai &&
-      !!rawProvince &&
+      !!effectiveProvince &&
       /[A-Za-z]/.test(rawProvince) &&
       !/[\u0E00-\u0E7F]/.test(rawProvince);
 
     const queryBad =
       looksCorruptedOrMistranslated(rawQuery) || queryLanguageMismatch;
     const provinceBad =
-      (!!rawProvince && looksCorruptedOrMistranslated(rawProvince)) ||
+      (!!effectiveProvince && looksCorruptedOrMistranslated(effectiveProvince)) ||
       provinceLanguageMismatch;
 
     if (queryBad || provinceBad) {
@@ -267,8 +292,8 @@ async function executeTool(
     // guaranteed not to carry the corruption that broke query/province.
     const symptomAliases = getSymptomSearchAliases(rawUserMessage);
     const symptomOverride = symptomAliases[0] ?? '';
-    const query = queryBad ? '' : rawQuery;
-    const province = provinceBad ? '' : rawProvince;
+    const query = queryBad ? '' : (ignoreHistoricalProvince ? 'available programs' : rawQuery);
+    const province = provinceBad ? '' : effectiveProvince;
     const searchQuery = symptomOverride
       ? (symptomOverride + (province ? ' ' + province : '')).trim()
       : queryBad || provinceBad
@@ -281,7 +306,7 @@ async function executeTool(
       '[WOS_AI_TOOL] searchPrograms args:',
       JSON.stringify({
         queryPresent: Boolean(rawQuery),
-        provincePresent: Boolean(rawProvince),
+        provincePresent: Boolean(effectiveProvince),
         searchQueryLength: searchQuery.length,
         usedFallback: queryBad || provinceBad,
       })
@@ -673,6 +698,17 @@ export async function runWosAI(
   history: WosAIHistoryMessage[] = []
 ) {
   try {
+    // Deterministic catalog overview: this question is a direct request for
+    // the current province coverage, so do not let the local model turn it
+    // into a generic greeting or an unrelated program search.
+    if (/(?:มี|ขอ|อยากทราบ|บอก).*จังหวัด|จังหวัด.*(?:ไหน|อะไร|บ้าง)/i.test(userMessage)) {
+      const provinces = await getCatalogProvinces();
+      if (provinces.length === 0) {
+        return 'ตอนนี้ยังไม่พบข้อมูลจังหวัดจากแคตตาล็อกที่เผยแพร่ค่ะ ขอให้ทีม WOS ตรวจสอบข้อมูลให้เพิ่มเติมนะคะ';
+      }
+      return 'ตอนนี้ WOS มีโปรแกรม/บริการที่เผยแพร่อยู่ใน ' + provinces.length + ' จังหวัดค่ะ ได้แก่ ' + provinces.join(', ') + ' 😊';
+    }
+
     /**
      * -------------------------------------------------------
      * 1. Retrieve verified WOS knowledge from Notion
@@ -720,6 +756,7 @@ export async function runWosAI(
     const languageHistory = cleanHistory.map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
     const dictionaryHints = await getLanguageDictionaryHints(userMessage, customerLanguage);
+
     const currentSelection = parseProgramSelection(userMessage, recentOptions);
     const selectedOption = resolveProgramSelection(
       userMessage,
@@ -1024,19 +1061,22 @@ CONTACT INFO RULE:
       if (!text) return false;
 
       // Explicit catalog intent is always a program lookup.
-      const explicitCatalogTerms = [
-        'โปรแกรม',
-        'program',
-        'programs',
-        '\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23',
-        'service',
-        'services',
-        '\u0e41\u0e1e\u0e47\u0e01\u0e40\u0e01\u0e08',
-        'แพ็กเกจ',
-        'package',
-        'packages',
+      const overviewTerms = [
+        '\u0e08\u0e31\u0e07\u0e2b\u0e27\u0e31\u0e14',
+        '\u0e21\u0e35\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21',
+        '\u0e21\u0e35\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23',
+        'which provinces',
+        'what provinces',
+        'available programs',
+        'available services',
       ];
+      if (overviewTerms.some((term) => text.includes(term))) return true;
 
+      const explicitCatalogTerms = [
+        'โปรแกรม', 'program', 'programs',
+        'บริการ', 'service', 'services',
+        'แพ็กเกจ', 'package', 'packages',
+      ];
       return explicitCatalogTerms.some((term) => text.includes(term));
     };
     const shouldForceHotelAvailability = (message: string): boolean => {
@@ -1045,6 +1085,40 @@ CONTACT INFO RULE:
       const hasDate = /\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\d{4}-\d{2}-\d{2}/.test(text) || ['เข้าพัก', 'เช็คอิน', 'เช็กอิน', 'checkout', 'check-out', 'คืน'].some((term) => text.includes(term));
       return hasHotel && hasDate;
     };
+
+    // Catalog truth should come from WOS operational data, not from the
+    // local model deciding whether to call a tool. This direct retrieval
+    // path also handles natural service queries such as "ตรวจเข่า" that
+    // do not contain the literal word "โปรแกรม".
+    //
+    // Most importantly, do NOT attach tools to ordinary conversation:
+    // Typhoon's Ollama template turns a user message + tools into a
+    // function-call response even for greetings. We therefore search the
+    // verified catalog first and only use model tools for workflows that
+    // genuinely need them (currently hotel availability).
+    if (!shouldForceHotelAvailability(modelUserMessage) && !selectedOption) {
+      try {
+        const directCatalogPrograms = await searchPrograms(userMessage, 5);
+        const directCatalogAnswer = buildProgramAnswer(
+          directCatalogPrograms,
+          userMessage,
+          cleanHistory.map((m) => m.content).join('\\n')
+        );
+
+        if (directCatalogAnswer) {
+          console.log(
+            '[WOS_AI] direct catalog retrieval answer',
+            JSON.stringify({ programs: directCatalogPrograms.length })
+          );
+          return directCatalogAnswer;
+        }
+      } catch (catalogError) {
+        console.warn(
+          '[WOS_AI_DIRECT_CATALOG_LOOKUP_FAILED]',
+          catalogError instanceof Error ? catalogError.message : String(catalogError)
+        );
+      }
+    }
 
     // withTools=false is used to get a plain-text answer: with tools attached,
     // the typhoon2 template forces a function-call JSON reply whenever the last
@@ -1357,7 +1431,12 @@ const runToolRounds = async (
   return current;
 };
 
-    let response = await complete();
+    // Plain conversation must start WITHOUT tools. Typhoon's tool template
+    // otherwise turns even greetings into function-call JSON. Catalog requests
+    // have already been resolved directly above; hotel availability is the
+    // remaining workflow that intentionally needs a tool round.
+    const needsToolWorkflow = shouldForceHotelAvailability(modelUserMessage);
+    let response = await complete(needsToolWorkflow);
 
     addChatUsage(usage, response);
 
