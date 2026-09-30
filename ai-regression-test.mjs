@@ -73,7 +73,7 @@ async function askAI(message, history = []) {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "x-forwarded-for": TEST_IP.replace(/\\d+$/, String(42 + (requestIndex++ % 200))),
+        "x-forwarded-for": TEST_IP.replace(/\d+$/, String(142 + (requestIndex++ % 100))),
       },
       body: JSON.stringify({ message, history }),
     });
