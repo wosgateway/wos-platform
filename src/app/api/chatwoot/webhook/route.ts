@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { waitUntil } from '@vercel/functions';
 import { createServiceClient } from '@/lib/supabase/service';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from '@/lib/chatwoot/duplicate';
@@ -27,6 +28,36 @@ const DEBUG_LOG = process.env.DEBUG_LOG === 'true'; // ตั้ง DEBUG_LOG=tr
 
 function debugLog(...args: unknown[]) {
   if (DEBUG_LOG) console.log(...args);
+}
+
+async function processClaimedWebhook(args: {
+  supabase: ReturnType<typeof createServiceClient>;
+  claimedEventId: string;
+  conversationId: number;
+  messageId: number;
+  content: string;
+}) {
+  const { supabase, claimedEventId, conversationId, messageId, content } = args;
+  try {
+    debugLog('[debug] -> proceeding to AI Core in background', { messageId });
+    const history = await fetchConversationHistory(conversationId, messageId);
+    debugLog(`[debug] history messages included: ${history.length}`);
+    const t0 = Date.now();
+    const aiResult = await getAIReply(content, history);
+    const t1 = Date.now();
+    debugLog(`[timing] runWosAI took ${t1 - t0}ms, ok=${aiResult.ok}`);
+    await sendChatwootReply(conversationId, aiResult.text);
+    await recordWebhookEventResult(supabase, claimedEventId, aiResult.ok ? 'sent' : 'failed', aiResult.ok ? null : aiResult.reason);
+    const orderNumber = extractOrderNumber(content);
+    if (orderNumber) {
+      debugLog('[debug] order number detected in message:', orderNumber);
+      const ctx = await fetchOrderContext(orderNumber);
+      if (ctx) await updateChatwootCustomAttributes(conversationId, ctx);
+    }
+  } catch (err) {
+    console.error('[chatwoot-webhook] background processing failed', err instanceof Error ? err.message : String(err));
+    await releaseWebhookEvent(supabase, claimedEventId);
+  }
 }
 
 // --- Fetch timeout guard ---
@@ -138,39 +169,15 @@ export async function POST(req: NextRequest) {
     }
     claimedEventId = claim.eventId;
 
-    debugLog('[debug] -> proceeding to AI Core');
-
-    const history = await fetchConversationHistory(conversationId, messageId);
-    debugLog(`[debug] history messages included: ${history.length}`);
-
-    const t0 = Date.now();
-    const aiResult = await getAIReply(content, history);
-    const t1 = Date.now();
-    debugLog(`[timing] runWosAI took ${t1 - t0}ms, ok=${aiResult.ok}`);
-
-    // ลูกค้าได้รับข้อความเสมอ (คำตอบจริง หรือ fallback ถ้า AI ล้มเหลว) แต่
-    // ledger ต้องสะท้อนสถานะ AI จริง ไม่ใช่แค่ "ส่งถึง Chatwoot สำเร็จ" —
-    // ไม่งั้น openai_429 จะไม่ถูกบันทึกเลยทั้งที่โควตาหมดจริง
-    await sendChatwootReply(conversationId, aiResult.text);
-    await recordWebhookEventResult(
+    // ACK Chatwoot immediately after the idempotency claim. AI/tool work continues
+    // in Vercel's waitUntil() so model latency does not trigger AgentBot timeout.
+    waitUntil(processClaimedWebhook({
       supabase,
       claimedEventId,
-      aiResult.ok ? 'sent' : 'failed',
-      aiResult.ok ? null : aiResult.reason
-    );
-
-    // --- 7. ถ้าลูกค้าพิมพ์เลขออเดอร์มาในข้อความ ผูกบริบทเข้ากับ conversation ---
-    // จงใจไม่ await บล็อกการตอบลูกค้า — ความล้มเหลวของฟีเจอร์นี้ไม่ควรทำให้
-    // POST() ทั้งก้อน error ทั้งที่ตอบลูกค้าสำเร็จไปแล้ว
-    const orderNumber = extractOrderNumber(content);
-    if (orderNumber) {
-      debugLog('[debug] order number detected in message:', orderNumber);
-      fetchOrderContext(orderNumber).then((ctx) => {
-        if (ctx) {
-          void updateChatwootCustomAttributes(conversationId, ctx);
-        }
-      });
-    }
+      conversationId,
+      messageId,
+      content,
+    }));
 
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
