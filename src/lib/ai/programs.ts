@@ -663,6 +663,41 @@ export async function searchPrograms(
 
   const resultMap = new Map<string, ProgramSearchResult>();
 
+  // Province-only browse requests are deterministic catalog browse operations,
+  // not semantic keyword searches. Handle them before candidate ranking so
+  // natural Thai forms such as มีโปรแกรมอะไรในอุดรธานีบ้าง cannot fall
+  // through to an empty keyword search. The province is still verified
+  // against partner.province before anything is returned.
+  const normalizedServiceQuery = normalizeQuery(serviceQuery).toLowerCase();
+  const isProvinceBrowse =
+    locationAliases.length > 0 &&
+    /^(?:มี|ขอ|หา|ดู|แนะนำ|อยากดู)?\s*(?:โปรแกรม|บริการ)(?:อะไร|อะไรบ้าง|บ้าง)?(?:\s*(?:ที่|ใน|ของ))?\s*$/.test(
+      normalizedServiceQuery
+    );
+
+  if (isProvinceBrowse) {
+    try {
+      const rawItems = await searchPackages(locationAliases[0], Math.max(safeLimit, 10));
+      for (const item of rawItems) {
+        const mapped = mapSearchResult(item);
+        if (
+          mapped.id &&
+          locationAliases.some(
+            (alias) =>
+              normalizeLocation(alias) ===
+              normalizeLocation(mapped.partner?.province ?? '')
+          )
+        ) {
+          resultMap.set(mapped.id, mapped);
+        }
+      }
+      return Array.from(resultMap.values()).slice(0, safeLimit);
+    } catch (error) {
+      console.error('[WOS_AI_TOOL] province browse failed:', error);
+      return [];
+    }
+  }
+
   /**
    * Run candidate searches in order.
    *
