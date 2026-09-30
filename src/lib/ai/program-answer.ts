@@ -55,18 +55,22 @@ function baht(n: number): string {
   return new Intl.NumberFormat('en-US').format(n);
 }
 
-function duration(p: VerifiedProgram, thai: boolean): string | null {
+function duration(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string | null {
   if (p.duration) return p.duration;
   if (typeof p.duration_minutes === 'number' && p.duration_minutes > 0) {
-    return thai
+    return language === 'th'
       ? `${p.duration_minutes} นาที`
-      : `${p.duration_minutes} minutes`;
+      : language === 'lo'
+        ? `${p.duration_minutes} ນາທີ`
+        : `${p.duration_minutes} minutes`;
   }
   return null;
 }
 
-function describe(p: VerifiedProgram, thai: boolean): string {
+function describe(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string {
   const lines: string[] = [];
+  const thai = language === 'th';
+  const lao = language === 'lo';
 
   const partnerBits = [p.partner?.name, p.partner?.province].filter(Boolean);
   lines.push(
@@ -82,17 +86,19 @@ function describe(p: VerifiedProgram, thai: boolean): string {
       lines.push(
         thai
           ? `ราคาโปรโมชั่น ${baht(sp)} บาท (ราคาปกติ ${baht(op)} บาท)`
-          : `Promotional price: ${baht(sp)} THB (regular ${baht(op)} THB)`
+          : lao
+            ? `ລາຄາໂປຣໂມຊັນ ${baht(sp)} ບາດ (ລາຄາປົກກະຕິ ${baht(op)} ບາດ)`
+            : `Promotional price: ${baht(sp)} THB (regular ${baht(op)} THB)`
       );
     } else {
-      lines.push(thai ? `ราคา ${baht(sp)} บาท` : `Price: ${baht(sp)} THB`);
+      lines.push(thai ? `ราคา ${baht(sp)} บาท` : lao ? `ລາຄາ ${baht(sp)} ບາດ` : `Price: ${baht(sp)} THB`);
     }
   } else if (typeof op === 'number' && op > 0) {
-    lines.push(thai ? `ราคา ${baht(op)} บาท` : `Price: ${baht(op)} THB`);
+    lines.push(thai ? `ราคา ${baht(op)} บาท` : lao ? `ລາຄາ ${baht(op)} ບາດ` : `Price: ${baht(op)} THB`);
   }
 
-  const d = duration(p, thai);
-  if (d) lines.push(thai ? `ระยะเวลา ${d}` : `Duration: ${d}`);
+  const d = duration(p, language);
+  if (d) lines.push(language === 'th' ? `ระยะเวลา ${d}` : language === 'lo' ? `ໄລຍະເວລາ ${d}` : `Duration: ${d}`);
 
   const desc = p.description?.trim();
   if (desc && desc !== p.title?.trim() && desc.length <= 300) {
@@ -114,7 +120,8 @@ export function buildProgramAnswer(
 
   const lao = usesLao(userMessage, languageContext);
   const thai = usesThai(userMessage, languageContext);
-  const body = list.map((p, i) => `${i + 1}. ${describe(p, thai)}`).join('\n\n');
+  const language: 'th' | 'lo' | 'en' = lao ? 'lo' : thai ? 'th' : 'en';
+  const body = list.map((p, i) => `${i + 1}. ${describe(p, language)}`).join('\n\n');
 
   if (lao) {
     const style = [...userMessage].reduce((sum, char) => sum + char.codePointAt(0)!, 0) % 4;

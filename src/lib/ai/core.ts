@@ -567,7 +567,7 @@ function extractRecentConversationOptions(
       options.push({ index, label });
     }
 
-    if (options.length >= 2) return options.slice(0, 5);
+    if (options.length >= 1) return options.slice(0, 5);
   }
 
   return [];
@@ -675,6 +675,11 @@ function resolveProgramSelection(
     }
   }
 
+  // If the latest assistant message contained exactly one catalog item,
+  // keep that item as the active selection for short follow-ups. This is the
+  // lightweight conversation state for the first-phase concierge journey.
+  if (options.length === 1) return options[0];
+
   // Fallback for integrations that trim/reorder history around assistant
   // replies: the latest explicit numeric user selection still wins.
   for (let i = history.length - 1; i >= 0; i--) {
@@ -684,6 +689,14 @@ function resolveProgramSelection(
   }
 
   return null;
+}
+
+function isHealthServiceOverview(message: string): boolean {
+  return /(?:บริการ|โปรแกรม|ตรวจ|ด้านสุขภาพ|สุขภาพ).*(?:สุขภาพ|มีอะไรบ้าง|อะไรบ้าง)|(?:health services|health programs|health check|wellness services|what services)|(?:ບໍລິການ|ໂປຣແກຣມ|ກວດ|ສຸຂະພາບ).*(?:ສຸຂະພາບ|ຫຍັງແດ່|ມີຫຍັງ)/iu.test(message);
+}
+
+function isHotelRequirementQuestion(message: string): boolean {
+  return /(?:โรงแรม|ที่พัก|ห้องพัก|ห้องเตียง|hotel|accommodation|room|stay|ກະໂຮງແຮມ|ໂຮງແຮມ|ທີ່ພັກ|ຫ້ອງພັກ|ຕຽງ|hotel|room|stay)/iu.test(message);
 }
 
 // =====================================================
@@ -803,6 +816,22 @@ export async function runWosAI(
     const recentOptions = extractRecentConversationOptions(cleanHistory);
     const languageHistory = cleanHistory.map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
+
+    // Broad health-service questions must always hit the verified catalog.
+    // This prevents a local model from turning an available health program
+    // into a false "no verified information" answer after a topic change.
+    if (isHealthServiceOverview(userMessage)) {
+      try {
+        const province = detectLocationFromRawText(userMessage)[0] ?? '';
+        const items = await searchPrograms(province ? 'สุขภาพ ' + province : 'สุขภาพ', 5);
+        if (items.length > 0) {
+          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'));
+          if (answer) return answer;
+        }
+      } catch (healthLookupError) {
+        console.warn('[WOS_AI_HEALTH_OVERVIEW_LOOKUP_FAILED]', healthLookupError instanceof Error ? healthLookupError.message : String(healthLookupError));
+      }
+    }
 
     // Trip-planning is intentionally a concierge handoff, not an invented
     // itinerary. We can collect the minimum planning inputs now and later
@@ -926,7 +955,20 @@ export async function runWosAI(
       if (customerLanguage === 'en') {
         return 'WOS can coordinate transport when a suitable service is available. Before I check the actual service, please tell me the pickup point, drop-off point, date and time, number of travelers, and whether you need one-way or round-trip service.';
       }
-      return 'มีบริการประสานรถรับส่งผ่าน WOS ได้ค่ะ เมื่อมีบริการที่พร้อมให้บริการนะคะ ก่อนที่ใบเฟิร์นจะเช็กเที่ยวรถจริง ขอจุดรับ จุดส่ง วันที่และเวลา จำนวนผู้เดินทาง และแจ้งด้วยว่าต้องการเที่ยวเดียวหรือไป-กลับค่ะ';
+      return 'ได้ค่ะ 😊 ใบเฟิร์นขอเก็บข้อมูลรถเบื้องต้นก่อนนะคะ: จุดรับ จุดส่ง วัน/เวลา จำนวนคน และต้องการรถแบบไหน ถ้าเป็นเที่ยวเดียวหรือเหมารายวันก็บอกได้เลยค่ะ เดี๋ยวใบเฟิร์นสรุปให้ทีม WOS ตรวจสอบต่อ';
+    }
+
+    // Hotels follow the same first-phase concierge pattern: collect the
+    // requirement first and let WOS Admin confirm live availability/final
+    // pricing. Only run the availability tool when exact dates are supplied.
+    if (isHotelRequirementQuestion(userMessage) && !/\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(userMessage)) {
+      if (customerLanguage === 'lo') {
+        return 'ໄດ້ຄ່ະ 😊 ສຳລັບທີ່ພັກ ໃບເຟີນຂໍຂໍ້ມູນເບື້ອງຕົ້ນ: ວັນເຂົ້າ-ອອກ ຫຼື ຈຳນວນຄືນ, ຈຳນວນຄົນ, ຕ້ອງການຫ້ອງ/ຕຽງແບບໃດ ແລະງົບປະມານໂດຍປະມານຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'Sure 😊 For a hotel, Fern will collect the basics first: stay dates or number of nights, number of guests, room/bed type, and your approximate budget. WOS Admin can then confirm the current room availability and final price.';
+      }
+      return 'ได้ค่ะ 😊 เรื่องโรงแรม ใบเฟิร์นขอเก็บข้อมูลเบื้องต้นก่อนนะคะ: วันเข้าพัก-ออกหรือจำนวนคืน จำนวนคน ต้องการห้อง/เตียงแบบไหน และงบประมาณคร่าว ๆ เท่าไร เดี๋ยวให้ทีม WOS ตรวจสอบห้องว่างและราคาปัจจุบันต่อค่ะ';
     }
 
     // A booking request is a journey step, not a reason to refuse the
