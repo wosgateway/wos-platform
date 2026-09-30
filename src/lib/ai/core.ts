@@ -4,6 +4,7 @@ import { looksLikeLeakedToolCall, sanitizeHistory } from './leak-guard';
 import {
   buildFallbackReply,
   buildProgramAnswer,
+  buildProgramPriceAnswer,
   extractVerifiedPrograms,
   type VerifiedProgram,
 } from './program-answer';
@@ -820,8 +821,8 @@ export async function runWosAI(
     if (asksPrice) {
       try {
         const selectedPrograms = await searchPrograms(selectedOption.label, 1);
-        const selectedAnswer = buildProgramAnswer(
-          selectedPrograms.slice(0, 1),
+        const selectedAnswer = buildProgramPriceAnswer(
+          selectedPrograms[0],
           userMessage,
           cleanHistory.map((m) => m.content).join('\n')
         );

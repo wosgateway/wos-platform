@@ -170,6 +170,48 @@ export function buildProgramAnswer(
   return `${intro}\n\n${body}\n\n${nextStep}`;
 }
 
+/** Concise answer for a price follow-up on the currently selected program. */
+export function buildProgramPriceAnswer(
+  program: VerifiedProgram | undefined,
+  userMessage: string,
+  languageContext = ''
+): string | null {
+  if (!program?.title) return null;
+
+  const lao = usesLao(userMessage, languageContext);
+  const thai = usesThai(userMessage, languageContext);
+  const language: 'th' | 'lo' | 'en' = lao ? 'lo' : thai ? 'th' : 'en';
+  const special = typeof program.special_price === 'number' && program.special_price > 0
+    ? program.special_price
+    : null;
+  const original = typeof program.original_price === 'number' && program.original_price > 0
+    ? program.original_price
+    : null;
+
+  if (special === null && original === null) {
+    return language === 'lo'
+      ? 'ຕອນນີ້ຍັງບໍ່ມີລາຄາທີ່ຢືນຢັນໄດ້ສຳລັບ "' + program.title + '" ຄ່ະ'
+      : language === 'th'
+        ? 'ตอนนี้ยังไม่มีราคาที่ใบเฟิร์นยืนยันได้สำหรับ "' + program.title + '" ค่ะ'
+        : 'I do not have a verified price for "' + program.title + '" yet.';
+  }
+
+  if (program.is_promotion && special !== null && original !== null && original > special) {
+    return language === 'lo'
+      ? 'ໂປຣແກຣມ "' + program.title + '" ຕອນນີ້ລາຄາໂປຣໂມຊັນ ' + baht(special) + ' ບາດ ຈາກລາຄາປົກກະຕິ ' + baht(original) + ' ບາດຄ່ະ'
+      : language === 'th'
+        ? 'โปรแกรม "' + program.title + '" ตอนนี้ราคาโปรโมชั่น ' + baht(special) + ' บาท จากราคาปกติ ' + baht(original) + ' บาทค่ะ'
+        : 'For "' + program.title + '", the current promotional price is ' + baht(special) + ' THB, down from the regular ' + baht(original) + ' THB.';
+  }
+
+  const price = special ?? original!;
+  return language === 'lo'
+    ? 'ໂປຣແກຣມ "' + program.title + '" ລາຄາ ' + baht(price) + ' ບາດຄ່ະ'
+    : language === 'th'
+      ? 'โปรแกรม "' + program.title + '" ราคา ' + baht(price) + ' บาทค่ะ'
+      : '"' + program.title + '" is ' + baht(price) + ' THB.';
+}
+
 /**
  * Safe escalation fallback. When verified WOS data is insufficient, Fern must
  * stop rather than guess or repeat a stale refusal. This wording deliberately
