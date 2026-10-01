@@ -911,14 +911,12 @@ export async function runWosAI(
     // concierge transition; AI Core should continue to the next real intent.
     if (journeyUpdateReply && !isNewJourneyIntent && !isConversationProgressMessage) return journeyUpdateReply;
 
-    // Continue from structured journey state instead of repeating a stale program.
-    const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
-    if (journeyPlanningReply) return journeyPlanningReply;
-
-    // Program-overview requests are scoped to actual programs/services in the
-    // requested category. Never dump unrelated hotel/transport inventory just
-    // because those records also live in the catalog. Those are concierge
-    // capabilities that Fern should offer later, when the journey calls for them.
+    // Program-overview requests are explicit topic switches. Resolve them
+    // before journey planning so a stale hotel/transport/program state cannot
+    // swallow a fresh "what programs are available?" question.
+    // Never dump unrelated hotel/transport inventory just because those records
+    // also live in the catalog. Those are concierge capabilities that Fern
+    // should offer later, when the journey calls for them.
     if (isProgramOverviewQuestion(userMessage)) {
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? undefined;
@@ -934,6 +932,11 @@ export async function runWosAI(
         );
       }
     }
+
+    // Only after explicit catalog requests are resolved should structured
+    // journey planning get a chance to answer the message.
+    const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
+    if (journeyPlanningReply) return journeyPlanningReply;
 
     // A symptom/topic switch must re-route to the verified catalog before any
     // treatment handoff or previously selected program can answer it.
