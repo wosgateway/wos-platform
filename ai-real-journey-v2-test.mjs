@@ -1,4 +1,4 @@
-const base='http://127.0.0.1:3044';
+const base=(process.env.BASE_URL||'http://127.0.0.1:3044').replace(/\/$/,'');
 let history=[];
 async function ask(message){
  const r=await fetch(base+'/api/ai/chat',{method:'POST',headers:{'content-type':'application/json','x-forwarded-for':'198.18.0.207'},body:JSON.stringify({message,history})});
