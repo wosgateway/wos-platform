@@ -59,16 +59,23 @@ describe('handoff concierge', () => {
     });
   });
 
-  it('asks optional services only when their preference is not decided', () => {
-    const state = { needs: ['health'], transportNeeded: undefined, hotelNeeded: undefined };
-    const prompt = buildServiceOptionsPrompt('th', state);
-    expect(prompt).toContain('รถรับส่ง');
-    expect(prompt).toContain('ห้องพัก');
+  it('keeps local health concierge progressive and avoids unsolicited travel add-ons', () => {
+    const localState = { needs: ['health'], transportNeeded: undefined, hotelNeeded: undefined };
+    expect(buildServiceOptionsPrompt('th', localState)).toContain('มีอะไรให้ใบเฟิร์นช่วยเพิ่มเติม');
+
+    const travelState = {
+      needs: ['health'],
+      origin: 'เวียงจันทน์',
+      transportNeeded: undefined,
+      hotelNeeded: undefined,
+    };
+    expect(buildServiceOptionsPrompt('th', travelState)).toContain('รถรับส่ง');
+    expect(buildServiceOptionsPrompt('th', { ...travelState, transportNeeded: false })).toContain('ห้องพัก');
   });
 
   it('does not re-ask optional services after customer declines both', () => {
     const state = { needs: ['health'], transportNeeded: false, hotelNeeded: false };
-    expect(buildServiceOptionsPrompt('th', state)).toContain('ยืนยัน');
+    expect(buildServiceOptionsPrompt('th', state)).toContain('มีอะไรให้ใบเฟิร์นช่วยเพิ่มเติม');
   });
 
   it('builds non-empty confirmation/contact prompts', () => {

@@ -65,24 +65,34 @@ export function buildServiceOptionsPrompt(language: WosLanguage, state: WosJourn
   const transportMissing = state.transportNeeded !== false && state.transportNeeded !== true;
   const hotelMissing = state.hotelNeeded !== false && state.hotelNeeded !== true;
 
+  // Only surface travel add-ons when the journey actually looks travel-related.
+  // A local health-program booking should not be turned into an unsolicited
+  // transport/hotel sales flow.
+  const travelContext =
+    state.activeNeed === 'trip' ||
+    state.needs.includes('trip') ||
+    Boolean(state.origin) ||
+    Boolean(state.tripDurationDays) ||
+    Boolean(state.checkin || state.checkout);
+
   // Concierge is progressive, not a sales dump:
   // ask one relevant optional service at a time, then move to the next.
-  const askTransport = transportMissing;
-  const askHotel = !transportMissing && hotelMissing;
+  const askTransport = travelContext && transportMissing;
+  const askHotel = travelContext && !transportMissing && hotelMissing;
 
   if (language === 'en') {
     if (askTransport) return '🚐 Would you like transport from/to your appointment — one-way or daily?';
     if (askHotel) return '🏨 Would you like us to look for a room as well — double or twin, and about what budget per night?';
-    return buildHandoffConfirmation(language);
+    return 'Is there anything else you would like Fern to help with?';
   }
   if (language === 'lo') {
     if (askTransport) return '🚐 ຕ້ອງການລົດຮັບສົ່ງໄປ/ກັບຈາກບ່ອນນັດບໍ? ໄປທ່ຽວດຽວ ຫຼື ເໝົາລາຍວັນ?';
     if (askHotel) return '🏨 ຕ້ອງການໃຫ້ໃບເຟີນຊ່ວຍຫາຫ້ອງພັກໃຫ້ນຳບໍ? ຕຽງຄູ່ ຫຼື ຕຽງດ່ຽວ ແລະ ງົບປະມານປະມານເທົ່າໃດຕໍ່ຄືນ?';
-    return buildHandoffConfirmation(language);
+    return 'ມີຫຍັງອື່ນໃຫ້ໃບເຟີນຊ່ວຍອີກບໍ?';
   }
   if (askTransport) return '🚐 ต้องการให้ใบเฟิร์นช่วยดูรถรับส่งไป/กลับจากจุดนัดหมายไหมคะ — เที่ยวเดียว หรือเหมารายวัน?';
   if (askHotel) return '🏨 ต้องการให้ใบเฟิร์นช่วยดูห้องพักให้ด้วยไหมคะ — เตียงคู่หรือเตียงเดี่ยว และงบประมาณประมาณเท่าไรต่อคืน?';
-  return buildHandoffConfirmation(language);
+  return 'มีอะไรให้ใบเฟิร์นช่วยเพิ่มเติมอีกไหมคะ?';
 }
 
 export function isServiceOptionsResponse(text: string): boolean {
