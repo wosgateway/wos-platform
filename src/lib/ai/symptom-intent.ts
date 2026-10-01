@@ -13,6 +13,8 @@ const SYMPTOM_SEARCH_ALIASES: Array<[string, string]> = [
   ['\u0e9b\u0ea7\u0e94\u0eab\u0ebb\u0ea7\u0ec0\u0e82\u0ebb\u0ec8\u0eb2', 'ตรวจเข่า'],
   ['\u0ec0\u0e88\u0eb1\u0e9a\u0eab\u0ebb\u0ea7\u0ec0\u0e82\u0ebb\u0ec8\u0eb2', 'ตรวจเข่า'],
   ['\u0e81\u0ea7\u0e94\u0eab\u0ebb\u0ea7\u0ec0\u0e82\u0ebb\u0ec8\u0eb2', 'ตรวจเข่า'],
+  ['\u0e81\u0ea7\u0e94\u0eab\u0eb1\u0ea7\u0ec0\u0e82\u0ebb\u0ec8\u0eb2', 'ตรวจเข่า'],
+  ['\u0e81\u0ea7\u0e94\u0eab\u0eb1\u0ea7\u0ec0\u0e82\u0ebb\u0ec8\u0eb2', 'ตรวจเข่า'],
 ];
 
 export function getSymptomSearchAliases(query: string): string[] {
