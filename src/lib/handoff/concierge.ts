@@ -64,16 +64,25 @@ export function buildHandoffConfirmation(language: WosLanguage): string {
 export function buildServiceOptionsPrompt(language: WosLanguage, state: WosJourneyState): string {
   const transportMissing = state.transportNeeded !== false && state.transportNeeded !== true;
   const hotelMissing = state.hotelNeeded !== false && state.hotelNeeded !== true;
+
+  // Concierge is progressive, not a sales dump:
+  // ask one relevant optional service at a time, then move to the next.
+  const askTransport = transportMissing;
+  const askHotel = !transportMissing && hotelMissing;
+
   if (language === 'en') {
-    const lines = [transportMissing ? '🚐 Do you need transport — one-way or daily?' : '', hotelMissing ? '🏨 Do you need a room — double or twin bed, and about what budget per night?' : ''].filter(Boolean);
-    return lines.length ? lines.join('\\n') : buildHandoffConfirmation(language);
+    if (askTransport) return '🚐 Would you like transport from/to your appointment — one-way or daily?';
+    if (askHotel) return '🏨 Would you like us to look for a room as well — double or twin, and about what budget per night?';
+    return buildHandoffConfirmation(language);
   }
   if (language === 'lo') {
-    const lines = [transportMissing ? '🚐 ຕ້ອງການລົດຮັບສົ່ງບໍ? ໄປທ່ຽວດຽວ ຫຼື ເໝົາລາຍວັນ?' : '', hotelMissing ? '🏨 ຕ້ອງການຫ້ອງພັກບໍ? ຕຽງຄູ່ ຫຼື ຕຽງດ່ຽວ ແລະ ງົບປະມານປະມານເທົ່າໃດ?' : ''].filter(Boolean);
-    return lines.length ? lines.join('\\n') : buildHandoffConfirmation(language);
+    if (askTransport) return '🚐 ຕ້ອງການລົດຮັບສົ່ງໄປ/ກັບຈາກບ່ອນນັດບໍ? ໄປທ່ຽວດຽວ ຫຼື ເໝົາລາຍວັນ?';
+    if (askHotel) return '🏨 ຕ້ອງການໃຫ້ໃບເຟີນຊ່ວຍຫາຫ້ອງພັກໃຫ້ນຳບໍ? ຕຽງຄູ່ ຫຼື ຕຽງດ່ຽວ ແລະ ງົບປະມານປະມານເທົ່າໃດຕໍ່ຄືນ?';
+    return buildHandoffConfirmation(language);
   }
-  const lines = [transportMissing ? '🚐 ต้องการรถรับส่งไหมคะ — เที่ยวเดียว หรือเหมารายวัน?' : '', hotelMissing ? '🏨 ต้องการห้องพักไหมคะ — เตียงคู่หรือเตียงเดี่ยว และงบประมาณประมาณเท่าไรต่อคืน?' : ''].filter(Boolean);
-  return lines.length ? lines.join('\\n') : buildHandoffConfirmation(language);
+  if (askTransport) return '🚐 ต้องการให้ใบเฟิร์นช่วยดูรถรับส่งไป/กลับจากจุดนัดหมายไหมคะ — เที่ยวเดียว หรือเหมารายวัน?';
+  if (askHotel) return '🏨 ต้องการให้ใบเฟิร์นช่วยดูห้องพักให้ด้วยไหมคะ — เตียงคู่หรือเตียงเดี่ยว และงบประมาณประมาณเท่าไรต่อคืน?';
+  return buildHandoffConfirmation(language);
 }
 
 export function isServiceOptionsResponse(text: string): boolean {
