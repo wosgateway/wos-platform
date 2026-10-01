@@ -242,6 +242,42 @@ function buildJourneyDataUpdateReply(
   return `รับทราบค่ะ 😊 ใบเฟิร์นอัปเดตข้อมูลล่าสุดแล้ว${details ? `: ${details}` : ''} ค่ะ จะไม่ถามข้อมูลที่แจ้งไว้ซ้ำ และจะขอเฉพาะข้อมูลที่ยังขาดนะคะ`;
 }
 
+function isJourneyPlanningFollowUp(message: string): boolean {
+  return /(?:ต้องการข้อมูลอะไร|ต้องใช้ข้อมูลอะไร|ข้อมูลอะไรอีก|บอกไปแล้ว|ต่อไปเลย|ไปต่อ|ดำเนินการต่อ|สรุปให้หน่อย|สรุปข้อมูล|พร้อมให้ทีม|ส่งทีม|ติดต่อทีม|ต้องการรถรับส่ง|ต้องการรถ|ต้องการโรงแรม|ต้องการที่พัก)/iu.test(message);
+}
+
+function buildJourneyPlanningReply(userMessage: string, state: ReturnType<typeof deriveWosJourneyState>, language: WosLanguage): string | null {
+  if (!isJourneyPlanningFollowUp(userMessage)) return null;
+  const missing: string[] = [];
+  if (!state.destination) missing.push('ปลายทาง');
+  if (!state.serviceDate) missing.push('วันที่ต้องการเดินทาง/เข้ารับบริการ');
+  if (!state.travelers) missing.push('จำนวนผู้เดินทาง');
+  if (!state.budgetThb && !state.budgetUnlimited) missing.push('งบประมาณโดยประมาณ');
+  if (state.needs.includes('transport')) missing.push('จุดรับ-ส่ง และช่วงเวลาที่ต้องการรถ');
+  if (state.needs.includes('hotel')) missing.push('จำนวนคืน/วันเข้าพัก และประเภทห้องที่ต้องการ');
+  const known = [
+    state.selectedProgram ? `โปรแกรม: ${state.selectedProgram}` : '',
+    state.destination ? `ปลายทาง: ${state.destination}` : '',
+    state.serviceDate ? `วันที่: ${state.serviceDate.replace(/^วันที่\s*/iu, '')}` : '',
+    state.tripDurationDays ? `ระยะเวลา: ${state.tripDurationDays} วัน` : '',
+    state.travelers ? `ผู้เดินทาง: ${state.travelers} คน` : '',
+    state.budgetThb ? `งบประมาณ: ${state.budgetThb.toLocaleString('th-TH')} บาท` : '',
+    state.budgetUnlimited ? 'งบประมาณ: ไม่จำกัด' : '',
+    state.needs.includes('transport') ? 'รถรับส่ง: ต้องการ' : '',
+    state.needs.includes('hotel') ? 'โรงแรม: ต้องการ' : '',
+  ].filter(Boolean);
+  if (language === 'en') {
+    if (missing.length) return `Got it 😊 I already have: ${known.join(' · ')}. I only still need: ${missing.join(', ')}.`;
+    return `Perfect 😊 Here is the request summary:\n${known.map((x) => `• ${x}`).join('\n')}\n\nFern will pass this summary to the WOS team. The team will contact you within 2 hours to confirm the final details.`;
+  }
+  if (language === 'lo') {
+    if (missing.length) return `ຮັບຊາບຄ່ະ 😊 ໃບເຟີນມີຂໍ້ມູນແລ້ວ: ${known.join(' · ')}. ຍັງຂາດ: ${missing.join(', ')}.`;
+    return `ຮຽບຮ້ອຍຄ່ະ 😊 ສະຫຼຸບຄຳຂໍ:\n${known.map((x) => `• ${x}`).join('\n')}\n\nໃບເຟີນຈະສົ່ງໃຫ້ທີມ WOS ແລະ ທີມງານຈະຕິດຕໍ່ພາຍໃນ 2 ຊົ່ວໂມງເພື່ອຢືນຢັນລາຍລະອຽດ.`;
+  }
+  if (missing.length) return `ได้เลยค่ะ 😊 ใบเฟิร์นมีข้อมูลแล้ว: ${known.join(' · ')}\n\nตอนนี้ยังขาดแค่: ${missing.join(', ')} ค่ะ พอข้อมูลครบ ใบเฟิร์นจะสรุปเป็นคำขอเดียวให้ทีม WOS ติดต่อกลับค่ะ`;
+  return `เรียบร้อยค่ะ 😊 ใบเฟิร์นสรุปข้อมูลให้ก่อนนะคะ\n\n${known.map((x) => `• ${x}`).join('\n')}\n\nใบเฟิร์นจะส่งสรุปนี้ให้ทีม WOS เพื่อดำเนินการต่อ และทีมงานจะติดต่อกลับภายใน 2 ชั่วโมงเพื่อยืนยันรายละเอียดบริการ รถรับส่ง โรงแรม และค่าใช้จ่ายสุดท้ายค่ะ`;
+}
+
 function buildTripPlanningReply(userMessage: string, language: WosLanguage): string | null {
   const asksTrip =
     /(?:ไป|เที่ยว|พัก|ทริป).*(?:อุดร|อุดรธานี)|(?:อุดร|อุดรธานี).*(?:วัน|คืน|ทริป)|(?:trip|travel).*(?:udon|3 days|three days)|(?:ອຸດອນ).*(?:ມື້|ທ່ຽວ)/iu.test(userMessage);
@@ -853,6 +889,10 @@ export async function runWosAI(
     // a previously selected program. This is the key anti-stale-context rule.
     const journeyUpdateReply = buildJourneyDataUpdateReply(userMessage, journeyState, customerLanguage);
     if (journeyUpdateReply) return journeyUpdateReply;
+
+    // Continue from structured journey state instead of repeating a stale program.
+    const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
+    if (journeyPlanningReply) return journeyPlanningReply;
 
     // A symptom/topic switch must re-route to the verified catalog before any
     // treatment handoff or previously selected program can answer it.
