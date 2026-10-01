@@ -843,15 +843,27 @@ export async function runWosAI(
      */
     // Neither lookup may take the assistant down: on failure the model just
     // gets no knowledge / no contact block (and is told to say so).
+    // Keep the latency-critical catalog/concierge path independent from
+    // Notion and bot_config network lookups. Those sources are only needed
+    // for knowledge/contact questions; verified catalog answers come from
+    // Supabase-backed tools below.
+    const needsContactInfo = /(?:\u0e42\u0e17\u0e23|\u0e40\u0e1a\u0e2d\u0e23|\u0e15\u0e34\u0e14\u0e15\u0e48\u0e2d|\u0e44\u0e25\u0e19\u0e4c|line|whatsapp|email|\u0e2d\u0e35\u0e40\u0e21\u0e25|contact|phone|\u0e95\u0e34\u0e14\u0e95\u0e48\u0e2d|\u0e42\u0e17|\u0e40\u0e1a\u0e35)/iu.test(userMessage);
+    const needsNotionKnowledge = !(
+      isHealthServiceOverview(userMessage) ||
+      /(?:\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21|\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23|\u0e15\u0e23\u0e27\u0e08|\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e|wellness|health|\u0e42\u0e23\u0e07\u0e41\u0e23\u0e21|\u0e17\u0e35\u0e48\u0e1e\u0e31\u0e01|\u0e2b\u0e49\u0e2d\u0e07\u0e1e\u0e31\u0e01|hotel|accommodation|\u0e23\u0e16\u0e23\u0e31\u0e1a\u0e2a\u0e48\u0e07|\u0e23\u0e16|transport|transfer|shuttle|\u0e23\u0e31\u0e01\u0e29\u0e32|treatment|\u0e1a\u0e4d\u0e23\u0e34\u0e81\u0e32\u0e99|\u0eaa\u0eb8\u0e82\u0eb0\u0e9e\u0eb2\u0e9a|\u0e9e\u0eb1\u0e81\u0e8a\u0eb2|\u0e9a\u0eb1\u0e99\u0e94\u0eb2\u0e99|\u0eae\u0eb1\u0e81\u0eaa\u0eb2)/iu.test(userMessage)
+    );
+
     const [knowledge, contactInfoBlock] = await Promise.all([
-      searchWosNotionKnowledge(userMessage).catch((err: unknown) => {
-        console.error(
-          '[ai-core] Notion knowledge lookup failed',
-          err instanceof Error ? err.message : String(err)
-        );
-        return [] as Awaited<ReturnType<typeof searchWosNotionKnowledge>>;
-      }),
-      getContactInfoBlock(),
+      needsNotionKnowledge
+        ? searchWosNotionKnowledge(userMessage).catch((err: unknown) => {
+            console.error(
+              '[ai-core] Notion knowledge lookup failed',
+              err instanceof Error ? err.message : String(err)
+            );
+            return [] as Awaited<ReturnType<typeof searchWosNotionKnowledge>>;
+          })
+        : Promise.resolve([] as Awaited<ReturnType<typeof searchWosNotionKnowledge>>),
+      needsContactInfo ? getContactInfoBlock() : Promise.resolve(''),
     ]);
 
     const knowledgeContext =
