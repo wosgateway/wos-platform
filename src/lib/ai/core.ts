@@ -951,7 +951,7 @@ export async function runWosAI(
     // Broad health-service questions must always hit the verified catalog.
     // This prevents a local model from turning an available health program
     // into a false "no verified information" answer after a topic change.
-    if (isHealthServiceOverview(userMessage)) {
+    if (isHealthServiceOverview(userMessage) || /(?:\u0e21\u0e35\u0e42\u0e04\u0e07\u0e01\u0e32\u0e23|\u0e42\u0e04\u0e07\u0e01\u0e32\u0e23\u0e43\u0e14|\u0e21\u0e35\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23|\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23\u0e43\u0e14|\u0e2a\u0e38\u0e02\u0e30\u0e20\u0e32\u0e1e|\u0e01\u0e27\u0e14\u0e2b\u0e31\u0e27\u0e40\u0e02\u0e48\u0e32)/iu.test(userMessage)) {
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? '';
         const items = await searchPrograms(province ? 'สุขภาพ ' + province : 'สุขภาพ', 5);
