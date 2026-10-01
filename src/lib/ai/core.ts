@@ -220,6 +220,28 @@ function looksLikeRepeatedLoop(text: string): boolean {
   return false;
 }
 
+function isJourneyDataUpdate(message: string): boolean {
+  return /(?:งบ(?:ประมาณ)?\s*\d|งบไม่จำกัด|งบไม่กำหนด|\d+\s*บาท|\d+\s*คน|วันที่\s*\d|วัน\s*ที่\s*\d|เดินทางวันที่|งบ\s*\d)/iu.test(message);
+}
+
+function buildJourneyDataUpdateReply(
+  message: string,
+  state: ReturnType<typeof deriveWosJourneyState>,
+  language: WosLanguage
+): string | null {
+  if (!isJourneyDataUpdate(message)) return null;
+  if (language === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນໄດ້ອັບເດດຂໍ້ມູນລ່າສຸດແລ້ວ. ຖ້າມີຂໍ້ມູນທີ່ຍັງຂາດ ໃບເຟີນຈະຖາມສະເພາະຂໍ້ມູນນັ້ນຄ່ະ';
+  if (language === 'en') return `Got it 😊 I’ve updated the latest trip details${state.travelers ? ` for ${state.travelers} traveler${state.travelers === 1 ? '' : 's'}` : ''}${state.budgetThb ? ` and a THB ${state.budgetThb.toLocaleString('en-US')} budget` : state.budgetUnlimited ? ' with no budget limit' : ''}. I’ll only ask for information that is still missing.`;
+  const details = [
+    state.travelers ? `${state.travelers} คน` : '',
+    state.budgetThb ? `งบ ${state.budgetThb.toLocaleString('th-TH')} บาท` : '',
+    state.budgetUnlimited ? 'งบไม่จำกัด' : '',
+    state.serviceDate ? `วันที่ ${state.serviceDate.replace(/^วันที่\s*/iu, '')}` : '',
+    state.tripDurationDays ? `${state.tripDurationDays} วัน` : '',
+  ].filter(Boolean).join(' · ');
+  return `รับทราบค่ะ 😊 ใบเฟิร์นอัปเดตข้อมูลล่าสุดแล้ว${details ? `: ${details}` : ''} ค่ะ จะไม่ถามข้อมูลที่แจ้งไว้ซ้ำ และจะขอเฉพาะข้อมูลที่ยังขาดนะคะ`;
+}
+
 function buildTripPlanningReply(userMessage: string, language: WosLanguage): string | null {
   const asksTrip =
     /(?:ไป|เที่ยว|พัก|ทริป).*(?:อุดร|อุดรธานี)|(?:อุดร|อุดรธานี).*(?:วัน|คืน|ทริป)|(?:trip|travel).*(?:udon|3 days|three days)|(?:ອຸດອນ).*(?:ມື້|ທ່ຽວ)/iu.test(userMessage);
@@ -826,6 +848,28 @@ export async function runWosAI(
     const languageHistory = cleanHistory.map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
+
+    // New explicit facts must update the journey instead of being swallowed by
+    // a previously selected program. This is the key anti-stale-context rule.
+    const journeyUpdateReply = buildJourneyDataUpdateReply(userMessage, journeyState, customerLanguage);
+    if (journeyUpdateReply) return journeyUpdateReply;
+
+    // A symptom/topic switch must re-route to the verified catalog before any
+    // treatment handoff or previously selected program can answer it.
+    const symptomAlias = getSymptomSearchAliases(userMessage)[0];
+    if (symptomAlias) {
+      try {
+        const province = detectLocationFromRawText(userMessage)[0] ?? journeyState.destination ?? '';
+        const symptomQuery = [symptomAlias, province].filter(Boolean).join(' ');
+        const items = await searchPrograms(symptomQuery, 5);
+        if (items.length > 0) {
+          const answer = buildProgramAnswer(items, userMessage, '');
+          if (answer) return answer;
+        }
+      } catch (symptomLookupError) {
+        console.warn('[WOS_AI_SYMPTOM_LOOKUP_FAILED]', symptomLookupError instanceof Error ? symptomLookupError.message : String(symptomLookupError));
+      }
+    }
 
     // Journey-intent guards run before catalog/model processing. A selected
     // health program must never swallow a new transport/hotel request.

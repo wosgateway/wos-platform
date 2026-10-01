@@ -43,12 +43,17 @@ export function extractVerifiedPrograms(
 // Thai and Lao script -> Thai reply (program data is stored in Thai).
 // Everything else -> English.
 function usesLao(text: string, languageContext = ''): boolean {
-  return /[\u0E80-\u0EFF]/.test(text) || /[\u0E80-\u0EFF]/.test(languageContext);
+  const current = text.trim();
+  if (/[\u0E80-\u0EFF]/.test(current)) return true;
+  if (/[\u0E00-\u0E7F]/.test(current) || /[A-Za-z]/.test(current)) return false;
+  return /[\u0E80-\u0EFF]/.test(languageContext);
 }
 
 function usesThai(text: string, languageContext = ''): boolean {
-  return !usesLao(text, languageContext) &&
-    (/[\u0E00-\u0E7F]/.test(text) || /[\u0E00-\u0E7F]/.test(languageContext));
+  const current = text.trim();
+  if (/[\u0E00-\u0E7F]/.test(current)) return true;
+  if (/[\u0E80-\u0EFF]/.test(current) || /[A-Za-z]/.test(current)) return false;
+  return /[\u0E00-\u0E7F]/.test(languageContext);
 }
 
 function baht(n: number): string {

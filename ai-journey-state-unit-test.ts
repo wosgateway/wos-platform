@@ -15,6 +15,9 @@ const checks: Array<[string, boolean, unknown]> = [
   ['budget', state.budgetThb === 2000, state.budgetThb],
   ['selected program', state.selectedProgram === 'ตรวจสุขภาพ', state.selectedProgram],
   ['health need', state.needs.includes('health'), state.needs],
+  ['active treatment on knee', deriveWosJourneyState(history, 'หากผมปวดเข่า').activeNeed === 'treatment', deriveWosJourneyState(history, 'หากผมปวดเข่า').activeNeed],
+  ['trip duration', deriveWosJourneyState(history, 'อยากไปอุดรสามวัน').tripDurationDays === 3, deriveWosJourneyState(history, 'อยากไปอุดรสามวัน').tripDurationDays],
+  ['unlimited budget', deriveWosJourneyState(history, 'งบไม่จำกัด').budgetUnlimited === true, deriveWosJourneyState(history, 'งบไม่จำกัด').budgetUnlimited],
 ];
 for (const [name, ok, value] of checks) console.log(`${ok ? 'PASS' : 'FAIL'} ${name}:`, value);
 if (checks.some(([, ok]) => !ok)) process.exit(1);
