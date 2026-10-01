@@ -458,7 +458,7 @@ const OTHER_PROVINCES = [
 // query="อุดร" (the normal short way to say "อุดรธานี") returned zero
 // results because detectLocation() only matched the full official name.
 const PROVINCE_SHORT_FORMS: Record<string, string[]> = {
-  'อุดรธานี': ['อุดร'],
+  'อุดรธานี': ['อุดร', 'อຸດອນ'],
   'นครราชสีมา': ['โคราช'],
   'นครศรีธรรมราช': ['นครศรี'],
   'สุราษฎร์ธานี': ['สุราษฎร์'],

@@ -32,6 +32,7 @@ import {
   type WosLanguage,
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
+import { deriveWosJourneyState, formatJourneyState } from './journey-state';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -824,6 +825,7 @@ export async function runWosAI(
     const recentOptions = extractRecentConversationOptions(cleanHistory);
     const languageHistory = cleanHistory.map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
+    const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
 
     // Journey-intent guards run before catalog/model processing. A selected
     // health program must never swallow a new transport/hotel request.
@@ -1104,6 +1106,7 @@ export async function runWosAI(
       return `ถ้าจะจองโปรแกรม "${selectedOption.label}" ไม่ต้องติดต่อพาร์ทเนอร์โดยตรงนะคะ 😊 จองผ่าน WOS ได้เลยค่ะ ถ้าทำขั้นตอนจองเองไม่สะดวก บอกใบเฟิร์นได้ เดี๋ยวช่วยประสานทีม WOS ให้ค่ะ`;
     }
 
+    const structuredJourneyState = formatJourneyState(journeyState, customerLanguage);
     const conversationState = recentOptions.length > 0
       ? `CONVERSATION STATE (derived from recent verified conversation text):
 - Recent program options: ${recentOptions.map((option) => `${option.index} = ${option.label}`).join('; ')}
@@ -1182,7 +1185,7 @@ CONTACT INFO RULE:
       : userMessage;
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
-      { role: 'system', content: `${instructions}\n\n${conversationState}` },
+      { role: 'system', content: `${instructions}\n\n${structuredJourneyState}\n\n${conversationState}` },
       ...cleanHistory.map((m) => ({
         role: m.role as 'user' | 'assistant',
         content: m.content,
@@ -1211,6 +1214,21 @@ CONTACT INFO RULE:
     // Programs returned by real tool calls in this run. If the model cannot
     // turn them into a readable answer, we build one from these directly.
     let verifiedPrograms: VerifiedProgram[] = [];
+
+    const normalizeLaoCatalogQuery = (message: string): string => {
+      let query = message;
+      const aliases = [
+        ['ອຸດອນທານີ', 'อุดรธานี'], ['ອຸດອນ', 'อุดรธานี'],
+        ['ວຽງຈັນ', 'เวียงจันทน์'], ['ໂປຣແກຣມ', 'โปรแกรม'],
+        ['ໂຄງການ', 'โปรแกรม'], ['ບໍລິການ', 'บริการ'],
+        ['ກວດສຸຂະພາບ', 'ตรวจสุขภาพ'], ['ຮັກສາ', 'รักษา'],
+        ['ໂຮງໝໍ', 'โรงพยาบาล'], ['ລົດ', 'รถ'],
+        ['ໂຮງແຮມ', 'โรงแรม'], ['ທ່ຽວ', 'ทริป'],
+      ];
+      for (const [from, to] of aliases) query = query.replaceAll(from, to);
+      if (query.includes('อุดรธานี') && /โปรแกรม|บริการ/.test(query)) return 'อุดรธานี';
+      return query;
+    };
 
     const shouldForceProgramLookup = (message: string): boolean => {
       const text = message.trim().toLowerCase();
@@ -1254,7 +1272,10 @@ CONTACT INFO RULE:
     // genuinely need them (currently hotel availability).
     if (!shouldForceHotelAvailability(modelUserMessage) && !selectedOption) {
       try {
-        const directCatalogPrograms = await searchPrograms(userMessage, 5);
+        const catalogQuery = customerLanguage === 'lo'
+          ? normalizeLaoCatalogQuery(userMessage)
+          : userMessage;
+        const directCatalogPrograms = await searchPrograms(catalogQuery, 5);
         const directCatalogAnswer = buildProgramAnswer(
           directCatalogPrograms,
           userMessage,
@@ -1267,6 +1288,16 @@ CONTACT INFO RULE:
             JSON.stringify({ programs: directCatalogPrograms.length })
           );
           return directCatalogAnswer;
+        }
+
+        if (shouldForceProgramLookup(modelUserMessage) && directCatalogPrograms.length === 0) {
+          if (customerLanguage === 'lo') {
+            return 'ຕອນນີ້ໃບເຟີນຍັງບໍ່ພົບໂປຣແກຣມ WOS ທີ່ກົງກັບຄຳຖາມນີ້ຈາກຂໍ້ມູນທີ່ຢືນຢັນໄດ້ຄ່ະ ຖ້າຕ້ອງການ ໃບເຟີນຊ່ວຍປະສານທີມ WOS ໃຫ້ກວດສອບຕໍ່ໄດ້ຄ່ະ';
+          }
+          if (customerLanguage === 'en') {
+            return 'I could not find a verified WOS program that matches this request right now. I can help ask the WOS team to check further.';
+          }
+          return 'ตอนนี้ใบเฟิร์นยังไม่พบโปรแกรม WOS ที่ตรงกับคำถามนี้จากข้อมูลที่ยืนยันได้ค่ะ ถ้าต้องการ ใบเฟิร์นช่วยประสานทีม WOS ให้ตรวจสอบต่อได้ค่ะ';
         }
       } catch (catalogError) {
         console.warn(
