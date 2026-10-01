@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildHandoffConfirmation,
   buildHandoffContactPrompt,
+  buildServiceOptionsPrompt,
   detectHandoffLanguage,
   extractContact,
   isHandoffConfirmation,
@@ -48,6 +49,26 @@ describe('handoff concierge', () => {
   it('requires the trip journey minimum fields', () => {
     expect(isJourneyReady(trip)).toBe(true);
     expect(isJourneyReady({ ...trip, budgetThb: undefined })).toBe(false);
+  });
+
+  it('extracts a Thai name from the customer message', () => {
+    expect(extractContact(undefined, 'ชื่อนายประชา 0855667566')).toEqual({
+      name: 'ประชา',
+      channel: 'phone',
+      value: '0855667566',
+    });
+  });
+
+  it('asks optional services only when their preference is not decided', () => {
+    const state = { needs: ['health'], transportNeeded: undefined, hotelNeeded: undefined };
+    const prompt = buildServiceOptionsPrompt('th', state);
+    expect(prompt).toContain('รถรับส่ง');
+    expect(prompt).toContain('ห้องพัก');
+  });
+
+  it('does not re-ask optional services after customer declines both', () => {
+    const state = { needs: ['health'], transportNeeded: false, hotelNeeded: false };
+    expect(buildServiceOptionsPrompt('th', state)).toContain('ยืนยัน');
   });
 
   it('builds non-empty confirmation/contact prompts', () => {

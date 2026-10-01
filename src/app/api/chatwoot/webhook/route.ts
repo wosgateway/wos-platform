@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { deriveWosJourneyState } from '@/lib/ai/journey-state';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { submitHandoff } from '@/lib/handoff/service';
-import { buildHandoffConfirmation, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, type ChatwootSender } from '@/lib/handoff/concierge';
+import { buildHandoffConfirmation, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, buildServiceOptionsPrompt, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, isServiceOptionsResponse, type ChatwootSender } from '@/lib/handoff/concierge';
 import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from '@/lib/chatwoot/duplicate';
 
 // =====================================================================
@@ -67,8 +67,37 @@ async function processClaimedWebhook(args: {
       lastAssistant &&
       /(?:ชื่อ|เบอร์|อีเมล|name|phone|email)/iu.test(lastAssistant.content)
     );
+    const awaitingServiceOptions = Boolean(
+      lastAssistant &&
+      /(?:รถรับส่ง|เที่ยวเดียว|เหมารายวัน|ห้องพัก|เตียงคู่|เตียงเดี่ยว|transport|one-way|daily|room|hotel)/iu.test(lastAssistant.content)
+    );
 
-    if (journeyReady && confirmation) {
+    const asksNextStep = /(?:ทำไงต่อ|ทำอะไรต่อ|ต้องการอะไรอีก|ต้องทำอะไรต่อ|ต้องทำอะไรเพิ่ม|ผมแจ้งไปแล้ว|แจ้งไปแล้ว|แล้วไงต่อ|what(?:'s| is) next|next step|i already told you)/iu.test(content);
+    const oldBookingFormLoop = Boolean(
+      lastAssistant &&
+      /(?:ชื่อ-นามสกุล|เบอร์โทรศัพท์|วันที่ต้องการตรวจ|กรุณากรอก)/iu.test(lastAssistant.content)
+    );
+
+    // Hard stop for the old booking-form loop. If a customer says they already
+    // provided the details or asks what happens next, never let the model
+    // regenerate the same name/phone/date form.
+    if (asksNextStep && oldBookingFormLoop) {
+      if (journeyReady) {
+        replyText = buildServiceOptionsPrompt(language, journey);
+      } else if (journey.selectedProgram) {
+        replyText = language === 'en'
+          ? 'Got it 😊 I won’t ask for the same details again. I still need the remaining booking details before I can continue.'
+          : language === 'lo'
+            ? 'ຮັບຊາບແລ້ວ 😊 ໃບເຟີນຈະບໍ່ຖາມຂໍ້ມູນເກົ່າຊ້ຳ. ຍັງມີລາຍລະອຽດການຈອງບາງຢ່າງທີ່ຕ້ອງເພີ່ມ.'
+            : 'รับทราบค่ะ 😊 ใบเฟิร์นจะไม่ถามข้อมูลเดิมซ้ำ ตอนนี้ยังมีรายละเอียดการจองบางอย่างที่ต้องเพิ่มอีกนิดค่ะ';
+      } else {
+        replyText = language === 'en'
+          ? 'Got it 😊 I won’t ask for the same details again. Please choose the program you want to continue with.'
+          : language === 'lo'
+            ? 'ຮັບຊາບແລ້ວ 😊 ໃບເຟີນຈະບໍ່ຖາມຂໍ້ມູນເກົ່າຊ້ຳ. ກະລຸນາເລືອກໂປຣແກຣມທີ່ຕ້ອງການກ່ອນຄ່ະ'
+            : 'รับทราบค่ะ 😊 ใบเฟิร์นจะไม่ถามข้อมูลเดิมซ้ำ ตอนนี้เลือกโปรแกรมที่ต้องการก่อนนะคะ';
+      }
+    } else if (journeyReady && confirmation) {
       if (!contact?.name || !contact.value) {
         replyText = buildHandoffContactPrompt(language);
       } else {
@@ -85,9 +114,18 @@ async function processClaimedWebhook(args: {
           ? buildHandoffResultMessage(language, handoff.notification)
           : buildHandoffFailureMessage(language);
       }
+    } else if (journeyReady && awaitingServiceOptions && isServiceOptionsResponse(content)) {
+      replyText = buildHandoffConfirmation(language);
+    } else if (journeyReady && asksNextStep && !awaitingConfirmation && !awaitingContact) {
+      replyText = buildServiceOptionsPrompt(language, journey);
     } else if (
       journeyReady &&
-      (!isJourneyReady(previousJourney) || awaitingConfirmation || (awaitingContact && contact))
+      !isJourneyReady(previousJourney)
+    ) {
+      replyText = buildServiceOptionsPrompt(language, journey);
+    } else if (
+      journeyReady &&
+      (awaitingConfirmation || (awaitingContact && contact))
     ) {
       replyText = buildHandoffConfirmation(language);
     }

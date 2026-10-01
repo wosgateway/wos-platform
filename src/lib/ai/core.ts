@@ -734,10 +734,9 @@ function resolveProgramSelection(
     }
   }
 
-  // If the latest assistant message contained exactly one catalog item,
-  // keep that item as the active selection for short follow-ups. This is the
-  // lightweight conversation state for the first-phase concierge journey.
-  if (options.length === 1) return options[0];
+  // Never treat a single assistant catalog result as a customer selection.
+  // A new topic must be able to replace the active intent; only an explicit
+  // customer selection keeps a program active for later follow-ups.
 
   // Fallback for integrations that trim/reorder history around assistant
   // replies: the latest explicit numeric user selection still wins.
@@ -888,7 +887,12 @@ export async function runWosAI(
     // New explicit facts must update the journey instead of being swallowed by
     // a previously selected program. This is the key anti-stale-context rule.
     const journeyUpdateReply = buildJourneyDataUpdateReply(userMessage, journeyState, customerLanguage);
-    if (journeyUpdateReply) return journeyUpdateReply;
+    const isNewJourneyIntent = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|โรงแรม|ที่พัก|hotel|transport|transfer|shuttle|นวด|สปา|spa|massage|ตรวจสุขภาพ|สุขภาพ|wellness)/iu.test(userMessage);
+    const isConversationProgressMessage = /(?:ทำไงต่อ|ทำอะไรต่อ|ต้องการอะไรอีก|ต้องทำอะไรต่อ|ผมแจ้งไปแล้ว|แจ้งไปแล้ว|แล้วไงต่อ|ต้องทำอะไรเพิ่ม|what(?:'s| is) next|next step|i already told you)/iu.test(userMessage);
+    // Never answer a progress/update message with the old generic
+    // "I've updated your details" loop. The webhook owns the final
+    // concierge transition; AI Core should continue to the next real intent.
+    if (journeyUpdateReply && !isNewJourneyIntent && !isConversationProgressMessage) return journeyUpdateReply;
 
     // Continue from structured journey state instead of repeating a stale program.
     const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
@@ -913,15 +917,23 @@ export async function runWosAI(
 
     // Journey-intent guards run before catalog/model processing. A selected
     // health program must never swallow a new transport/hotel request.
+    // For transport, turn already-captured facts into a short checklist so
+    // the customer only gets asked for fields that are still missing.
+    const buildTransportChecklist = (): string => {
+      const missing: string[] = [];
+      if (!journeyState.origin) missing.push('จุดรับ');
+      if (!journeyState.destination) missing.push('จุดส่ง');
+      if (!journeyState.serviceDate) missing.push('วันที่');
+      if (!journeyState.travelers) missing.push('จำนวนคน');
+      if (!/(?:เวลา|โมง|am|pm|\d{1,2}:\d{2})/iu.test(userMessage) && !cleanHistory.some((m) => /(?:เวลา|โมง|am|pm|\d{1,2}:\d{2})/iu.test(m.content))) missing.push('ช่วงเวลา');
+      if (!/(?:เที่ยวเดียว|เหมารายวัน|รายวัน|one-way|daily)/iu.test(userMessage) && !cleanHistory.some((m) => /(?:เที่ยวเดียว|เหมารายวัน|รายวัน|one-way|daily)/iu.test(m.content))) missing.push('เที่ยวเดียวหรือเหมารายวัน');
+      if (customerLanguage === 'en') return missing.length ? `Sure 😊 I have the transport request. I still need: ${missing.join(', ')}.` : 'Perfect 😊 I have the transport details. Fern can summarize them for WOS to check.';
+      if (customerLanguage === 'lo') return missing.length ? `ໄດ້ຄ່ະ 😊 ໃບເຟີນມີຂໍ້ມູນລົດແລ້ວ ຍັງຂາດ: ${missing.join(', ')}.` : 'ຮຽບຮ້ອຍຄ່ະ 😊 ຂໍ້ມູນລົດຄົບແລ້ວ ໃບເຟີນຈະສະຫຼຸບໃຫ້ທີມ WOS ກວດສອບຄ່ະ';
+      return missing.length ? `ได้เลยค่ะ 😊 ใบเฟิร์นมีข้อมูลรถที่แจ้งไว้แล้ว ตอนนี้ขอเพิ่มแค่: ${missing.join(', ')} ค่ะ` : 'ครบแล้วค่ะ 😊 ใบเฟิร์นสรุปข้อมูลรถให้ทีม WOS ตรวจสอบต่อได้เลยค่ะ';
+    };
     const asksTransportEarly = /รถ|รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດ|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(userMessage);
     if (asksTransportEarly) {
-      if (customerLanguage === 'lo') {
-        return 'WOS ສາມາດຊ່ວຍປະສານລົດຮັບ-ສົ່ງໄດ້ຄ່ະ 😊 ກ່ອນກວດບໍລິການຈິງ ຂໍຈຸດຮັບ, ຈຸດສົ່ງ, ວັນ-ເວລາ, ຈຳນວນຄົນ ແລະປະເພດລົດ/ບໍລິການຖ້າຮູ້ແລ້ວ. ຖ້າໄປທ່ຽວດຽວ ຫຼື ເໝົາລາຍວັນ ບອກໄດ້ເລີຍຄ່ະ';
-      }
-      if (customerLanguage === 'en') {
-        return 'WOS can coordinate transport when a suitable service is available 😊 Please share the pickup point, drop-off point, date/time, number of travelers, vehicle/service type if known, and whether you need one-way service or a daily charter.';
-      }
-      return 'ได้ค่ะ 😊 เรื่องรถ ใบเฟิร์นขอเก็บข้อมูลเบื้องต้นก่อนนะคะ: จุดรับ จุดส่ง วัน/เวลา จำนวนคน ประเภทรถหรือบริการถ้าทราบ และต้องการเที่ยวเดียวหรือเหมารายวันค่ะ เดี๋ยวสรุปให้ทีม WOS ตรวจสอบต่อ';
+      return buildTransportChecklist();
     }
 
     const asksHotelEarly = isHotelRequirementQuestion(userMessage);

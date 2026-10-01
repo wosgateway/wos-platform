@@ -15,10 +15,18 @@ export type WosJourneyState = {
   activeNeed?: 'health' | 'treatment' | 'transport' | 'hotel' | 'trip';
   tripDurationDays?: number;
   budgetUnlimited?: boolean;
+  transportNeeded?: boolean;
+  transportMode?: 'one_way' | 'daily';
+  serviceTime?: string;
+  hotelNeeded?: boolean;
+  roomType?: 'double' | 'twin';
+  hotelBudgetThb?: number;
 };
 
 const TH_PROVINCES = ['กรุงเทพมหานคร', 'อุดรธานี', 'หนองคาย', 'ขอนแก่น', 'เชียงใหม่', 'ภูเก็ต', 'ชลบุรี', 'นครราชสีมา'];
-const LAO_LOCATION_ALIASES: Record<string, string> = {
+const LOCATION_ALIASES: Record<string, string> = {
+  'เวียงจัน': 'เวียงจันทน์',
+  'เวียงจันทน์': 'เวียงจันทน์',
   'ວຽງຈັນ': 'เวียงจันทน์',
   'ອຸດອອນ': 'อุดรธานี',
   'ອຸດອນ': 'อุดรธานี',
@@ -74,6 +82,8 @@ function findOrigin(texts: string[]): string | undefined {
     const text = texts[i];
     const lao = text.match(/(?:ຈາກ|ເດີນທາງຈາກ|from)\s*([^,\n]+)/iu);
     if (lao?.[1]) return normalizeLocation(lao[1]);
+    const pickup = text.match(/(?:รับที่|รับจาก|จุดรับ|pickup)\s*(เวียงจัน(?:ทน์)?|อุดรธานี|หนองคาย|ขอนแก่น|กรุงเทพมหานคร|เวียงจันทน์|ວຽງຈັນ)/iu);
+    if (pickup?.[1]) return normalizeLocation(pickup[1]);
     const thai = text.match(/(?:จาก|เดินทางจาก|origin|from)\s*([^,\n]+)/iu);
     if (thai?.[1]) return normalizeLocation(thai[1]);
   }
@@ -82,7 +92,7 @@ function findOrigin(texts: string[]): string | undefined {
 
 function normalizeLocation(value: string): string {
   const cleaned = value.replace(/[.。?？!！]+$/, '').trim();
-  return LAO_LOCATION_ALIASES[cleaned] ?? cleaned;
+  return LOCATION_ALIASES[cleaned] ?? cleaned;
 }
 
 function findDate(texts: string[]): string | undefined {
@@ -96,6 +106,47 @@ function findTripDuration(texts: string[]): number | undefined {
       const words: Record<string, number> = { หนึ่ง: 1, สอง: 2, สาม: 3, สี่: 4, ห้า: 5, หก: 6, เจ็ด: 7, แปด: 8, เก้า: 9, สิบ: 10 };
       return Number(match[1]) || words[match[1]];
     }
+  }
+  return undefined;
+}
+
+function findServiceTime(texts: string[]): string | undefined {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const match = texts[i].match(/(?:เวลา|ช่วงเวลา|ตอน)\s*(\d{1,2}(?::\d{2})?\s*(?:นาฬิกา|โมง|am|pm)?)/iu) ??
+      texts[i].match(/\b(\d{1,2}:\d{2}\s*(?:am|pm)?)\b/iu);
+    if (match?.[1]) return match[1].trim();
+  }
+  return undefined;
+}
+
+function findTransportMode(texts: string[]): WosJourneyState['transportMode'] {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    if (/(?:เหมารายวัน|รายวัน|daily)/iu.test(texts[i])) return 'daily';
+    if (/(?:เที่ยวเดียว|one-way)/iu.test(texts[i])) return 'one_way';
+  }
+  return undefined;
+}
+
+function findHotelRoom(texts: string[]): WosJourneyState['roomType'] {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    if (/(?:เตียงคู่|double)/iu.test(texts[i])) return 'double';
+    if (/(?:เตียงเดี่ยว|twin)/iu.test(texts[i])) return 'twin';
+  }
+  return undefined;
+}
+
+function findPreference(texts: string[], positive: RegExp, negative: RegExp): boolean | undefined {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    if (negative.test(texts[i])) return false;
+    if (positive.test(texts[i])) return true;
+  }
+  return undefined;
+}
+
+function findHotelBudget(texts: string[]): number | undefined {
+  for (let i = texts.length - 1; i >= 0; i--) {
+    const match = texts[i].match(/(?:ห้องพัก|โรงแรม|ที่พัก).*?(?:งบ|ประมาณ)\s*([0-9][0-9,]*)/iu);
+    if (match?.[1]) return Number(match[1].replace(/,/g, ''));
   }
   return undefined;
 }
@@ -122,18 +173,22 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   }
 
   const named = currentMessage.match(/(?:สนใจ|เลือก|เอา|ต้องการ|interested in|choose)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
-  if (named?.[1]) return { title: named[1].trim() };
+  if (named?.[1] && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(named[1].trim())) {
+    return { title: named[1].trim() };
+  }
 
-
-  for (let i = history.length - 1; i >= 0; i--) {
-    const message = history[i];
-    if (message.role !== 'assistant') continue;
-    const numbered = [...message.content.matchAll(/^\s*(\d+)[.)]\s*(.+)$/gm)];
-    if (numbered.length === 1) {
-      const line = numbered[0][2].trim();
-      return { title: line.split(/\s+-\s+|\s+—\s+/)[0].trim() || line };
+  // "รายการนี้/อันนี้/this one" means keep the most recent explicit
+  // customer selection. Never infer a selection from an assistant catalog.
+  if (/(?:สนใจ|เลือก|เอา|ต้องการ)\s*(?:รายการนี้|ตัวนี้|อันนี้)|\b(?:this one|this item)\b/iu.test(currentMessage)) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role !== 'user') continue;
+      const prior = history[i].content.match(/(?:สนใจ|เลือก|เอา|ต้องการ)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
+      if (prior?.[1] && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(prior[1].trim())) {
+        return { title: prior[1].trim() };
+      }
     }
   }
+
   return undefined;
 }
 
@@ -152,15 +207,15 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
 
   const selected = latestSelectedProgram(history, currentMessage);
   const destination = findDestination(allTexts) ?? findProvince(allTexts);
-  const activeNeed = /(?:ปวดเข่า|ตรวจเข่า|เข่า|รักษา|หาหมอ|พบแพทย์|treatment|doctor|surgery)/iu.test(currentMessage)
-    ? 'treatment'
-    : /(?:รถ|รถรับส่ง|transport|transfer|shuttle)/iu.test(currentMessage)
-      ? 'transport'
+  const activeNeed = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|รับส่ง|transport|transfer|shuttle)/iu.test(currentMessage)
+    ? 'transport'
+    : /(?:ปวดเข่า|ตรวจเข่า|เข่า|รักษา|หาหมอ|พบแพทย์|treatment|doctor|surgery)/iu.test(currentMessage)
+      ? 'treatment'
       : /(?:hotel|โรงแรม|ที่พัก)/iu.test(currentMessage)
         ? 'hotel'
         : /(?:trip|เที่ยว|เดินทาง|ไปอุดร|ไปเชียงใหม่)/iu.test(currentMessage)
           ? 'trip'
-          : /(?:สุขภาพ|ตรวจสุขภาพ|wellness|health)/iu.test(currentMessage)
+          : /(?:สุขภาพ|ตรวจสุขภาพ|wellness|health|นวด|สปา|spa|massage)/iu.test(currentMessage)
             ? 'health'
             : needs[needs.length - 1];
   return {
@@ -176,6 +231,12 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     activeNeed,
     tripDurationDays: findTripDuration(allTexts),
     budgetUnlimited: findUnlimitedBudget(allTexts),
+    transportMode: findTransportMode(allTexts),
+    serviceTime: findServiceTime(allTexts),
+    roomType: findHotelRoom(allTexts),
+    hotelBudgetThb: findHotelBudget(allTexts),
+    transportNeeded: findPreference(allTexts, /(?:ต้องการ|เอา|ขอ).*?(?:รถ|รถรับส่ง)|(?:need|want).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:รถ|รถรับส่ง)|(?:don't|do not|no).*?(?:transport|transfer)/iu),
+    hotelNeeded: findPreference(allTexts, /(?:ต้องการ|เอา|ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:need|want).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:don't|do not|no).*?(?:hotel|room)/iu),
   };
 }
 
