@@ -429,6 +429,44 @@ function mapSearchResult(
       : undefined,
   }) as ProgramSearchResult;
 }
+
+const HEALTH_PROGRAM_TERMS = /hospital|clinic|wellness|spa|dental|aesthetic|medical|health|สุขภาพ|คลินิก|โรงพยาบาล|เวลเนส|สปา|ทันต|ความงาม|ตรวจ/iu;
+const NON_PROGRAM_TERMS = /hotel|accommodation|transport|vehicle|โรงแรม|ที่พัก|รถรับส่ง|รถ|ห้องพัก/iu;
+
+/**
+ * Browse the published health-program catalog only.
+ * Hotels and transport are separate concierge services and must not leak
+ * into a generic "what programs are available?" answer.
+ */
+export async function searchHealthProgramOverview(
+  limit = 5,
+  province?: string
+): Promise<ProgramSearchResult[]> {
+  const activeItems = await fetchActivePackages(10);
+  const filtered = activeItems.filter((item) => {
+    const partner = item.partners;
+    const haystack = [
+      item.title,
+      item.description,
+      item.sub_category,
+      partner?.category,
+      partner?.name,
+    ].filter(Boolean).join(' ');
+
+    if (NON_PROGRAM_TERMS.test(haystack)) return false;
+    if (!HEALTH_PROGRAM_TERMS.test(haystack)) return false;
+    if (
+      province &&
+      normalizeLocation(partner?.province ?? '') !== normalizeLocation(province)
+    ) {
+      return false;
+    }
+    return true;
+  });
+
+  return filtered.slice(0, Math.min(Math.max(limit, 1), 10)).map(mapSearchResult);
+}
+
 // Full list of Thailand's 77 provinces so `detectLocation()` can filter by
 // any province the customer asks about, not only the 4 that happened to be
 // hardcoded before. Bangkok gets its own alias group because it has several

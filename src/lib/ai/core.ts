@@ -18,6 +18,7 @@ import {
 } from './tool-guard';
 import {
   searchPrograms,
+  searchHealthProgramOverview,
   getProgramDetails,
   getCatalogProvinces,
   detectLocationFromRawText,
@@ -920,7 +921,8 @@ export async function runWosAI(
     // capabilities that Fern should offer later, when the journey calls for them.
     if (isProgramOverviewQuestion(userMessage)) {
       try {
-        const items = await searchPrograms('สุขภาพ', 5);
+        const province = detectLocationFromRawText(userMessage)[0] ?? undefined;
+        const items = await searchHealthProgramOverview(5, province);
         if (items.length > 0) {
           const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'));
           if (answer) return answer;
