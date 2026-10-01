@@ -753,6 +753,10 @@ function isHealthServiceOverview(message: string): boolean {
   return /(?:บริการ|โปรแกรม|ตรวจ|ด้านสุขภาพ|สุขภาพ).*(?:สุขภาพ|มีอะไรบ้าง|อะไรบ้าง)|(?:health services|health programs|health check|wellness services|what services)|(?:ບໍລິການ|ໂປຣແກຣມ|ກວດ|ສຸຂະພາບ).*(?:ສຸຂະພາບ|ຫຍັງແດ່|ມີຫຍັງ)/iu.test(message);
 }
 
+function isProgramOverviewQuestion(message: string): boolean {
+  return /(?:มี|ขอ|อยากทราบ).*(?:โปรแกรม|บริการ).*(?:อะไร|อะไรบ้าง|ไหน|บ้าง)|(?:โปรแกรม|บริการ).*(?:อะไรบ้าง|ไหนบ้าง|มีอะไร)|(?:what|which).*(?:program|service)|(?:ມີ|ຂໍ|ຢາກຮູ້).*(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງ|ໃດ|ແດ່)|(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງແດ່|ໃດແດ່)/iu.test(message);
+}
+
 function isHotelRequirementQuestion(message: string): boolean {
   return /(?:โรงแรม|ที่พัก|ห้องพัก|ห้องเตียง|hotel|accommodation|room|stay|ກະໂຮງແຮມ|ໂຮງແຮມ|ທີ່ພັກ|ຫ້ອງພັກ|ຕຽງ)/iu.test(message);
 }
@@ -909,6 +913,25 @@ export async function runWosAI(
     // Continue from structured journey state instead of repeating a stale program.
     const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
     if (journeyPlanningReply) return journeyPlanningReply;
+
+    // Program-overview requests are scoped to actual programs/services in the
+    // requested category. Never dump unrelated hotel/transport inventory just
+    // because those records also live in the catalog. Those are concierge
+    // capabilities that Fern should offer later, when the journey calls for them.
+    if (isProgramOverviewQuestion(userMessage)) {
+      try {
+        const items = await searchPrograms('สุขภาพ', 5);
+        if (items.length > 0) {
+          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'));
+          if (answer) return answer;
+        }
+      } catch (programOverviewError) {
+        console.warn(
+          '[WOS_AI_PROGRAM_OVERVIEW_LOOKUP_FAILED]',
+          programOverviewError instanceof Error ? programOverviewError.message : String(programOverviewError)
+        );
+      }
+    }
 
     // A symptom/topic switch must re-route to the verified catalog before any
     // treatment handoff or previously selected program can answer it.
