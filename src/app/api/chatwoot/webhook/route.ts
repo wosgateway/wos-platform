@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { createServiceClient } from '@/lib/supabase/service';
+import { deriveWosJourneyState } from '@/lib/ai/journey-state';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
+import { submitHandoff } from '@/lib/handoff/service';
+import { buildHandoffConfirmation, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, type ChatwootSender } from '@/lib/handoff/concierge';
 import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from '@/lib/chatwoot/duplicate';
 
 // =====================================================================
@@ -36,8 +39,9 @@ async function processClaimedWebhook(args: {
   conversationId: number;
   messageId: number;
   content: string;
+  sender?: ChatwootSender;
 }) {
-  const { supabase, claimedEventId, conversationId, messageId, content } = args;
+  const { supabase, claimedEventId, conversationId, messageId, content, sender } = args;
   try {
     debugLog('[debug] -> proceeding to AI Core in background', { messageId });
     const history = await fetchConversationHistory(conversationId, messageId);
@@ -46,7 +50,49 @@ async function processClaimedWebhook(args: {
     const aiResult = await getAIReply(content, history);
     const t1 = Date.now();
     debugLog(`[timing] runWosAI took ${t1 - t0}ms, ok=${aiResult.ok}`);
-    await sendChatwootReply(conversationId, aiResult.text);
+
+    let replyText = aiResult.text;
+    const previousJourney = deriveWosJourneyState(history, '');
+    const journey = deriveWosJourneyState(history, content);
+    const language = detectHandoffLanguage(content);
+    const contact = extractContact(sender, content);
+    const journeyReady = isJourneyReady(journey);
+    const confirmation = isHandoffConfirmation(content);
+    const lastAssistant = [...history].reverse().find((message) => message.role === 'assistant');
+    const awaitingConfirmation = Boolean(
+      lastAssistant &&
+      /(?:confirm|ยืนยัน|ຢືນຢັນ)/iu.test(lastAssistant.content)
+    );
+    const awaitingContact = Boolean(
+      lastAssistant &&
+      /(?:ชื่อ|เบอร์|อีเมล|name|phone|email)/iu.test(lastAssistant.content)
+    );
+
+    if (journeyReady && confirmation) {
+      if (!contact?.name || !contact.value) {
+        replyText = buildHandoffContactPrompt(language);
+      } else {
+        const handoff = await submitHandoff({
+          conversationId: String(conversationId),
+          language,
+          name: contact.name,
+          contactChannel: contact.channel,
+          contactValue: contact.value,
+          journey,
+          appUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wos.asia',
+        });
+        replyText = handoff.ok
+          ? buildHandoffResultMessage(language, handoff.notification)
+          : buildHandoffFailureMessage(language);
+      }
+    } else if (
+      journeyReady &&
+      (!isJourneyReady(previousJourney) || awaitingConfirmation || (awaitingContact && contact))
+    ) {
+      replyText = buildHandoffConfirmation(language);
+    }
+
+    await sendChatwootReply(conversationId, replyText);
     await recordWebhookEventResult(supabase, claimedEventId, aiResult.ok ? 'sent' : 'failed', aiResult.ok ? null : aiResult.reason);
     const orderNumber = extractOrderNumber(content);
     if (orderNumber) {
@@ -177,6 +223,7 @@ export async function POST(req: NextRequest) {
       conversationId,
       messageId,
       content,
+      sender: payload.sender ?? payload.contact ?? undefined,
     }));
 
     return NextResponse.json({ status: 'ok' });
