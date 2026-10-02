@@ -949,6 +949,32 @@ export async function runWosAI(
       }
     }
 
+    // A province-only reply is a deterministic continuation of the catalog
+    // question above. Never send a bare province through the LLM: it can be
+    // misread as an incomplete fragment and produce unrelated language.
+    const requestedProvince = detectLocationFromRawText(userMessage)[0];
+    const previousAssistantAskedProvince = [...cleanHistory]
+      .reverse()
+      .find((m) => m.role === 'assistant' && /(?:จังหวัดไหน|which province|ຈັງຫວັດໃດ)/iu.test(m.content));
+    if (requestedProvince && previousAssistantAskedProvince) {
+      try {
+        const items = await searchHealthProgramOverview(5, requestedProvince);
+        const answer = buildProgramAnswer(items, requestedProvince, languageHistory.join('\\n'), customerLanguage);
+        if (answer) return answer;
+        if (customerLanguage === 'lo') return `ຕອນນີ້ຍັງບໍ່ພົບໂປຣແກຣມສຸຂະພາບທີ່ຢືນຢັນແລ້ວໃນ ${requestedProvince} ຄ່ະ`;
+        if (customerLanguage === 'en') return `I couldn't find a verified WOS health program in ${requestedProvince} right now.`;
+        return `ตอนนี้ยังไม่พบโปรแกรมสุขภาพที่ยืนยันแล้วใน${requestedProvince}ค่ะ`;
+      } catch (provinceLookupError) {
+        console.warn('[WOS_AI_PROVINCE_LOOKUP_FAILED]', provinceLookupError instanceof Error ? provinceLookupError.message : String(provinceLookupError));
+      }
+    }
+
+    // Explicit language-switch commands must never fall through to the model.
+    // They are control messages, not questions for generation.
+    if (/^(?:ภาษาไทย|ไทย|พูดไทย|ขอภาษาไทย)$/iu.test(userMessage.trim())) {
+      return 'ได้เลยค่ะ 😊 ต่อจากนี้ใบเฟิร์นจะตอบเป็นภาษาไทยนะคะ สนใจโปรแกรมที่จังหวัดไหนคะ?';
+    }
+
     // Only after explicit catalog requests are resolved should structured
     // journey planning get a chance to answer the message.
     const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
