@@ -897,7 +897,7 @@ export async function runWosAI(
     }
 
     const recentOptions = extractRecentConversationOptions(cleanHistory);
-    const languageHistory = cleanHistory.map((m) => m.content);
+    const languageHistory = cleanHistory.filter((m) => m.role === 'user').map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
 
