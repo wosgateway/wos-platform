@@ -116,16 +116,17 @@ function describe(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string {
 export function buildProgramAnswer(
   programs: VerifiedProgram[],
   userMessage: string,
-  languageContext = ''
+  languageContext = '',
+  preferredLanguage?: 'th' | 'lo' | 'en'
 ): string | null {
   const list = programs
     .filter((p) => p.title && p.title.trim())
     .slice(0, MAX_PROGRAMS_IN_ANSWER);
   if (list.length === 0) return null;
 
-  const lao = usesLao(userMessage, languageContext);
-  const thai = usesThai(userMessage, languageContext);
-  const language: 'th' | 'lo' | 'en' = lao ? 'lo' : thai ? 'th' : 'en';
+  const lao = preferredLanguage ? preferredLanguage === 'lo' : usesLao(userMessage, languageContext);
+  const thai = preferredLanguage ? preferredLanguage === 'th' : usesThai(userMessage, languageContext);
+  const language: 'th' | 'lo' | 'en' = preferredLanguage ?? (lao ? 'lo' : thai ? 'th' : 'en');
   const body = list.map((p, i) => `${i + 1}. ${describe(p, language)}`).join('\n\n');
 
   if (lao) {
@@ -186,13 +187,14 @@ export function buildProgramAnswer(
 export function buildProgramPriceAnswer(
   program: VerifiedProgram | undefined,
   userMessage: string,
-  languageContext = ''
+  languageContext = '',
+  preferredLanguage?: 'th' | 'lo' | 'en'
 ): string | null {
   if (!program?.title) return null;
 
-  const lao = usesLao(userMessage, languageContext);
-  const thai = usesThai(userMessage, languageContext);
-  const language: 'th' | 'lo' | 'en' = lao ? 'lo' : thai ? 'th' : 'en';
+  const lao = preferredLanguage ? preferredLanguage === 'lo' : usesLao(userMessage, languageContext);
+  const thai = preferredLanguage ? preferredLanguage === 'th' : usesThai(userMessage, languageContext);
+  const language: 'th' | 'lo' | 'en' = preferredLanguage ?? (lao ? 'lo' : thai ? 'th' : 'en');
   const special = typeof program.special_price === 'number' && program.special_price > 0
     ? program.special_price
     : null;

@@ -920,9 +920,25 @@ export async function runWosAI(
     if (isProgramOverviewQuestion(userMessage)) {
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? undefined;
+        if (!province) {
+          const provinces = await getCatalogProvinces();
+          if (customerLanguage === 'lo') {
+            return provinces.length
+              ? `ຕອນນີ້ WOS ມີໂປຣແກຣມສຸຂະພາບໃນ ${provinces.join(', ')}. ໃບເຟີນຂໍຮູ້ກ່ອນວ່າສົນໃຈຈັງຫວັດໃດຄ່ະ?`
+              : 'ສົນໃຈໂປຣແກຣມທີ່ຈັງຫວັດໃດຄ່ະ?';
+          }
+          if (customerLanguage === 'en') {
+            return provinces.length
+              ? `WOS currently has health programs in ${provinces.join(', ')}. Which province are you interested in?`
+              : 'Which province are you interested in?';
+          }
+          return provinces.length
+            ? `ตอนนี้ WOS มีโปรแกรมสุขภาพใน ${provinces.join(', ')} ค่ะ สนใจโปรแกรมที่จังหวัดไหนคะ?`
+            : 'สนใจโปรแกรมที่จังหวัดไหนคะ?';
+        }
         const items = await searchHealthProgramOverview(5, province);
         if (items.length > 0) {
-          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'));
+          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
           if (answer) return answer;
         }
       } catch (programOverviewError) {
@@ -947,7 +963,7 @@ export async function runWosAI(
         const symptomQuery = [symptomAlias, province].filter(Boolean).join(' ');
         const items = await searchPrograms(symptomQuery, 5);
         if (items.length > 0) {
-          const answer = buildProgramAnswer(items, userMessage, '');
+          const answer = buildProgramAnswer(items, userMessage, '', customerLanguage);
           if (answer) return answer;
         }
       } catch (symptomLookupError) {
@@ -996,7 +1012,7 @@ export async function runWosAI(
         const province = detectLocationFromRawText(userMessage)[0] ?? '';
         const items = await searchPrograms(province ? 'สุขภาพ ' + province : 'สุขภาพ', 5);
         if (items.length > 0) {
-          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'));
+          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
           if (answer) return answer;
         }
       } catch (healthLookupError) {
@@ -1036,7 +1052,8 @@ export async function runWosAI(
           const selectedAnswer = buildProgramAnswer(
             [matched],
             userMessage,
-            cleanHistory.map((m) => m.content).join('\n')
+            languageHistory.join('\n'),
+            customerLanguage
           );
           if (selectedAnswer) return selectedAnswer;
         }
@@ -1104,7 +1121,8 @@ export async function runWosAI(
         const selectedAnswer = buildProgramPriceAnswer(
           selectedPrograms[0],
           userMessage,
-          cleanHistory.map((m) => m.content).join('\n')
+          languageHistory.join('\n'),
+          customerLanguage
         );
         if (selectedAnswer) return selectedAnswer;
       } catch (priceError) {
@@ -1415,7 +1433,8 @@ CONTACT INFO RULE:
         const directCatalogAnswer = buildProgramAnswer(
           directCatalogPrograms,
           userMessage,
-          cleanHistory.map((m) => m.content).join('\\n')
+          languageHistory.join('\\n'),
+          customerLanguage
         );
 
         if (directCatalogAnswer) {
@@ -1874,13 +1893,12 @@ const runToolRounds = async (
     // and answering generically instead of using the data it just fetched.
     // Rather than trust the model to phrase found programs correctly,
     // build the customer-facing answer straight from the verified data.
-    const languageContext = cleanHistory
-      .map((m) => m.content)
-      .join('\n');
+    const languageContext = languageHistory.join('\n');
     const programAnswer = buildProgramAnswer(
       verifiedPrograms,
       userMessage,
-      languageContext
+      languageContext,
+      customerLanguage
     );
 
     // For catalog/program results, prefer the server-built response because
@@ -1941,7 +1959,8 @@ const runToolRounds = async (
         const fallbackAnswer = buildProgramAnswer(
           fallbackPrograms,
           userMessage,
-          history.map((m) => m.content).join('\n')
+          history.filter((m) => m.role === 'user').map((m) => m.content).join('\n'),
+          detectWosLanguage(userMessage, history.filter((m) => m.role === 'user').map((m) => m.content))
         );
         if (fallbackAnswer) {
           console.warn(
