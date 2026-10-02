@@ -755,6 +755,7 @@ function isHealthServiceOverview(message: string): boolean {
 }
 
 function isProgramOverviewQuestion(message: string): boolean {
+  if (/(?:ໂປຣແກຣມ|ໂຄງການ|ບໍລິການ|ແຂວງ|ແຂວງໃດ)/iu.test(message)) return true;
   return /(?:มี|ขอ|อยากทราบ).*(?:โปรแกรม|บริการ).*(?:อะไร|อะไรบ้าง|ไหน|บ้าง)|(?:โปรแกรม|บริการ).*(?:อะไรบ้าง|ไหนบ้าง|มีอะไร)|(?:what|which).*(?:program|service)|(?:ມີ|ຂໍ|ຢາກຮູ້).*(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງ|ໃດ|ແດ່)|(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງແດ່|ໃດແດ່)/iu.test(message);
 }
 
@@ -900,6 +901,14 @@ export async function runWosAI(
     const languageHistory = cleanHistory.filter((m) => m.role === 'user').map((m) => m.content);
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
+
+    // Short conversational turns must never inherit a stale language from an
+    // earlier corrupted assistant reply. The latest customer message wins.
+    if (/^(?:สวัสดี|สบายดี|หวัดดี|hello|hi|hey|ສະບາຍດີ|ສະບາຍດີບໍ)$/iu.test(userMessage.trim())) {
+      if (customerLanguage === 'lo') return 'ສະບາຍດີຄ່ະ 😊 ມື້ນີ້ໃຫ້ໃບເຟີນຊ່ວຍຫຍັງດີຄະ?';
+      if (customerLanguage === 'en') return 'Hi 😊 What can Fern help you with today?';
+      return 'สวัสดีค่ะ 😊 วันนี้มีอะไรให้ใบเฟิร์นช่วยไหมคะ';
+    }
 
     // New explicit facts must update the journey instead of being swallowed by
     // a previously selected program. This is the key anti-stale-context rule.
@@ -1140,7 +1149,7 @@ export async function runWosAI(
     // can be answered directly from the live catalog without depending on
     // another LLM round. This also preserves the active selection when the
     // LLM gateway is temporarily unavailable.
-    const asksPrice = selectedOption && /ราคา|ค่าใช้จ่าย|กี่บาท|ລາຄາ|ຄ່າໃຊ້ຈ່າຍ|ກີ່ກີບ|ກີ່ບາດ|price|cost|how much/iu.test(userMessage);
+    const asksPrice = selectedOption && /ราคา|ค่าใช้จ่าย|กี่บาท|โปรโมชั่น|โปรโมชัน|ລາຄາ|ຄ່າໃຊ້ຈ່າຍ|ກີ່ກີບ|ກີ່ບາດ|ໂປຣໂມຊັນ|ໂປຣໂມຊັນພິເສດ|price|cost|how much|promotion/iu.test(userMessage);
     if (asksPrice) {
       try {
         const selectedPrograms = await searchPrograms(selectedOption.label, 1);

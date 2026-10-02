@@ -4,7 +4,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { deriveWosJourneyState } from '@/lib/ai/journey-state';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { submitHandoff } from '@/lib/handoff/service';
-import { buildHandoffConfirmation, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, buildServiceOptionsPrompt, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, isServiceOptionsResponse, type ChatwootSender } from '@/lib/handoff/concierge';
+import { buildBookingReviewPrompt, buildHandoffConfirmation, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, buildServiceOptionsPrompt, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, isServiceOptionsResponse, type ChatwootSender } from '@/lib/handoff/concierge';
 import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from '@/lib/chatwoot/duplicate';
 
 // =====================================================================
@@ -83,7 +83,7 @@ async function processClaimedWebhook(args: {
     // regenerate the same name/phone/date form.
     if (asksNextStep && oldBookingFormLoop) {
       if (journeyReady) {
-        replyText = buildServiceOptionsPrompt(language, journey);
+        replyText = buildBookingReviewPrompt(language, journey, contact?.name ?? undefined);
       } else if (journey.selectedProgram) {
         replyText = language === 'en'
           ? 'Got it 😊 I won’t ask for the same details again. I still need the remaining booking details before I can continue.'
@@ -117,7 +117,7 @@ async function processClaimedWebhook(args: {
     } else if (journeyReady && awaitingServiceOptions && isServiceOptionsResponse(content)) {
       replyText = buildHandoffConfirmation(language);
     } else if (journeyReady && asksNextStep && !awaitingConfirmation && !awaitingContact) {
-      replyText = buildServiceOptionsPrompt(language, journey);
+      replyText = buildBookingReviewPrompt(language, journey, contact?.name ?? undefined);
     } else if (
       journeyReady &&
       !isJourneyReady(previousJourney)

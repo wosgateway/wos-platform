@@ -51,6 +51,34 @@ export function isJourneyReady(state: WosJourneyState): boolean {
     Boolean(state.travelers || state.serviceDate);
 }
 
+export function buildBookingReviewPrompt(language: WosLanguage, state: WosJourneyState, contactName?: string): string {
+  const lines = [
+    state.selectedProgram ? `โปรแกรม: ${state.selectedProgram}` : '',
+    state.selectedProvider ? `ผู้ให้บริการ: ${state.selectedProvider}` : '',
+    state.destination ? `สถานที่: ${state.destination}` : '',
+    state.serviceDate ? `วันที่: ${state.serviceDate}` : '',
+    state.serviceTime ? `เวลา: ${state.serviceTime}` : '',
+    state.travelers ? `จำนวน: ${state.travelers} คน` : '',
+    contactName ? `ชื่อผู้จอง: ${contactName}` : '',
+  ].filter(Boolean);
+
+  if (language === 'lo') {
+    const laoLines = lines.map((line) => line
+      .replace(/^โปรแกรม:/, 'ໂປຣແກຣມ:')
+      .replace(/^ผู้ให้บริการ:/, 'ຜູ້ໃຫ້ບໍລິການ:')
+      .replace(/^สถานที่:/, 'ສະຖານທີ່:')
+      .replace(/^วันที่:/, 'ວັນທີ:')
+      .replace(/^เวลา:/, 'ເວລາ:')
+      .replace(/^จำนวน:/, 'ຈຳນວນ:')
+      .replace(/^ชื่อผู้จอง:/, 'ຊື່ຜູ້ຈອງ:'));
+    return `ຂໍສະຫຼຸບກ່ອນດຳເນີນການຈອງນະຄ່ະ 😊\n\n${laoLines.map((x) => `• ${x}`).join('\n')}\n\nຖ້າຂໍ້ມູນຖືກຕ້ອງ ຕອບ “ຢືນຢັນ” ໄດ້ເລີຍຄ່ະ. ຫຼັງຈາກຢືນຢັນ ໃບເຟີນຈະປະສານທີມ WOS ໃຫ້ດຳເນີນການຈອງ ແລະຕິດຕໍ່ກັບທ່ານອີກຄັ້ງ.`;
+  }
+  if (language === 'en') {
+    return `Let me summarize the booking request first 😊\n\n${lines.map((x) => `• ${x}`).join('\n')}\n\nIf everything is correct, reply “confirm”. After confirmation, Fern will coordinate with the WOS team to proceed with the booking, and the team will contact you again to confirm the final details.`;
+  }
+  return `ขอสรุปข้อมูลก่อนดำเนินการจองนะคะ 😊\n\n${lines.map((x) => `• ${x}`).join('\n')}\n\nถ้าข้อมูลถูกต้อง ตอบ “ยืนยัน” ได้เลยค่ะ หลังจากยืนยัน ใบเฟิร์นจะแจ้งประสานทีม WOS ให้ดำเนินการจองต่อ และทีมงานจะติดต่อกลับเพื่อยืนยันรายละเอียดอีกครั้งค่ะ`;
+}
+
 export function buildHandoffConfirmation(language: WosLanguage): string {
   if (language === 'lo') {
     return 'ສະຫຼຸບຂໍ້ມູນໃຫ້ແລ້ວ 😊 ຖ້າລາຍລະອຽດຖືກຕ້ອງ ຕອບ “ຢືນຢັນ” ໄດ້ເລີຍ.';
