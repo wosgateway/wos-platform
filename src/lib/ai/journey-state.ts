@@ -126,10 +126,15 @@ function findOrigin(texts: string[]): string | undefined {
     if (lao?.[1]) return normalizeLocation(lao[1]);
     const pickup = text.match(/(?:รับที่|รับจาก|จุดรับ|pickup)\s*(เวียงจัน(?:ทน์)?|อุดรธานี|หนองคาย|ขอนแก่น|กรุงเทพมหานคร|เวียงจันทน์|ວຽງຈັນ)/iu);
     if (pickup?.[1]) return normalizeLocation(pickup[1]);
-    const thai = text.match(/(?:จาก|เดินทางจาก|origin|from)\s*(เวียงจัน(?:ทน์)?|อุดร(?:ธานี)?|หนองคาย|ขอนแก่น|เชียงใหม่|กรุงเทพมหานคร|ภูเก็ต|ชลบุรี|นครราชสีมา|ວຽງຈັນ)/iu);
+    const thai = text.match(/(?:จาก|เดินทางจาก|origin|from)\s*(เวียงจัน(?:ทน์)?|เวียงจันทน์|เวียงจัน|อุดร(?:ธานี)?|หนองคาย|ขอนแก่น|เชียงใหม่|กรุงเทพมหานคร|ภูเก็ต|ชลบุรี|นครราชสีมา|ວຽງຈັນ)/iu);
     if (thai?.[1]) return normalizeLocation(thai[1]);
   }
   return undefined;
+}
+
+function isAddonInterestMessage(message: string): boolean {
+  return /(?:สนใจ|ต้องการ|เอา|ขอ).*?(?:รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้องพัก|hotel|transport|transfer|shuttle)/iu.test(message)
+    || /(?:รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้องพัก|hotel|transport|transfer|shuttle).*?(?:มีไหม|มีมั้ย|ไหม|มั้ย)/iu.test(message);
 }
 
 function normalizeLocation(value: string): string {
@@ -306,7 +311,7 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   // Broad catalog requests are discovery, not program selection. This guard
   // prevents phrases like "ผมสนใจมีโปรแกรมอะไรแนะนำมั้ย" from becoming
   // selectedProgram = the entire question.
-  if (isGenericProgramRequest(currentMessage)) return undefined;
+  if (isGenericProgramRequest(currentMessage) || isAddonInterestMessage(currentMessage)) return undefined;
 
   const named = currentMessage.match(/(?:สนใจ|เลือก|เอา|ต้องการ|interested in|choose)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
   if (named?.[1] && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(named[1].trim())) {
@@ -375,6 +380,11 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   }
   const customerName = explicitCustomerName ?? bareCustomerName;
   const destination = findDestination(allTexts) ?? findProvince(allTexts);
+  const lastUserMessageIsBareLocation = LOCATION_ALIASES[currentMessage.trim()] !== undefined;
+  const assistantAskedPickup = /(?:ขอจุดรับ|จุดรับ|รับที่|รับจาก|pickup|ຈຸດຮັບ|ຮັບຈາກ)/iu.test(lastAssistantMessage);
+  const inferredBarePickup = lastUserMessageIsBareLocation && assistantAskedPickup
+    ? normalizeLocation(currentMessage)
+    : undefined;
   const activeNeed = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|รับส่ง|transport|transfer|shuttle)/iu.test(currentMessage)
     ? 'transport'
     : /(?:ปวดเข่า|ตรวจเข่า|เข่า|รักษา|หาหมอ|พบแพทย์|treatment|doctor|surgery)/iu.test(currentMessage)
@@ -417,7 +427,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     transportDate: findDate(allTexts),
     transportTime: findServiceTime(allTexts),
     transportTravelers: findTravelers(allTexts),
-    transportOrigin: findOrigin(allTexts),
+    transportOrigin: findOrigin(allTexts) ?? inferredBarePickup,
     transportDestination: findDestination(allTexts),
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),
     hotelRooms: findRooms(allTexts),
