@@ -931,6 +931,16 @@ export async function runWosAI(
     const customerLanguage = detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
 
+    // Explicit reset commands are control messages, not new questions. Return
+    // immediately so stale history cannot be echoed by the LLM before the
+    // reset boundary in journey-state.ts takes effect.
+    const isJourneyResetCommand = /^(?:เริ่มข้อมูลใหม่|เริ่มใหม่|เริ่มคุยใหม่|จองใหม่(?:เลย)?|ล้างข้อมูล(?:เดิม)?|เริ่มการจองใหม่|start over|start new|new booking|new journey|reset|clear previous|clear data|ລ້າງຂໍ້ມູນເກົ່າ|ລ້າງຂໍ້ມູນ|ເລີ່ມໃໝ່|ຈອງໃໝ່)$/iu.test(userMessage.trim());
+    if (isJourneyResetCommand) {
+      if (customerLanguage === 'lo') return 'ໄດ້ເລີຍຄ່ະ 😊 ໃບເຟີນລ້າງຂໍ້ມູນການຈອງເກົ່າໃຫ້ແລ້ວ. ເລີ່ມຂໍ້ມູນໃໝ່ໄດ້ເລີຍຄ່ະ';
+      if (customerLanguage === 'en') return 'Done 😊 I cleared the previous booking information. We can start fresh.';
+      return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นล้างข้อมูลการจองเดิมให้แล้วนะคะ เริ่มข้อมูลใหม่ได้เลยค่ะ';
+    }
+
     // Short conversational turns must never inherit a stale language from an
     // earlier corrupted assistant reply. The latest customer message wins.
     if (/^(?:สวัสดี|สบายดี|หวัดดี|hello|hi|hey|ສະບາຍດີ|ສະບາຍດີບໍ|ສບາຍດີ|ສບາຍດີບໍ|ສະບາຍດີແດ່)$/iu.test(userMessage.trim())) {

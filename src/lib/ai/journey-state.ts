@@ -230,6 +230,11 @@ function findUnlimitedBudget(texts: string[]): boolean {
   return false;
 }
 
+function isJourneyResetMessage(message: string): boolean {
+  const text = message.trim();
+  return /^(?:เริ่มข้อมูลใหม่|เริ่มใหม่|เริ่มคุยใหม่|จองใหม่(?:เลย)?|ล้างข้อมูล(?:เดิม)?|เริ่มการจองใหม่|start over|start new|new booking|new journey|reset|clear previous|clear data|ລ້າງຂໍ້ມູນເກົ່າ|ລ້າງຂໍ້ມູນ|ເລີ່ມໃໝ່|ຈອງໃໝ່)$/iu.test(text);
+}
+
 function isGenericProgramRequest(message: string): boolean {
   const text = message.trim();
   return /(?:มี|ขอ|อยาก|สนใจ|แนะนำ).*?(?:โปรแกรม|บริการ).*?(?:อะไร|ไหน|บ้าง|แนะนำ)/iu.test(text)
@@ -324,7 +329,19 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
 }
 
 export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMessage: string): WosJourneyState {
-  const userTexts = history.filter((m) => m.role === 'user').map((m) => m.content);
+  if (isJourneyResetMessage(currentMessage)) {
+    return { needs: [], activeNeed: undefined, bookingIntent: false, budgetUnlimited: false };
+  }
+
+  let resetIndex = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'user' && isJourneyResetMessage(history[i].content)) {
+      resetIndex = i;
+      break;
+    }
+  }
+  const effectiveHistory = resetIndex >= 0 ? history.slice(resetIndex + 1) : history;
+  const userTexts = effectiveHistory.filter((m) => m.role === 'user').map((m) => m.content);
   const allTexts = [...userTexts, currentMessage];
   const lower = allTexts.join('\n').toLowerCase();
   const needs: Array<'health' | 'treatment' | 'transport' | 'hotel' | 'trip'> = [];
@@ -336,9 +353,9 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   if (/(โรงแรม|ที่พัก|hotel|accommodation|room|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(lower)) add('hotel');
   if (/(ไปอุดร|เที่ยว|ทริป|เดินทาง|trip|travel|ທ່ອງທ່ຽວ|ເດີນທາງ)/iu.test(lower)) add('trip');
 
-  const selected = latestSelectedProgram(history, currentMessage);
+  const selected = latestSelectedProgram(effectiveHistory, currentMessage);
   const explicitCustomerName = findCustomerName(allTexts);
-  const lastAssistantMessage = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+  const lastAssistantMessage = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
   const bareNamePattern = /^[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60}$/u;
   const nameRequestPattern = /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu;
   let bareCustomerName: string | undefined;
@@ -346,11 +363,11 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     if (nameRequestPattern.test(lastAssistantMessage) && bareNamePattern.test(currentMessage.trim())) {
       bareCustomerName = currentMessage.trim();
     } else {
-      for (let i = history.length - 1; i >= 1; i--) {
-        if (history[i].role !== 'user' || !bareNamePattern.test(history[i].content.trim())) continue;
-        const previousAssistant = history[i - 1];
+      for (let i = effectiveHistory.length - 1; i >= 1; i--) {
+        if (effectiveHistory[i].role !== 'user' || !bareNamePattern.test(effectiveHistory[i].content.trim())) continue;
+        const previousAssistant = effectiveHistory[i - 1];
         if (previousAssistant?.role === 'assistant' && nameRequestPattern.test(previousAssistant.content)) {
-          bareCustomerName = history[i].content.trim();
+          bareCustomerName = effectiveHistory[i].content.trim();
           break;
         }
       }
@@ -371,7 +388,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
             : needs[needs.length - 1];
   const noAddons = /^(?:ไม่|ไม่ต้องการ|ไม่เอา|ไม่ต้องการทั้งสอง|ไม่เอาทั้งสอง|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim());
   // Short affirmative replies inherit the optional-service question Fern just asked.
-  const lastAssistantForAddon = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+  const lastAssistantForAddon = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
   const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0EA5\u0EBB\u0E94\u0EAE\u0EB1\u0E9A\u0EAA\u0EBB\u0EC8\u0E87|\u0EA5\u0EBB\u0E94\u0EAA\u0EBB\u0EC8\u0E87|\u0E96\u0EB7\u0E81\u0EAA\u0EC8\u0E87)/iu.test(lastAssistantForAddon);
   const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
