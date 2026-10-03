@@ -44,8 +44,11 @@ export function getWosConciergeStage(state: WosJourneyState): WosConciergeStage 
   // Health/treatment program bookings have their own core fields.
   // Trip-only fields such as destination, travelers, and budget are not
   // required unless the customer actually asks for a trip.
+  // A selected program + customer name is enough to enter the concierge
+  // flow. Date/time is operational detail that WOS Admin can confirm later;
+  // Fern should first ask about transport/hotel and then summarize the request.
   const coreReady = state.selectedProgram
-    ? Boolean(state.serviceDate && state.serviceTime)
+    ? Boolean(state.customerName)
     : (Boolean(state.destination) && Boolean(state.serviceDate) && Boolean(state.travelers));
   if (!coreReady) return 'collecting_booking';
   if (state.transportNeeded === undefined) return 'ask_transport_interest';
@@ -66,7 +69,10 @@ const LOCATION_ALIASES: Record<string, string> = {
   'ວຽງຈັນ': 'เวียงจันทน์',
   'ອຸດອອນ': 'อุดรธานี',
   'ອຸດອນ': 'อุดรธานี',
+  'ອຸດຮ': 'อุดรธานี',
+  'ອຸດຣ': 'อุดรธานี',
   'ຫນອງຄາຍ': 'หนองคาย',
+  'ໜອງຄາຍ': 'หนองคาย',
 };
 
 function findLastMatch(texts: string[], regex: RegExp): string | undefined {
@@ -253,6 +259,39 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
     }
   }
 
+  // Named selections such as "สนใจตรวจเข่า" must persist into later turns.
+  // Numeric selections were already handled above; this branch matches the
+  // latest customer message after the latest assistant catalog list against
+  // the actual option labels instead of trusting the model to remember it.
+  if (latest) {
+    const optionList = [...latest.content.matchAll(/^\s*(\d+)[.)]\s*(.+)$/gm)].map((match) => {
+      const line = match[2].trim();
+      const parts = line.split(/\s+-\s+|\s+—\s+/);
+      return {
+        title: parts[0]?.trim() ?? line,
+        provider: parts[1]?.trim(),
+      };
+    });
+    const latestIndex = history.lastIndexOf(latest);
+    const candidateMessages = [
+      ...history.slice(latestIndex + 1).filter((message) => message.role === 'user').map((message) => message.content),
+      currentMessage,
+    ];
+    for (const candidateMessage of candidateMessages) {
+      const text = candidateMessage.trim().toLocaleLowerCase();
+      const laoProgramAliases: Record<string, string[]> = {
+        'ตรวจเข่า': ['ກວດເຂົ່າ', 'ກວດຫົວເຂົ່າ'],
+        'ตรวจสุขภาพ': ['ກວດສຸຂະພາບ', 'ກວດສຸຂະພາບທົ່ວໄປ'],
+      };
+      const namedOption = optionList.find((option) => {
+        const title = option.title.toLocaleLowerCase();
+        return text.includes(title) ||
+          (laoProgramAliases[option.title] ?? []).some((alias) => text.includes(alias));
+      });
+      if (namedOption) return { title: namedOption.title, provider: namedOption.provider };
+    }
+  }
+
   const named = currentMessage.match(/(?:สนใจ|เลือก|เอา|ต้องการ|interested in|choose)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
   if (named?.[1] && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(named[1].trim())) {
     return { title: named[1].trim() };
@@ -289,7 +328,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   const selected = latestSelectedProgram(history, currentMessage);
   const explicitCustomerName = findCustomerName(allTexts);
   const lastAssistantMessage = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-  const bareNamePattern = /^[ก-๙A-Za-z][ก-๙A-Za-z .'-]{1,60}$/u;
+  const bareNamePattern = /^[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60}$/u;
   const nameRequestPattern = /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu;
   let bareCustomerName: string | undefined;
   if (!explicitCustomerName) {

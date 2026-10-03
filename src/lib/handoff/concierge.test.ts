@@ -150,12 +150,16 @@ describe('handoff concierge', () => {
     expect(colloquial.selectedProgram).toBe('ตรวจสุขภาพ');
     expect(colloquial.serviceDate).toContain('8 ตุลาคม');
     expect(colloquial.serviceTime).toBe('14:00');
-    expect(getWosConciergeStage(colloquial)).toBe('ask_transport_interest');
+    expect(getWosConciergeStage(colloquial)).toBe('collecting_booking');
+
+    const withName = deriveWosJourneyState(history, 'วันที่ 8 ตุลาคม เวลาสัก บ่าย2 ชื่อบิลลี่');
+    expect(withName.customerName).toContain('บิลลี่');
+    expect(getWosConciergeStage(withName)).toBe('ask_transport_interest');
 
     const numeric = deriveWosJourneyState(history, 'วันที่ 8 ตุลาคม เวลาสัก 14.00');
     expect(numeric.selectedProgram).toBe('ตรวจสุขภาพ');
     expect(numeric.serviceTime).toBe('14.00');
-    expect(getWosConciergeStage(numeric)).toBe('ask_transport_interest');
+    expect(getWosConciergeStage(numeric)).toBe('collecting_booking');
   });
 
   it('persists a bare customer name across later concierge turns', () => {

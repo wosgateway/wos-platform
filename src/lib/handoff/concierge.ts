@@ -38,13 +38,15 @@ export function extractContact(sender: ChatwootSender | undefined, text: string)
 }
 
 export function isJourneyReady(state: WosJourneyState): boolean {
-  if (!state.needs.length) return false;
-
-  // A selected health/treatment program has its own booking flow.
-  // Do not force trip fields such as destination, travelers, or budget.
+  // A selected health/treatment program is itself the active journey need.
+  // Do not require a separate needs[] classifier to recognize it.
+  // Once the customer has selected a program and provided a name, enter
+  // the concierge flow. Date/time can be confirmed by WOS Admin later.
   if (state.selectedProgram) {
-    return Boolean(state.serviceDate && state.serviceTime);
+    return Boolean(state.customerName);
   }
+
+  if (!state.needs.length) return false;
 
   if (state.activeNeed === 'trip' || state.needs.includes('trip')) {
     return Boolean(

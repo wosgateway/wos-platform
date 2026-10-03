@@ -933,7 +933,7 @@ export async function runWosAI(
 
     // Short conversational turns must never inherit a stale language from an
     // earlier corrupted assistant reply. The latest customer message wins.
-    if (/^(?:สวัสดี|สบายดี|หวัดดี|hello|hi|hey|ສະບາຍດີ|ສະບາຍດີບໍ)$/iu.test(userMessage.trim())) {
+    if (/^(?:สวัสดี|สบายดี|หวัดดี|hello|hi|hey|ສະບາຍດີ|ສະບາຍດີບໍ|ສບາຍດີ|ສບາຍດີບໍ|ສະບາຍດີແດ່)$/iu.test(userMessage.trim())) {
       if (customerLanguage === 'lo') return 'ສະບາຍດີຄ່ະ 😊 ມື້ນີ້ໃຫ້ໃບເຟີນຊ່ວຍຫຍັງດີຄະ?';
       if (customerLanguage === 'en') return 'Hi 😊 What can Fern help you with today?';
       return 'สวัสดีค่ะ 😊 วันนี้มีอะไรให้ใบเฟิร์นช่วยไหมคะ';
@@ -952,17 +952,13 @@ export async function runWosAI(
     // A selected health program enters a deterministic booking mini-flow.
     // Never hand this turn to the LLM, because the model may revive the old
     // generic booking form. Capture only the next missing core fact.
-    if (journeyState.selectedProgram) {
-      if (!journeyState.serviceDate || !journeyState.serviceTime) {
-        if (customerLanguage === 'lo') return `ສົນໃຈໂປຣແກຣມ ${journeyState.selectedProgram} ແລ້ວຄ່ະ 😊 ຂໍວັນທີ ແລະ ເວລາທີ່ສະດວກເຂົ້າຮັບບໍລິການແດ່ຄ່ະ`;
-        if (customerLanguage === 'en') return `Great 😊 I have ${journeyState.selectedProgram}. What date and time would you like to receive the service?`;
-        return `ได้เลยค่ะ 😊 ใบเฟิร์นรับโปรแกรม “${journeyState.selectedProgram}” ไว้แล้วนะคะ ขอวันที่และเวลาที่สะดวกเข้ารับบริการด้วยค่ะ`;
-      }
-      if (!journeyState.customerName) {
-        if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
-        if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
-        return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
-      }
+    const isHotelAvailabilityIntent =
+      /(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|accommodation|ຮ້ານແຮມ|ໂຮງແຮມ|ຫ້ອງພັກ).*?(?:ว่าง|มีห้อง|availability|available|ເຫຼືອ|ວ່າງ)|(?:เช็คอิน|เช็กอิน|check[- ]?in|เข้าพัก|checkout|check[- ]?out).*?(?:โรงแรม|ที่พัก|ห้อง|hotel|room|ໂຮງແຮມ|ຫ້ອງ)/iu.test(userMessage);
+
+    if (journeyState.selectedProgram && !journeyState.customerName && !isHotelAvailabilityIntent) {
+      if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
+      if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
+      return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
     }
 
     // Program-overview requests are explicit topic switches. Resolve them
@@ -977,8 +973,15 @@ export async function runWosAI(
         if (!province) {
           const provinces = await getCatalogProvinces();
           if (customerLanguage === 'lo') {
-            return provinces.length
-              ? `ຕອນນີ້ WOS ມີໂປຣແກຣມສຸຂະພາບໃນ ${provinces.join(', ')}. ໃບເຟີນຂໍຮູ້ກ່ອນວ່າສົນໃຈຈັງຫວັດໃດຄ່ະ?`
+            const laoProvinceNames: Record<string, string> = {
+              'หนองคาย': 'ໜອງຄາຍ',
+              'อุดรธานี': 'ອຸດອນທານີ',
+              'ขอนแก่น': 'ຂອນແກ່ນ',
+              'กรุงเทพมหานคร': 'ກຸງເທບ',
+            };
+            const laoProvinces = provinces.map((province) => laoProvinceNames[province] ?? province);
+            return laoProvinces.length
+              ? `ຕອນນີ້ WOS ມີໂປຣແກຣມສຸຂະພາບໃນ ${laoProvinces.join(', ')} ຄ່ະ ໃບເຟີນຂໍຮູ້ກ່ອນວ່າສົນໃຈຈັງຫວັດໃດຄ່ະ?`
               : 'ສົນໃຈໂປຣແກຣມທີ່ຈັງຫວັດໃດຄ່ະ?';
           }
           if (customerLanguage === 'en') {
@@ -1490,6 +1493,7 @@ CONTACT INFO RULE:
       let query = message;
       const aliases = [
         ['ອຸດອນທານີ', 'อุดรธานี'], ['ອຸດອນ', 'อุดรธานี'],
+        ['ອຸດຮ', 'อุดรธานี'], ['ອຸດຣ', 'อุดรธานี'],
         ['ວຽງຈັນ', 'เวียงจันทน์'], ['ໂປຣແກຣມ', 'โปรแกรม'],
         ['ໂຄງການ', 'โปรแกรม'], ['ບໍລິການ', 'บริการ'],
         ['ກວດສຸຂະພາບ', 'ตรวจสุขภาพ'], ['ຮັກສາ', 'รักษา'],
