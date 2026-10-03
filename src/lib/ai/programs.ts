@@ -431,7 +431,7 @@ function mapSearchResult(
 }
 
 const HEALTH_PROGRAM_TERMS = /hospital|clinic|wellness|spa|dental|aesthetic|medical|health|สุขภาพ|คลินิก|โรงพยาบาล|เวลเนส|สปา|ทันต|ความงาม|ตรวจ/iu;
-const NON_PROGRAM_TERMS = /hotel|accommodation|transport|vehicle|โรงแรม|ที่พัก|รถรับส่ง|รถ|ห้องพัก/iu;
+const NON_PROGRAM_TERMS = /hotel|accommodation|transport|vehicle|room|twin|double|โรงแรม|ที่พัก|รถรับส่ง|รถ|ห้องพัก|ห้องมาตรฐาน|เตียงเดี่ยว|เตียงคู่/iu;
 
 /**
  * Browse the published health-program catalog only.
@@ -445,11 +445,18 @@ export async function searchHealthProgramOverview(
   const activeItems = await fetchActivePackages(10);
   const filtered = activeItems.filter((item) => {
     const partner = item.partners;
+    // Overview classification must identify the program itself.
+    // Use title/partner name only: category metadata can be broad and
+    // hotel/transport records may carry wellness-like categories.
+    const title = String(item.title ?? '');
+    // Hard-stop non-health catalog titles before any fuzzy classification.
+    // This protects the overview from hotel/room/transport metadata leakage.
+    if (/(?:hotel|room|twin|double|accommodation|transport|vehicle|โรงแรม|ที่พัก|ห้อง|เตียง|รถรับส่ง|รถ)/iu.test(title)) {
+      return false;
+    }
+
     const haystack = [
-      item.title,
-      item.description,
-      item.sub_category,
-      partner?.category,
+      title,
       partner?.name,
     ].filter(Boolean).join(' ');
 
@@ -464,7 +471,16 @@ export async function searchHealthProgramOverview(
     return true;
   });
 
-  return filtered.slice(0, Math.min(Math.max(limit, 1), 10)).map(mapSearchResult);
+  const mapped = filtered
+    .slice(0, Math.min(Math.max(limit, 1), 10))
+    .map(mapSearchResult);
+
+  // Final output boundary: never let non-health inventory escape into the
+  // health-program catalog, even if upstream package data changes shape.
+  return mapped.filter((item) => {
+    const title = String(item.title ?? '');
+    return !/(?:hotel|room|twin|double|accommodation|transport|vehicle|โรงแรม|ที่พัก|ห้อง|เตียง|รถรับส่ง|รถ)/iu.test(title);
+  });
 }
 
 // Full list of Thailand's 77 provinces so `detectLocation()` can filter by
@@ -715,21 +731,10 @@ export async function searchPrograms(
 
   if (isProvinceBrowse) {
     try {
-      const rawItems = await searchPackages(locationAliases[0], Math.max(safeLimit, 10));
-      for (const item of rawItems) {
-        const mapped = mapSearchResult(item);
-        if (
-          mapped.id &&
-          locationAliases.some(
-            (alias) =>
-              normalizeLocation(alias) ===
-              normalizeLocation(mapped.partner?.province ?? '')
-          )
-        ) {
-          resultMap.set(mapped.id, mapped);
-        }
-      }
-      return Array.from(resultMap.values()).slice(0, safeLimit);
+      // Province browse must use the same health-only classifier as the
+      // deterministic overview. The generic search RPC can legitimately
+      // return hotel/room/transport packages for a province.
+      return await searchHealthProgramOverview(safeLimit, locationAliases[0]);
     } catch (error) {
       console.error('[WOS_AI_TOOL] province browse failed:', error);
       return [];

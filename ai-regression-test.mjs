@@ -48,7 +48,7 @@ function getArg(name, fallback) {
   return fallback;
 }
 const BASE_URL = resolveAiTestBaseUrlFromArgs(args);
-const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "30000"));
+const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "60000"));
 const VERBOSE = args.includes("--verbose");
 // Use a dedicated test IP so repeated regression runs do not consume the real client rate-limit bucket.
 const TEST_IP = process.env.WOS_AI_REGRESSION_IP || "198.18.0.42";

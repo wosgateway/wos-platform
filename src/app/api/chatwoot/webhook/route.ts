@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
 import { createServiceClient } from '@/lib/supabase/service';
-import { deriveWosJourneyState } from '@/lib/ai/journey-state';
+import { deriveWosJourneyState, getWosConciergeStage } from '@/lib/ai/journey-state';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { submitHandoff } from '@/lib/handoff/service';
-import { buildBookingReviewPrompt, buildHandoffConfirmation, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, buildServiceOptionsPrompt, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, isServiceOptionsResponse, type ChatwootSender } from '@/lib/handoff/concierge';
+import { buildBookingReviewPrompt, buildConciergeStagePrompt, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, type ChatwootSender } from '@/lib/handoff/concierge';
 import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from '@/lib/chatwoot/duplicate';
 
 // =====================================================================
@@ -52,25 +52,13 @@ async function processClaimedWebhook(args: {
     debugLog(`[timing] runWosAI took ${t1 - t0}ms, ok=${aiResult.ok}`);
 
     let replyText = aiResult.text;
-    const previousJourney = deriveWosJourneyState(history, '');
     const journey = deriveWosJourneyState(history, content);
     const language = detectHandoffLanguage(content);
     const contact = extractContact(sender, content);
     const journeyReady = isJourneyReady(journey);
+    const conciergeStage = getWosConciergeStage(journey);
     const confirmation = isHandoffConfirmation(content);
     const lastAssistant = [...history].reverse().find((message) => message.role === 'assistant');
-    const awaitingConfirmation = Boolean(
-      lastAssistant &&
-      /(?:confirm|ยืนยัน|ຢືນຢັນ)/iu.test(lastAssistant.content)
-    );
-    const awaitingContact = Boolean(
-      lastAssistant &&
-      /(?:ชื่อ|เบอร์|อีเมล|name|phone|email)/iu.test(lastAssistant.content)
-    );
-    const awaitingServiceOptions = Boolean(
-      lastAssistant &&
-      /(?:รถรับส่ง|เที่ยวเดียว|เหมารายวัน|ห้องพัก|เตียงคู่|เตียงเดี่ยว|transport|one-way|daily|room|hotel)/iu.test(lastAssistant.content)
-    );
 
     const asksNextStep = /(?:ทำไงต่อ|ทำอะไรต่อ|ต้องการอะไรอีก|ต้องทำอะไรต่อ|ต้องทำอะไรเพิ่ม|ผมแจ้งไปแล้ว|แจ้งไปแล้ว|แล้วไงต่อ|what(?:'s| is) next|next step|i already told you)/iu.test(content);
     const oldBookingFormLoop = Boolean(
@@ -97,7 +85,7 @@ async function processClaimedWebhook(args: {
             ? 'ຮັບຊາບແລ້ວ 😊 ໃບເຟີນຈະບໍ່ຖາມຂໍ້ມູນເກົ່າຊ້ຳ. ກະລຸນາເລືອກໂປຣແກຣມທີ່ຕ້ອງການກ່ອນຄ່ະ'
             : 'รับทราบค่ะ 😊 ใบเฟิร์นจะไม่ถามข้อมูลเดิมซ้ำ ตอนนี้เลือกโปรแกรมที่ต้องการก่อนนะคะ';
       }
-    } else if (journeyReady && confirmation) {
+    } else if (journeyReady && conciergeStage === 'awaiting_confirmation' && confirmation) {
       if (!contact?.name || !contact.value) {
         replyText = buildHandoffContactPrompt(language);
       } else {
@@ -114,20 +102,10 @@ async function processClaimedWebhook(args: {
           ? buildHandoffResultMessage(language, handoff.notification)
           : buildHandoffFailureMessage(language);
       }
-    } else if (journeyReady && awaitingServiceOptions && isServiceOptionsResponse(content)) {
-      replyText = buildHandoffConfirmation(language);
-    } else if (journeyReady && asksNextStep && !awaitingConfirmation && !awaitingContact) {
-      replyText = buildBookingReviewPrompt(language, journey, contact?.name ?? undefined);
-    } else if (
-      journeyReady &&
-      !isJourneyReady(previousJourney)
-    ) {
-      replyText = buildServiceOptionsPrompt(language, journey);
-    } else if (
-      journeyReady &&
-      (awaitingConfirmation || (awaitingContact && contact))
-    ) {
-      replyText = buildHandoffConfirmation(language);
+    } else if (journeyReady) {
+      // Concierge is state-driven: once the core booking is complete, Fern
+      // collects optional transport/hotel details before asking for final confirmation.
+      replyText = buildConciergeStagePrompt(language, journey);
     }
 
     await sendChatwootReply(conversationId, replyText);

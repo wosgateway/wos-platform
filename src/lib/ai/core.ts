@@ -230,9 +230,12 @@ function buildJourneyDataUpdateReply(
   state: ReturnType<typeof deriveWosJourneyState>,
   language: WosLanguage
 ): string | null {
+  // Once a health program is selected, date/time/name updates belong to the
+  // booking flow. Never route them into the generic trip planner.
+  if (state.selectedProgram && (state.serviceDate || state.serviceTime || state.customerName)) return null;
   if (!isJourneyDataUpdate(message)) return null;
-  if (language === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນໄດ້ອັບເດດຂໍ້ມູນລ່າສຸດແລ້ວ. ຖ້າມີຂໍ້ມູນທີ່ຍັງຂາດ ໃບເຟີນຈະຖາມສະເພາະຂໍ້ມູນນັ້ນຄ່ະ';
-  if (language === 'en') return `Got it 😊 I’ve updated the latest trip details${state.travelers ? ` for ${state.travelers} traveler${state.travelers === 1 ? '' : 's'}` : ''}${state.budgetThb ? ` and a THB ${state.budgetThb.toLocaleString('en-US')} budget` : state.budgetUnlimited ? ' with no budget limit' : ''}. I’ll only ask for information that is still missing.`;
+  if (language === 'lo') return 'ຮັບຊາບຄ່ະ 😊';
+  if (language === 'en') return 'Got it 😊';
   const details = [
     state.travelers ? `${state.travelers} คน` : '',
     state.budgetThb ? `งบ ${state.budgetThb.toLocaleString('th-TH')} บาท` : '',
@@ -240,7 +243,9 @@ function buildJourneyDataUpdateReply(
     state.serviceDate ? `วันที่ ${state.serviceDate.replace(/^วันที่\s*/iu, '')}` : '',
     state.tripDurationDays ? `${state.tripDurationDays} วัน` : '',
   ].filter(Boolean).join(' · ');
-  return `รับทราบค่ะ 😊 ใบเฟิร์นอัปเดตข้อมูลล่าสุดแล้ว${details ? `: ${details}` : ''} ค่ะ จะไม่ถามข้อมูลที่แจ้งไว้ซ้ำ และจะขอเฉพาะข้อมูลที่ยังขาดนะคะ`;
+  return details
+    ? `รับทราบค่ะ 😊 ${details}`
+    : 'รับทราบค่ะ 😊';
 }
 
 function isJourneyPlanningFollowUp(message: string): boolean {
@@ -248,6 +253,7 @@ function isJourneyPlanningFollowUp(message: string): boolean {
 }
 
 function buildJourneyPlanningReply(userMessage: string, state: ReturnType<typeof deriveWosJourneyState>, language: WosLanguage): string | null {
+  if (state.selectedProgram) return null;
   if (!isJourneyPlanningFollowUp(userMessage)) return null;
   const missing: string[] = [];
   if (!state.destination) missing.push('ปลายทาง');
@@ -831,6 +837,23 @@ export async function runWosAI(
   history: WosAIHistoryMessage[] = []
 ) {
   try {
+    // Symptom intent has priority over broad catalog wording. A message
+    // such as "ปวดเข่า...มีโปรแกรมอะไรที่เกี่ยวข้องไหม" is asking for a
+    // relevant service, not a province/program overview.
+    const topSymptomAlias = getSymptomSearchAliases(userMessage)[0];
+    if (topSymptomAlias) {
+      try {
+        const province = detectLocationFromRawText(userMessage)[0] ?? '';
+        const items = await searchPrograms([topSymptomAlias, province].filter(Boolean).join(' '), 5);
+        if (items.length > 0) {
+          const answer = buildProgramAnswer(items, userMessage, '', detectWosLanguage(userMessage));
+          if (answer) return answer;
+        }
+      } catch (symptomError) {
+        console.warn('[WOS_AI_TOP_SYMPTOM_LOOKUP_FAILED]', symptomError instanceof Error ? symptomError.message : String(symptomError));
+      }
+    }
+
     // Deterministic catalog overview: this question is a direct request for
     // the current province coverage, so do not let the local model turn it
     // into a generic greeting or an unrelated program search.
@@ -920,6 +943,22 @@ export async function runWosAI(
     // concierge transition; AI Core should continue to the next real intent.
     if (journeyUpdateReply && !isNewJourneyIntent && !isConversationProgressMessage) return journeyUpdateReply;
 
+    // A selected health program enters a deterministic booking mini-flow.
+    // Never hand this turn to the LLM, because the model may revive the old
+    // generic booking form. Capture only the next missing core fact.
+    if (journeyState.selectedProgram) {
+      if (!journeyState.serviceDate || !journeyState.serviceTime) {
+        if (customerLanguage === 'lo') return `ສົນໃຈໂປຣແກຣມ ${journeyState.selectedProgram} ແລ້ວຄ່ະ 😊 ຂໍວັນທີ ແລະ ເວລາທີ່ສະດວກເຂົ້າຮັບບໍລິການແດ່ຄ່ະ`;
+        if (customerLanguage === 'en') return `Great 😊 I have ${journeyState.selectedProgram}. What date and time would you like to receive the service?`;
+        return `ได้เลยค่ะ 😊 ใบเฟิร์นรับโปรแกรม “${journeyState.selectedProgram}” ไว้แล้วนะคะ ขอวันที่และเวลาที่สะดวกเข้ารับบริการด้วยค่ะ`;
+      }
+      if (!journeyState.customerName) {
+        if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
+        if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
+        return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
+      }
+    }
+
     // Program-overview requests are explicit topic switches. Resolve them
     // before journey planning so a stale hotel/transport/program state cannot
     // swallow a fresh "what programs are available?" question.
@@ -984,6 +1023,25 @@ export async function runWosAI(
       return 'ได้เลยค่ะ 😊 ต่อจากนี้ใบเฟิร์นจะตอบเป็นภาษาไทยนะคะ สนใจโปรแกรมที่จังหวัดไหนคะ?';
     }
 
+    // Symptom/topic switches must reach the verified catalog before journey
+    // planning. This is especially important when the customer already has a
+    // journey state: a symptom is a new service intent, not a trip-planning
+    // field to collect.
+    const earlySymptomAlias = getSymptomSearchAliases(userMessage)[0];
+    if (earlySymptomAlias) {
+      try {
+        const province = detectLocationFromRawText(userMessage)[0] ?? '';
+        const symptomQuery = [earlySymptomAlias, province].filter(Boolean).join(' ');
+        const items = await searchPrograms(symptomQuery, 5);
+        if (items.length > 0) {
+          const answer = buildProgramAnswer(items, userMessage, '', customerLanguage);
+          if (answer) return answer;
+        }
+      } catch (symptomLookupError) {
+        console.warn('[WOS_AI_EARLY_SYMPTOM_LOOKUP_FAILED]', symptomLookupError instanceof Error ? symptomLookupError.message : String(symptomLookupError));
+      }
+    }
+
     // Only after explicit catalog requests are resolved should structured
     // journey planning get a chance to answer the message.
     const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
@@ -1011,16 +1069,18 @@ export async function runWosAI(
     // For transport, turn already-captured facts into a short checklist so
     // the customer only gets asked for fields that are still missing.
     const buildTransportChecklist = (): string => {
-      const missing: string[] = [];
-      if (!journeyState.origin) missing.push('จุดรับ');
-      if (!journeyState.destination) missing.push('จุดส่ง');
-      if (!journeyState.serviceDate) missing.push('วันที่');
-      if (!journeyState.travelers) missing.push('จำนวนคน');
-      if (!/(?:เวลา|โมง|am|pm|\d{1,2}:\d{2})/iu.test(userMessage) && !cleanHistory.some((m) => /(?:เวลา|โมง|am|pm|\d{1,2}:\d{2})/iu.test(m.content))) missing.push('ช่วงเวลา');
-      if (!/(?:เที่ยวเดียว|เหมารายวัน|รายวัน|one-way|daily)/iu.test(userMessage) && !cleanHistory.some((m) => /(?:เที่ยวเดียว|เหมารายวัน|รายวัน|one-way|daily)/iu.test(m.content))) missing.push('เที่ยวเดียวหรือเหมารายวัน');
-      if (customerLanguage === 'en') return missing.length ? `Sure 😊 I have the transport request. I still need: ${missing.join(', ')}.` : 'Perfect 😊 I have the transport details. Fern can summarize them for WOS to check.';
-      if (customerLanguage === 'lo') return missing.length ? `ໄດ້ຄ່ະ 😊 ໃບເຟີນມີຂໍ້ມູນລົດແລ້ວ ຍັງຂາດ: ${missing.join(', ')}.` : 'ຮຽບຮ້ອຍຄ່ະ 😊 ຂໍ້ມູນລົດຄົບແລ້ວ ໃບເຟີນຈະສະຫຼຸບໃຫ້ທີມ WOS ກວດສອບຄ່ະ';
-      return missing.length ? `ได้เลยค่ะ 😊 ใบเฟิร์นมีข้อมูลรถที่แจ้งไว้แล้ว ตอนนี้ขอเพิ่มแค่: ${missing.join(', ')} ค่ะ` : 'ครบแล้วค่ะ 😊 ใบเฟิร์นสรุปข้อมูลรถให้ทีม WOS ตรวจสอบต่อได้เลยค่ะ';
+      if (journeyState.transportOrigin) {
+        return customerLanguage === 'en'
+          ? 'Got it 😊 I have the pickup point. The WOS team will coordinate the remaining transport details with you.'
+          : customerLanguage === 'lo'
+            ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນມີຈຸດຮັບແລ້ວ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ'
+            : 'รับทราบค่ะ 😊 ใบเฟิร์นมีจุดรับแล้ว เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
+      }
+      return customerLanguage === 'en'
+        ? 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.'
+        : customerLanguage === 'lo'
+          ? 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ'
+          : 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
     };
     const asksTransportEarly = /รถ|รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດ|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(userMessage);
     if (asksTransportEarly) {
@@ -1030,13 +1090,18 @@ export async function runWosAI(
     const asksHotelEarly = isHotelRequirementQuestion(userMessage);
     const hasHotelDateEarly = /\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(userMessage);
     if (asksHotelEarly && !hasHotelDateEarly) {
+      if (journeyState.hotelNeeded === true) {
+        if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບເລື່ອງໂຮງແຮມໄວ້ແລ້ວ ທີມ WOS ຈະປະສານຕໍ່ໃຫ້ຄ່ະ';
+        if (customerLanguage === 'en') return 'Got it 😊 I have noted the hotel request. The WOS team will coordinate the hotel details with you.';
+        return 'รับทราบค่ะ 😊 ใบเฟิร์นรับเรื่องโรงแรมไว้แล้วนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดต่อให้ค่ะ';
+      }
       if (customerLanguage === 'lo') {
-        return 'ໄດ້ຄ່ະ 😊 ສຳລັບທີ່ພັກ ຂໍວັນເຂົ້າ-ອອກ ຫຼື ຈຳນວນຄືນ, ຈຳນວນຄົນ, ປະເພດຫ້ອງ/ຕຽງ ແລະງົບປະມານໂດຍປະມານກ່ອນຄ່ະ';
+        return 'ໄດ້ຄ່ະ 😊 ສົນໃຈໂຮງແຮມບໍຄ່ະ? ໃບເຟີນຈະຮັບເລື່ອງໄວ້ໃຫ້ທີມ WOS ປະສານຕໍ່ຄ່ະ';
       }
       if (customerLanguage === 'en') {
-        return 'Sure 😊 For a hotel, please share your stay dates or number of nights, number of guests, room/bed type, approximate budget, and any important preferences. WOS can then check current availability and final pricing.';
+        return 'Sure 😊 Just let me know if you would like a hotel too, and I will pass the request to the WOS team.';
       }
-      return 'ได้ค่ะ 😊 เรื่องโรงแรม ใบเฟิร์นขอข้อมูลเบื้องต้นก่อนนะคะ: วันเข้าพัก-ออกหรือจำนวนคืน จำนวนคน ต้องการห้อง/เตียงแบบไหน และงบประมาณคร่าว ๆ เท่าไร เดี๋ยวทีม WOS ตรวจสอบห้องว่างและราคาปัจจุบันต่อค่ะ';
+      return 'ได้ค่ะ 😊 สนใจโรงแรมด้วยไหมคะ? ถ้าต้องการ ใบเฟิร์นจะรับเรื่องไว้ให้ทีม WOS ประสานต่อค่ะ';
     }
 
     // Broad health-service questions must always hit the verified catalog.
@@ -1045,7 +1110,7 @@ export async function runWosAI(
     if (isHealthServiceOverview(userMessage) || /(?:\u0e21\u0e35\u0e42\u0e04\u0e07\u0e01\u0e32\u0e23|\u0e42\u0e04\u0e07\u0e01\u0e32\u0e23\u0e43\u0e14|\u0e21\u0e35\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23|\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23\u0e43\u0e14|\u0e2a\u0e38\u0e02\u0e30\u0e20\u0e32\u0e1e|\u0e01\u0e27\u0e14\u0e2b\u0e31\u0e27\u0e40\u0e02\u0e48\u0e32)/iu.test(userMessage)) {
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? '';
-        const items = await searchPrograms(province ? 'สุขภาพ ' + province : 'สุขภาพ', 5);
+        const items = await searchHealthProgramOverview(5, province || undefined);
         if (items.length > 0) {
           const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
           if (answer) return answer;
@@ -1199,25 +1264,36 @@ export async function runWosAI(
 
     if (asksTransport) {
       if (customerLanguage === 'lo') {
-        return 'WOS ສາມາດຊ່ວຍປະສານລົດຮັບ-ສົ່ງໄດ້ ເມື່ອມີບໍລິການພ້ອມໃຫ້ບໍລິການຄ່ະ. ກ່ອນກວດລົດຈິງ ໃບເຟີນຂໍຈຸດຮັບ, ຈຸດສົ່ງ, ວັນ-ເວລາ, ຈຳນວນຄົນ ແລະບອກໄດ້ວ່າຕ້ອງການໄປທ່ຽວດຽວ ຫຼື ໄປ-ກັບຄ່ະ';
+        return journeyState.origin
+          ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບຈຸດຮັບໄວ້ແລ້ວ ທີມ WOS ຈະປະສານລາຍລະອຽດຕໍ່ໃຫ້ຄ່ະ'
+          : 'ໄດ້ເລີຍຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດຮັບສົ່ງຕໍ່ໃຫ້ຄ່ະ';
       }
       if (customerLanguage === 'en') {
-        return 'WOS can coordinate transport when a suitable service is available. Before I check the actual service, please tell me the pickup point, drop-off point, date and time, number of travelers, and whether you need one-way or round-trip service.';
+        return journeyState.origin
+          ? 'Perfect 😊 I have the pickup point. WOS Admin will coordinate the remaining transport details with you.'
+          : 'Sure 😊 What is the pickup point? WOS Admin will coordinate the remaining transport details with you.';
       }
-      return 'ได้ค่ะ 😊 ใบเฟิร์นขอเก็บข้อมูลรถเบื้องต้นก่อนนะคะ: จุดรับ จุดส่ง วัน/เวลา จำนวนคน และต้องการรถแบบไหน ถ้าเป็นเที่ยวเดียวหรือเหมารายวันก็บอกได้เลยค่ะ เดี๋ยวใบเฟิร์นสรุปให้ทีม WOS ตรวจสอบต่อ';
+      return journeyState.origin
+        ? 'เรียบร้อยค่ะ 😊 ใบเฟิร์นรับจุดรับไว้แล้วนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถรับส่งต่อให้ค่ะ'
+        : 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถรับส่งต่อให้ค่ะ';
     }
 
     // Hotels follow the same first-phase concierge pattern: collect the
     // requirement first and let WOS Admin confirm live availability/final
     // pricing. Only run the availability tool when exact dates are supplied.
     if (isHotelRequirementQuestion(userMessage) && !/\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(userMessage)) {
+      if (journeyState.hotelNeeded === true) {
+        if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບເລື່ອງໂຮງແຮມໄວ້ແລ້ວ ທີມ WOS ຈະປະສານຕໍ່ໃຫ້ຄ່ະ';
+        if (customerLanguage === 'en') return 'Got it 😊 I have noted the hotel request. The WOS team will coordinate the hotel details with you.';
+        return 'รับทราบค่ะ 😊 ใบเฟิร์นรับเรื่องโรงแรมไว้แล้วนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดต่อให้ค่ะ';
+      }
       if (customerLanguage === 'lo') {
-        return 'ໄດ້ຄ່ະ 😊 ສຳລັບທີ່ພັກ ໃບເຟີນຂໍຂໍ້ມູນເບື້ອງຕົ້ນ: ວັນເຂົ້າ-ອອກ ຫຼື ຈຳນວນຄືນ, ຈຳນວນຄົນ, ຕ້ອງການຫ້ອງ/ຕຽງແບບໃດ ແລະງົບປະມານໂດຍປະມານຄ່ະ';
+        return 'ສົນໃຈໂຮງແຮມເພີ່ມບໍຄ່ະ? ຖ້າຕ້ອງການ ໃບເຟີນຈະຮັບເລື່ອງໄວ້ໃຫ້ທີມ WOS ປະສານຕໍ່ຄ່ະ';
       }
       if (customerLanguage === 'en') {
-        return 'Sure 😊 For a hotel, Fern will collect the basics first: stay dates or number of nights, number of guests, room/bed type, and your approximate budget. WOS Admin can then confirm the current room availability and final price.';
+        return 'Sure 😊 Just let me know if you would like a hotel too, and I will pass the request to the WOS team.';
       }
-      return 'ได้ค่ะ 😊 เรื่องโรงแรม ใบเฟิร์นขอเก็บข้อมูลเบื้องต้นก่อนนะคะ: วันเข้าพัก-ออกหรือจำนวนคืน จำนวนคน ต้องการห้อง/เตียงแบบไหน และงบประมาณคร่าว ๆ เท่าไร เดี๋ยวให้ทีม WOS ตรวจสอบห้องว่างและราคาปัจจุบันต่อค่ะ';
+      return 'สนใจโรงแรมด้วยไหมคะ? ถ้าต้องการ ใบเฟิร์นจะรับเรื่องไว้ให้ทีม WOS ประสานต่อค่ะ';
     }
 
     // A booking request is a journey step, not a reason to refuse the

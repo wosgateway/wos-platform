@@ -39,6 +39,13 @@ export function extractContact(sender: ChatwootSender | undefined, text: string)
 
 export function isJourneyReady(state: WosJourneyState): boolean {
   if (!state.needs.length) return false;
+
+  // A selected health/treatment program has its own booking flow.
+  // Do not force trip fields such as destination, travelers, or budget.
+  if (state.selectedProgram) {
+    return Boolean(state.serviceDate && state.serviceTime);
+  }
+
   if (state.activeNeed === 'trip' || state.needs.includes('trip')) {
     return Boolean(
       state.destination &&
@@ -47,8 +54,8 @@ export function isJourneyReady(state: WosJourneyState): boolean {
       (state.budgetThb || state.budgetUnlimited)
     );
   }
-  return Boolean(state.destination || state.selectedProgram) &&
-    Boolean(state.travelers || state.serviceDate);
+
+  return Boolean(state.destination && state.serviceDate && state.travelers);
 }
 
 export function buildBookingReviewPrompt(language: WosLanguage, state: WosJourneyState, contactName?: string): string {
@@ -77,6 +84,57 @@ export function buildBookingReviewPrompt(language: WosLanguage, state: WosJourne
     return `Let me summarize the booking request first 😊\n\n${lines.map((x) => `• ${x}`).join('\n')}\n\nIf everything is correct, reply “confirm”. After confirmation, Fern will coordinate with the WOS team to proceed with the booking, and the team will contact you again to confirm the final details.`;
   }
   return `ขอสรุปข้อมูลก่อนดำเนินการจองนะคะ 😊\n\n${lines.map((x) => `• ${x}`).join('\n')}\n\nถ้าข้อมูลถูกต้อง ตอบ “ยืนยัน” ได้เลยค่ะ หลังจากยืนยัน ใบเฟิร์นจะแจ้งประสานทีม WOS ให้ดำเนินการจองต่อ และทีมงานจะติดต่อกลับเพื่อยืนยันรายละเอียดอีกครั้งค่ะ`;
+}
+
+export function buildConciergeStagePrompt(language: WosLanguage, state: WosJourneyState): string {
+  const coreSummary = [state.selectedProgram ? `• โปรแกรม: ${state.selectedProgram}` : '', state.destination ? `• สถานที่: ${state.destination}` : '', state.serviceDate ? `• วันที่: ${state.serviceDate}` : '', state.serviceTime ? `• เวลา: ${state.serviceTime}` : '', state.customerName ? `• ชื่อผู้จอง: ${state.customerName}` : ''].filter(Boolean).join('\n');
+  if (state.transportNeeded === undefined) {
+    return language === 'en'
+      ? `Here’s the booking summary so far 😊\n\n${coreSummary}\n\nWould you like transport as well?`
+      : language === 'lo'
+        ? `ໃບເຟີນສະຫຼຸບຂໍ້ມູນກ່ອນນະຄ່ະ 😊\n\n${coreSummary}\n\nຕ້ອງການລົດຮັບສົ່ງເພີ່ມບໍຄ່ະ?`
+        : `ใบเฟิร์นขอสรุปข้อมูลที่มีตอนนี้ก่อนนะคะ 😊\n\n${coreSummary}\n\nสนใจรถรับส่งด้วยไหมคะ?`;
+  }
+  if (state.transportNeeded && !state.transportOrigin) {
+    return language === 'en'
+      ? 'Got it 😊 What is the pickup point? WOS Admin will coordinate the remaining transport details with you.'
+      : language === 'lo'
+        ? 'ຮັບຊາບຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດຮັບສົ່ງຕໍ່ໃຫ້ຄ່ະ'
+        : 'รับทราบค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถรับส่งต่อให้ค่ะ';
+  }
+  if (state.transportNeeded) {
+    return language === 'en'
+      ? 'Perfect 😊 I have noted the transport request. Would you like a hotel as well?'
+      : language === 'lo'
+        ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບເລື່ອງລົດຮັບສົ່ງໄວ້ແລ້ວຄ່ະ ສົນໃຈໃຫ້ WOS ຊ່ວຍເລື່ອງໂຮງແຮມເພີ່ມບໍຄ່ະ?'
+        : 'เรียบร้อยค่ะ 😊 ใบเฟิร์นรับเรื่องรถรับส่งไว้แล้วนะคะ สนใจให้ WOS ช่วยเรื่องโรงแรมเพิ่มไหมคะ?';
+  }
+  if (state.hotelNeeded === undefined) {
+    return language === 'en'
+      ? 'Would you like a hotel as well? If yes, just let me know and I will pass the request to the WOS team.'
+      : language === 'lo'
+        ? 'ສົນໃຈໂຮງແຮມເພີ່ມບໍຄ່ະ? ຖ້າຕ້ອງການ ໃບເຟີນຈະຮັບເລື່ອງໄວ້ໃຫ້ທີມ WOS ປະສານຕໍ່ຄ່ະ'
+        : 'สนใจโรงแรมเพิ่มไหมคะ? ถ้าต้องการ ใบเฟิร์นจะรับเรื่องไว้ให้ทีม WOS ประสานต่อค่ะ';
+  }
+  // All optional add-ons are captured. Move directly to explicit handoff confirmation.
+  if (state.hotelNeeded !== undefined) {
+    return buildHandoffConfirmation(language);
+  }
+  return buildHandoffConfirmation(language);
+}
+
+export function buildConciergeReviewPrompt(language: WosLanguage, state: WosJourneyState, contactName?: string): string {
+  const summary = [
+    state.selectedProgram ? `• โปรแกรม: ${state.selectedProgram}` : '',
+    state.selectedProvider ? `• ผู้ให้บริการ: ${state.selectedProvider}` : '',
+    state.destination ? `• สถานที่: ${state.destination}` : '',
+    state.serviceDate ? `• วันที่: ${state.serviceDate}` : '',
+    state.serviceTime ? `• เวลา: ${state.serviceTime}` : '',
+    contactName || state.customerName ? `• ชื่อผู้จอง: ${contactName || state.customerName}` : '',
+  ].filter(Boolean).join('\n');
+  if (language === 'en') return `Here’s what I have so far 😊\n\n${summary}\n\nBefore we confirm, would you also like transport or a hotel?\n🚐 Transport: if yes, tell me the pickup date and time.\n🏨 Hotel: if yes, tell me how many travelers, how many rooms, and double or twin beds.\n\nIf you do not need either, just reply “no”.`;
+  if (language === 'lo') return `ໃບເຟີນຂໍສະຫຼຸບຂໍ້ມູນກ່ອນນະຄ່ະ 😊\n\n${summary}\n\nກ່ອນຢືນຢັນ ຕ້ອງການລົດຮັບສົ່ງ ຫຼື ໂຮງແຮມເພີ່ມບໍ?\n🚐 ຖ້າຕ້ອງການລົດ ແຈ້ງວັນທີ່ ແລະເວລາຮັບ.\n🏨 ຖ້າຕ້ອງການໂຮງແຮມ ແຈ້ງຈຳນວນຄົນ, ຈຳນວນຫ້ອງ ແລະ ຕຽງຄູ່ ຫຼື ຕຽງດ່ຽວ.\n\nຖ້າບໍ່ຕ້ອງການທັງສອງ ຕອບ “ບໍ່ຕ້ອງການ” ໄດ້ເລີຍ.`;
+  return `ใบเฟิร์นขอสรุปข้อมูลที่มีตอนนี้ก่อนนะคะ 😊\n\n${summary}\n\nก่อนยืนยัน ใบเฟิร์นขอเช็กเพิ่มเติมให้ครบอีกนิดนะคะ\n🚐 **รถรับส่ง** สนใจให้ช่วยจัดรถรับส่งไหมคะ? ถ้าสนใจ แจ้งวันที่และเวลาที่ต้องการให้ไปรับได้เลยค่ะ\n🏨 **โรงแรม** สนใจให้ช่วยดูที่พักด้วยไหมคะ? ถ้าสนใจ แจ้งจำนวนผู้เดินทาง จำนวนห้อง และต้องการเตียงเดี่ยวหรือเตียงคู่ได้เลยค่ะ\n\nถ้าไม่ต้องการทั้งรถและโรงแรม ตอบ “ไม่ต้องการ” ได้เลยค่ะ`;
 }
 
 export function buildHandoffConfirmation(language: WosLanguage): string {
@@ -109,17 +167,17 @@ export function buildServiceOptionsPrompt(language: WosLanguage, state: WosJourn
   const askHotel = travelContext && !transportMissing && hotelMissing;
 
   if (language === 'en') {
-    if (askTransport) return '🚐 Would you like transport from/to your appointment — one-way or daily?';
-    if (askHotel) return '🏨 Would you like us to look for a room as well — double or twin, and about what budget per night?';
+    if (askTransport) return '🚗 Would you like transport as well?';
+    if (askHotel) return '🏨 Would you like a hotel as well?';
     return 'Is there anything else you would like Fern to help with?';
   }
   if (language === 'lo') {
-    if (askTransport) return '🚐 ຕ້ອງການລົດຮັບສົ່ງໄປ/ກັບຈາກບ່ອນນັດບໍ? ໄປທ່ຽວດຽວ ຫຼື ເໝົາລາຍວັນ?';
-    if (askHotel) return '🏨 ຕ້ອງການໃຫ້ໃບເຟີນຊ່ວຍຫາຫ້ອງພັກໃຫ້ນຳບໍ? ຕຽງຄູ່ ຫຼື ຕຽງດ່ຽວ ແລະ ງົບປະມານປະມານເທົ່າໃດຕໍ່ຄືນ?';
+    if (askTransport) return '🚗 ຕ້ອງການລົດຮັບສົ່ງເພີ່ມບໍຄ່ະ?';
+    if (askHotel) return '🏨 ສົນໃຈໂຮງແຮມເພີ່ມບໍຄ່ະ?';
     return 'ມີຫຍັງອື່ນໃຫ້ໃບເຟີນຊ່ວຍອີກບໍ?';
   }
-  if (askTransport) return '🚐 ต้องการให้ใบเฟิร์นช่วยดูรถรับส่งไป/กลับจากจุดนัดหมายไหมคะ — เที่ยวเดียว หรือเหมารายวัน?';
-  if (askHotel) return '🏨 ต้องการให้ใบเฟิร์นช่วยดูห้องพักให้ด้วยไหมคะ — เตียงคู่หรือเตียงเดี่ยว และงบประมาณประมาณเท่าไรต่อคืน?';
+  if (askTransport) return '🚗 สนใจรถรับส่งด้วยไหมคะ?';
+  if (askHotel) return '🏨 สนใจโรงแรมด้วยไหมคะ?';
   return 'มีอะไรให้ใบเฟิร์นช่วยเพิ่มเติมอีกไหมคะ?';
 }
 

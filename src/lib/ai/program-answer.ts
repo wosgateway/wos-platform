@@ -72,6 +72,21 @@ function duration(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string | nu
   return null;
 }
 
+function compactDescribe(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string {
+  const title = p.title?.trim() ?? '';
+  const price = typeof p.special_price === 'number' && p.special_price > 0
+    ? p.special_price
+    : typeof p.original_price === 'number' && p.original_price > 0
+      ? p.original_price
+      : null;
+  if (price === null) return title;
+  return language === 'en'
+    ? `${title} — ${baht(price)} THB`
+    : language === 'lo'
+      ? `${title} — ${baht(price)} ບາດ`
+      : `${title} — ${baht(price)} บาท`;
+}
+
 function describe(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string {
   const lines: string[] = [];
   const thai = language === 'th';
@@ -127,7 +142,11 @@ export function buildProgramAnswer(
   const lao = preferredLanguage ? preferredLanguage === 'lo' : usesLao(userMessage, languageContext);
   const thai = preferredLanguage ? preferredLanguage === 'th' : usesThai(userMessage, languageContext);
   const language: 'th' | 'lo' | 'en' = preferredLanguage ?? (lao ? 'lo' : thai ? 'th' : 'en');
-  const body = list.map((p, i) => `${i + 1}. ${describe(p, language)}`).join('\n\n');
+  // Overview lists stay compact: title + price only. Details are shown when
+  // the customer selects a specific program.
+  const body = list
+    .map((p, i) => `${i + 1}. ${list.length > 1 ? compactDescribe(p, language) : describe(p, language)}`)
+    .join('\n\n');
 
   if (lao) {
     const style = [...userMessage].reduce((sum, char) => sum + char.codePointAt(0)!, 0) % 4;
@@ -179,7 +198,7 @@ export function buildProgramAnswer(
   const nextStep =
     list.length === 1
       ? 'If you like, I can walk you through the details of this program.'
-      : 'If one of these catches your eye, tell me which one and I can walk you through the details.';
+      : 'สนใจรายการไหน บอกเลขหรือชื่อโปรแกรมได้เลยนะคะ ใบเฟิร์นจะขยายรายละเอียดให้ค่ะ';
   return `${intro}\n\n${body}\n\n${nextStep}`;
 }
 
