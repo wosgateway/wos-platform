@@ -120,20 +120,16 @@ const cases = [
     id: "T1b_semantic_synonym_query",
     label: "Semantic synonym query (category word, no exact catalog term): known relevance gap, not gated",
     query: "มีโปรแกรมสุขภาพในอุดรธานีไหม",
-    kind: "review",
+    kind: "hard",
     check: (r) => {
       if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
-      // Root cause (found in src/lib/ai/programs.ts): "สุขภาพ" alone is in
-      // GENERIC_TERMS, so buildSearchCandidates() drops it as soon as the
-      // full raw sentence exists as a "specific" candidate -- and that raw
-      // sentence never literally matches any title/description, so this
-      // legitimately returns not-found today. Left as REVIEW (not gated)
-      // until intended semantic-synonym behavior is decided -- gating on
-      // this would hide the real bug instead of tracking it.
       if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
-        return { pass: null, reason: "known gap: standalone category term (\"สุขภาพ\") does not semantically match \"ตรวจสุขภาพ\" yet" };
+        return { pass: false, reason: "health-category query returned not-found instead of the verified health catalog" };
       }
-      return { pass: null, reason: "eyeball: semantic match succeeded -- if this becomes reliably true, promote T1b to hard" };
+      if (!containsAny(r.replyText, ["ตรวจสุขภาพ", "DNA Wellness Center"])) {
+        return { pass: false, reason: "health-category query did not return the verified Udon health-check program" };
+      }
+      return { pass: true };
     },
   },
   {
@@ -234,6 +230,22 @@ const cases = [
     },
   },
   {
+    id: "T1i_generic_program_discovery",
+    label: "Generic program discovery must not become a selected-program booking/name flow",
+    query: "ผมสนใจมีโปรแกรมอะไรแนะนำมั้ย",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ขอชื่อสำหรับ|what name should I use|ชื่อสำหรับลงข้อมูล|booking form|generic booking/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic program discovery was incorrectly treated as a selected program" };
+      }
+      if (!/โปรแกรม|จังหวัด|WOS/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic program discovery did not continue into catalog discovery" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T2_hotel_availability_read",
     label: "Hotel availability: exact dates + Udon must return only verified available hotel data",
     query: "มีโรงแรมในอุดรธานีว่างไหม เช็คอิน 2026-09-29 เช็คเอาต์ 2026-10-01 1 ห้อง",
@@ -282,18 +294,16 @@ const cases = [
     id: "T3_province_scoped_query",
     label: "Province-scoped query: results should be filtered to that province",
     query: "มีโปรแกรมอะไรในอุดรธานีบ้าง",
-    kind: "review",
+    kind: "hard",
     check: (r) => {
       if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
-      // Root cause (found in src/lib/ai/programs.ts, searchPrograms()): a
-      // location-only candidate is pushed as generic:false, but
-      // passesRelevanceGate() for a non-generic candidate only checks
-      // title/description/partner name -- never partner.province -- so a
-      // bare province query can legitimately come back empty even when
-      // matching packages exist. Not auto-failed here since this needs a
-      // decision on the intended fix (e.g. gate should special-case a
-      // province-only candidate to trust the earlier province filter).
-      return { pass: null, reason: "eyeball: do all mentioned items look Udon-Thani-scoped? (known gap: bare province query may return empty even with real matches -- see passesRelevanceGate)" };
+      if (UNRELATED_CATALOG_MARKERS.some((m) => r.replyText.includes(m))) {
+        return { pass: false, reason: "province-scoped program query leaked unrelated hotel/other inventory" };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|INDY CLINICS|DNA Wellness Center/iu.test(r.replyText)) {
+        return { pass: false, reason: "province-scoped response did not return a verified Udon health program" };
+      }
+      return { pass: true };
     },
   },
   {

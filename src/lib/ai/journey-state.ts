@@ -230,6 +230,12 @@ function findUnlimitedBudget(texts: string[]): boolean {
   return false;
 }
 
+function isGenericProgramRequest(message: string): boolean {
+  const text = message.trim();
+  return /(?:มี|ขอ|อยาก|สนใจ|แนะนำ).*?(?:โปรแกรม|บริการ).*?(?:อะไร|ไหน|บ้าง|แนะนำ)/iu.test(text)
+    || /(?:โปรแกรม|บริการ)\s*(?:อะไร|ไหน|อะไรบ้าง|ไหนบ้าง)/iu.test(text);
+}
+
 function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = ''): { title: string; provider?: string } | undefined {
   const optionMessages = history.filter((m) => m.role === 'assistant');
   const latest = [...optionMessages].reverse().find((message) => /\d/.test(message.content));
@@ -291,6 +297,11 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
       if (namedOption) return { title: namedOption.title, provider: namedOption.provider };
     }
   }
+
+  // Broad catalog requests are discovery, not program selection. This guard
+  // prevents phrases like "ผมสนใจมีโปรแกรมอะไรแนะนำมั้ย" from becoming
+  // selectedProgram = the entire question.
+  if (isGenericProgramRequest(currentMessage)) return undefined;
 
   const named = currentMessage.match(/(?:สนใจ|เลือก|เอา|ต้องการ|interested in|choose)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
   if (named?.[1] && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(named[1].trim())) {
