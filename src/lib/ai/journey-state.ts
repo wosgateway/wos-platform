@@ -378,13 +378,34 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
       }
     }
   }
-  const customerName = explicitCustomerName ?? bareCustomerName;
+  const likelyBareCustomerName = bareCustomerName && !/(?:จอง|booking|book|reserve|ตรวจ|โปรแกรม|บริการ|สนใจ|ต้องการ|เอา|รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้อง|เวียงจันทน์|อุดร|หนองคาย|ขอนแก่น|travel|trip|transport|hotel|ຈອງ|ກວດ|ໂຮງແຮມ|ລົດ|ສົນໃຈ|ຕ້ອງການ)/iu.test(bareCustomerName) ? bareCustomerName : undefined;
+  const customerName = explicitCustomerName ?? likelyBareCustomerName;
   const destination = findDestination(allTexts) ?? findProvince(allTexts);
-  const lastUserMessageIsBareLocation = LOCATION_ALIASES[currentMessage.trim()] !== undefined;
-  const assistantAskedPickup = /(?:ขอจุดรับ|จุดรับ|รับที่|รับจาก|pickup|ຈຸດຮັບ|ຮັບຈາກ)/iu.test(lastAssistantMessage);
-  const inferredBarePickup = lastUserMessageIsBareLocation && assistantAskedPickup
+  const normalizedCurrent = currentMessage.trim().normalize('NFC');
+  const barePickupAliases = new Set([
+    '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19',
+    '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19\u0E17\u0E19\u0E4C',
+    '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19\u0E17\u0E19',
+    'Vientiane', 'vientiane',
+  ]);
+  const lastUserMessageIsBareLocation = LOCATION_ALIASES[currentMessage.trim()] !== undefined || barePickupAliases.has(normalizedCurrent);
+  // Unambiguous pickup aliases are captured directly once the customer answers the pickup question.
+  const historicalBarePickup = (() => {
+    for (let i = effectiveHistory.length - 2; i >= 0; i--) {
+      const assistant = effectiveHistory[i];
+      const user = effectiveHistory[i + 1];
+      if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
+      if (!/(?:จุดรับ|รับที่|รับจาก|pickup|pick-up|ຈຸດຮັບ)/iu.test(assistant.content)) continue;
+      const value = user.content.trim().normalize('NFC');
+      if (LOCATION_ALIASES[value] !== undefined || barePickupAliases.has(value)) {
+        return normalizeLocation(value);
+      }
+    }
+    return undefined;
+  })();
+  const inferredBarePickup = lastUserMessageIsBareLocation
     ? normalizeLocation(currentMessage)
-    : undefined;
+    : historicalBarePickup;
   const activeNeed = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|รับส่ง|transport|transfer|shuttle)/iu.test(currentMessage)
     ? 'transport'
     : /(?:ปวดเข่า|ตรวจเข่า|เข่า|รักษา|หาหมอ|พบแพทย์|treatment|doctor|surgery)/iu.test(currentMessage)
@@ -402,8 +423,32 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0EA5\u0EBB\u0E94\u0EAE\u0EB1\u0E9A\u0EAA\u0EBB\u0EC8\u0E87|\u0EA5\u0EBB\u0E94\u0EAA\u0EBB\u0EC8\u0E87|\u0E96\u0EB7\u0E81\u0EAA\u0EC8\u0E87)/iu.test(lastAssistantForAddon);
   const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
+  const assistantAskedHotel = /(?:\u0E2A\u0E19\u0E43\u0E08.*(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|hotel)|(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|hotel).*?(?:\u0E2A\u0E19\u0E43\u0E08|want|need|interested)|\u0E2A\u0E19\u0E43\u0E08.*\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01)/iu.test(lastAssistantForAddon);
+  const shortHotelAffirmation = shortAffirmative && assistantAskedHotel;
   const derivedTransportNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:รถ|รถรับส่ง)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:รถ|รถรับส่ง)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
   const derivedHotelNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:don't|do not|no).*?(?:hotel|room)/iu);
+
+  // Short affirmations are state transitions. Preserve the affirmative fact
+  // on the following turn (for example, the pickup-point message), because
+  // derivedTransportNeeded only sees user text and the word "สนใจ" alone does
+  // not contain the transport noun.
+  let historicalTransportNeeded: boolean | undefined;
+  let historicalHotelNeeded: boolean | undefined;
+  for (let i = effectiveHistory.length - 2; i >= 0; i--) {
+    const assistant = effectiveHistory[i];
+    const user = effectiveHistory[i + 1];
+    if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
+    const userText = user.content.trim();
+    if (/^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userText)) {
+      if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0E23\u0E16|\u0E23\u0E31\u0E1A\u0E2A\u0E48\u0E07)/iu.test(assistant.content)) {
+        historicalTransportNeeded = true;
+      }
+      if (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|accommodation|\u0E42\u0EAE\u0E07\u0E41\u0EAE\u0E21|\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E81)/iu.test(assistant.content)) {
+        historicalHotelNeeded = true;
+      }
+    }
+  }
+
   return {
     destination,
     // A bare location is a valid pickup point when Fern just asked for it.
@@ -433,8 +478,8 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     transportDestination: findDestination(allTexts),
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),
     hotelRooms: findRooms(allTexts),
-    transportNeeded: shortTransportAffirmation ? true : derivedTransportNeeded,
-    hotelNeeded: derivedHotelNeeded,
+    transportNeeded: shortTransportAffirmation ? true : derivedTransportNeeded ?? historicalTransportNeeded,
+    hotelNeeded: shortHotelAffirmation ? true : derivedHotelNeeded ?? historicalHotelNeeded,
   };
 }
 

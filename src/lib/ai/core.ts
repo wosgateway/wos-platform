@@ -33,7 +33,7 @@ import {
   type WosLanguage,
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
-import { deriveWosJourneyState, formatJourneyState } from './journey-state';
+import { deriveWosJourneyState, formatJourneyState, getWosConciergeStage } from './journey-state';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -928,8 +928,27 @@ export async function runWosAI(
 
     const recentOptions = extractRecentConversationOptions(cleanHistory);
     const languageHistory = cleanHistory.filter((m) => m.role === 'user').map((m) => m.content);
-    const customerLanguage = detectWosLanguage(userMessage, languageHistory);
+    const lastUserLanguageAnchor = languageHistory.at(-1) ?? '';
+    const lastAssistantForLanguage = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+    const looksLikeNameReply = /^(?:[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60})$/u.test(userMessage.trim())
+      && /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu.test(lastAssistantForLanguage);
+    const customerLanguage = looksLikeNameReply
+      ? detectWosLanguage(lastUserLanguageAnchor, languageHistory)
+      : detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
+    const normalizedPickupTurn = userMessage.trim().normalize('NFC');
+    const isKnownBarePickupTurn = new Set([
+      '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19',
+      '\u0E40\u0E27\u0E22\u0E07\u0E08\u0E31\u0E19\u0E17\u0E19\u0E4C',
+      '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19\u0E17\u0E19',
+      'Vientiane', 'vientiane',
+    ]).has(normalizedPickupTurn);
+    // Deterministic concierge progression: pickup captured -> ask hotel, never re-ask transport.
+    if (isKnownBarePickupTurn && journeyState.transportNeeded === true && journeyState.transportOrigin && journeyState.hotelNeeded === undefined) {
+      if (customerLanguage === 'en') return 'Perfect 😊 I have the pickup point. Would you like a hotel too?';
+      if (customerLanguage === 'lo') return 'ຮັບຊາບແລ້ວ 😊 ຂ້ອຍມີຈຸດຮັບແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍ?';
+      return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
+    }
 
     // Explicit reset commands are control messages, not new questions. Return
     // immediately so stale history cannot be echoed by the LLM before the
@@ -969,6 +988,33 @@ export async function runWosAI(
       if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
       if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
       return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
+    }
+
+    // The selected-program concierge is state-driven. Once the program and
+    // customer name are known, never fall back to catalog/model selection:
+    // move through transport -> pickup -> hotel -> handoff exactly once.
+    if (journeyState.selectedProgram && journeyState.customerName) {
+      const conciergeStage = getWosConciergeStage(journeyState);
+      if (conciergeStage === 'ask_transport_interest') {
+        if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈລົດຮັບສົ່ງນຳບໍຄ່ະ?';
+        if (customerLanguage === 'en') return 'Got it 😊 Would you like transport as well?';
+        return 'รับทราบค่ะ 😊 สนใจรถรับส่งด้วยไหมคะ?';
+      }
+      if (conciergeStage === 'collecting_transport') {
+        if (customerLanguage === 'lo') return 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ';
+        if (customerLanguage === 'en') return 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.';
+        return 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
+      }
+      if (conciergeStage === 'ask_hotel_interest') {
+        if (customerLanguage === 'lo') return 'ຮັບຊາບແລ້ວ 😊 ໃບເຟີນມີຈຸດຮັບແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍຄ່ະ?';
+        if (customerLanguage === 'en') return 'Perfect 😊 I have the pickup point. Would you like a hotel too?';
+        return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
+      }
+      if (conciergeStage === 'awaiting_confirmation' && journeyState.hotelNeeded === true) {
+        if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບເລື່ອງໂຮງແຮມໄວ້ແລ້ວ ທີມ WOS ຈະປະສານຕໍ່ໃຫ້ຄ່ະ';
+        if (customerLanguage === 'en') return 'Got it 😊 I have noted the hotel request. The WOS team will coordinate the hotel details with you.';
+        return 'รับทราบค่ะ 😊 ใบเฟิร์นรับเรื่องโรงแรมไว้แล้วนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดต่อให้ค่ะ';
+      }
     }
 
     // Program-overview requests are explicit topic switches. Resolve them

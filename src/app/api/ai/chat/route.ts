@@ -137,7 +137,7 @@ export async function POST(request: Request) {
             role: item.role as 'user' | 'assistant',
             content: String(item.content).slice(0, MAX_MESSAGE_LENGTH),
           }))
-          .slice(-10)
+          .slice(-20)
       : [];
 
     const answer = await runWosAI(message.trim(), history);

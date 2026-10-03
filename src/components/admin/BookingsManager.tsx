@@ -154,6 +154,12 @@ type LocationType =
   | 'mukdahan_bridge'
   | 'chong_mek'
   | 'udon_airport'
+  | 'vientiane'
+  | 'vangvieng'
+  | 'luang_prabang'
+  | 'thakhek'
+  | 'savannakhet'
+  | 'pakse'
   | 'hotel'
   | 'other'
   | 'per_itinerary';
@@ -165,6 +171,12 @@ const LOCATION_OPTIONS: { value: Exclude<LocationType, ''>; label: string }[] = 
   { value: 'mukdahan_bridge', label: '🛂 ด่านมุกดาหาร (สะพานมิตรภาพไทย-ลาว 2)' },
   { value: 'chong_mek', label: '🛂 ด่านช่องเม็ก (อุบลราชธานี)' },
   { value: 'udon_airport', label: '✈️ สนามบินอุดรธานี' },
+  { value: 'vientiane', label: '🇱🇦 นครหลวงเวียงจันทน์ (ลาว)' },
+  { value: 'vangvieng', label: '🇱🇦 วังเวียง (ลาว)' },
+  { value: 'luang_prabang', label: '🇱🇦 หลวงพระบาง (ลาว)' },
+  { value: 'thakhek', label: '🇱🇦 ท่าแขก (ลาว)' },
+  { value: 'savannakhet', label: '🇱🇦 สะหวันนะเขต (ลาว)' },
+  { value: 'pakse', label: '🇱🇦 ปากเซ (ลาว)' },
   { value: 'hotel', label: '🏨 โรงแรม (ระบุชื่อ)' },
   { value: 'other', label: '📍 อื่นๆ (ระบุเอง)' },
 ];

@@ -271,7 +271,7 @@ export async function POST(req: NextRequest) {
 
 // จำนวนข้อความย้อนหลัง (ไม่รวมข้อความปัจจุบัน) ที่ดึงมาใส่ context — 10
 // (~5 รอบสนทนา) เท่ากับที่เวอร์ชัน LiteLLM เดิมใช้
-const HISTORY_MESSAGE_LIMIT = 10;
+const HISTORY_MESSAGE_LIMIT = 20;
 
 // ดึงข้อความย้อนหลังของ conversation นี้จาก Chatwoot มาส่งให้ AI Core
 // คืนค่า [] ถ้าดึงไม่ได้ (ไม่ throw — ไม่อยากให้ history หายไปกระทบการตอบ
