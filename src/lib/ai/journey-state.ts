@@ -361,7 +361,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   const noAddons = /^(?:ไม่|ไม่ต้องการ|ไม่เอา|ไม่ต้องการทั้งสอง|ไม่เอาทั้งสอง|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim());
   // Short affirmative replies inherit the optional-service question Fern just asked.
   const lastAssistantForAddon = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-  const shortAffirmative = /^(?:\u0EAA\u0EBB\u0E99\u0EC3\u0E88|\u0E95\u0EC9\u0EAD\u0E87\u0E81\u0EB2\u0E99|\u0E95\u0EC9\u0EAD\u0E87\u0E81\u0EB2\u0EAE|yes|y|ok|okay|interested)$/iu.test(currentMessage.trim());
+  const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0EA5\u0EBB\u0E94\u0EAE\u0EB1\u0E9A\u0EAA\u0EBB\u0EC8\u0E87|\u0EA5\u0EBB\u0E94\u0EAA\u0EBB\u0EC8\u0E87|\u0E96\u0EB7\u0E81\u0EAA\u0EC8\u0E87)/iu.test(lastAssistantForAddon);
   const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
   const derivedTransportNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:รถ|รถรับส่ง)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:รถ|รถรับส่ง)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
