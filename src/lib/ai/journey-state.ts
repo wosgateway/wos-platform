@@ -406,7 +406,9 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   const derivedHotelNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:don't|do not|no).*?(?:hotel|room)/iu);
   return {
     destination,
-    origin: findOrigin(allTexts),
+    // A bare location is a valid pickup point when Fern just asked for it.
+    // Keep it in the shared origin field too so every concierge guard sees the captured fact.
+    origin: findOrigin(allTexts) ?? inferredBarePickup,
     budgetThb: findBudget(allTexts),
     travelers: findTravelers(allTexts),
     serviceDate: findDate(allTexts),

@@ -1090,10 +1090,10 @@ export async function runWosAI(
     const buildTransportChecklist = (): string => {
       if (journeyState.transportOrigin) {
         return customerLanguage === 'en'
-          ? 'Got it 😊 I have the pickup point. The WOS team will coordinate the remaining transport details with you.'
+          ? 'Got it 😊 I have the pickup point. Would you like a hotel too?'
           : customerLanguage === 'lo'
-            ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນມີຈຸດຮັບແລ້ວ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ'
-            : 'รับทราบค่ะ 😊 ใบเฟิร์นมีจุดรับแล้ว เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
+            ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນມີຈຸດຮັບແລ້ວ ສົນໃຈໂຮງແຮມເພີ່ມບໍຄ່ະ?'
+            : 'รับทราบค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
       }
       return customerLanguage === 'en'
         ? 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.'
@@ -1283,17 +1283,17 @@ export async function runWosAI(
 
     if (asksTransport) {
       if (customerLanguage === 'lo') {
-        return journeyState.origin
-          ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບຈຸດຮັບໄວ້ແລ້ວ ທີມ WOS ຈະປະສານລາຍລະອຽດຕໍ່ໃຫ້ຄ່ະ'
+        return journeyState.transportOrigin
+          ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບຈຸດຮັບໄວ້ແລ້ວ ສົນໃຈໂຮງແຮມເພີ່ມບໍຄ່ະ?'
           : 'ໄດ້ເລີຍຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດຮັບສົ່ງຕໍ່ໃຫ້ຄ່ະ';
       }
       if (customerLanguage === 'en') {
-        return journeyState.origin
-          ? 'Perfect 😊 I have the pickup point. WOS Admin will coordinate the remaining transport details with you.'
+        return journeyState.transportOrigin
+          ? 'Perfect 😊 I have the pickup point. Would you like a hotel too?'
           : 'Sure 😊 What is the pickup point? WOS Admin will coordinate the remaining transport details with you.';
       }
-      return journeyState.origin
-        ? 'เรียบร้อยค่ะ 😊 ใบเฟิร์นรับจุดรับไว้แล้วนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถรับส่งต่อให้ค่ะ'
+      return journeyState.transportOrigin
+        ? 'เรียบร้อยค่ะ 😊 ใบเฟิร์นรับจุดรับไว้แล้วนะคะ สนใจโรงแรมด้วยไหมคะ?'
         : 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถรับส่งต่อให้ค่ะ';
     }
 
