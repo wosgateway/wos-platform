@@ -52,7 +52,15 @@ async function processClaimedWebhook(args: {
     debugLog(`[timing] runWosAI took ${t1 - t0}ms, ok=${aiResult.ok}`);
 
     let replyText = aiResult.text;
-    const journey = deriveWosJourneyState(history, content);
+    const derivedJourney = deriveWosJourneyState(history, content);
+    const senderName = String(sender?.name ?? '').trim();
+    const usableSenderName = senderName && !/^(?:visitor|guest|user|customer|ผู้ใช้งาน|ลูกค้า)$/iu.test(senderName)
+      ? senderName
+      : undefined;
+    const journey = {
+      ...derivedJourney,
+      customerName: derivedJourney.customerName ?? usableSenderName,
+    };
     const language = detectHandoffLanguage(content);
     const contact = extractContact(sender, content);
     const journeyReady = isJourneyReady(journey);
