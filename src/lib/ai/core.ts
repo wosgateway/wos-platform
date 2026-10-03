@@ -285,18 +285,24 @@ function buildJourneyPlanningReply(userMessage: string, state: ReturnType<typeof
   return `เรียบร้อยค่ะ 😊 ใบเฟิร์นสรุปข้อมูลให้ก่อนนะคะ\n\n${known.map((x) => `• ${x}`).join('\n')}\n\nใบเฟิร์นจะส่งสรุปนี้ให้ทีม WOS เพื่อดำเนินการต่อ และทีมงานจะติดต่อกลับภายใน 2 ชั่วโมงเพื่อยืนยันรายละเอียดบริการ รถรับส่ง โรงแรม และค่าใช้จ่ายสุดท้ายค่ะ`;
 }
 
-function buildTripPlanningReply(userMessage: string, language: WosLanguage): string | null {
-  const asksTrip =
-    /(?:ไป|เที่ยว|พัก|ทริป).*(?:อุดร|อุดรธานี)|(?:อุดร|อุดรธานี).*(?:วัน|คืน|ทริป)|(?:trip|travel).*(?:udon|3 days|three days)|(?:ອຸດອນ).*(?:ມື້|ທ່ຽວ)/iu.test(userMessage);
+function buildTripPlanningReply(
+  userMessage: string,
+  state: ReturnType<typeof deriveWosJourneyState>,
+  language: WosLanguage
+): string | null {
+  const hasTripDuration = Boolean(state.tripDurationDays);
+  const asksTrip = hasTripDuration &&
+    /(?:ไป|เที่ยว|พัก|ทริป).*(?:อุดร|อุดรธานี)|(?:อุดร|อุดรธานี).*(?:วัน|คืน|ทริป)|(?:trip|travel).*(?:udon|days?|three days)|(?:ອຸດອນ).*(?:ມື້|ທ່ຽວ)/iu.test(userMessage);
   if (!asksTrip) return null;
 
+  const days = state.tripDurationDays ?? 1;
   if (language === 'lo') {
-    return 'ໄດ້ເລີຍຄ່ະ 😊 ຖ້າຈະໄປອຸດອນ 3 ມື້ ໃບເຟີນຊ່ວຍວາງແຜນໃຫ້ໄດ້ຄ່ະ. ກ່ອນຈັດແຜນ ຂໍວັນທີ່ຈະໄປ, ງົບປະມານຄ່າເດີນທາງ/ທີ່ພັກໂດຍປະມານ, ແລະສິ່ງທີ່ສົນໃຈ ເຊັ່ນ ສຸຂະພາບ, ອາຫານ, ທ່ຽວ ຫຼື ຊອບປິ້ງຄ່ະ';
+    return `ໄດ້ເລີຍຄ່ະ 😊 ຖ້າຈະໄປອຸດອນ ${days} ມື້ ໃບເຟີນຊ່ວຍວາງແຜນໃຫ້ໄດ້ຄ່ະ. ບອກວັນທີ່ຈະໄປ ແລະສິ່ງທີ່ສົນໃຈ ເຊັ່ນ ສຸຂະພາບ, ອາຫານ, ທ່ຽວ ຫຼື ຊອບປິ້ງໄດ້ເລີຍຄ່ະ`;
   }
   if (language === 'en') {
-    return 'Absolutely 😊 If you are going to Udon for 3 days, Fern can help shape the trip around your needs. Please tell me your travel dates, approximate budget for transport/accommodation, and what you care about most — health, food, sightseeing, shopping, or a mix.';
+    return `Absolutely 😊 If you are going to Udon for ${days} day${days === 1 ? '' : 's'}, Fern can help shape the trip around your needs. Please tell me your travel date and what you care about most — health, food, sightseeing, shopping, or a mix.`;
   }
-  return 'ได้เลยค่ะ 😊 ถ้าจะไปอุดร 3 วัน ใบเฟิร์นช่วยวางแผนให้เข้ากับสิ่งที่คุณต้องการได้ค่ะ ขอวันเดินทาง งบประมาณคร่าว ๆ สำหรับที่พัก/เดินทาง และสิ่งที่สนใจเป็นหลัก เช่น สุขภาพ อาหาร เที่ยว ช้อปปิ้ง หรืออยากผสมหลายอย่างค่ะ';
+  return `ได้เลยค่ะ 😊 ถ้าจะไปอุดร ${days} วัน ใบเฟิร์นช่วยวางแผนให้เข้ากับสิ่งที่คุณต้องการได้ค่ะ บอกวันเดินทางและสิ่งที่สนใจเป็นหลัก เช่น สุขภาพ อาหาร เที่ยว ช้อปปิ้ง หรืออยากผสมหลายอย่างได้เลยค่ะ`;
 }
 
 function shouldResetHistoricalProvince(message: string): boolean {
@@ -1124,7 +1130,7 @@ export async function runWosAI(
     // itinerary. We can collect the minimum planning inputs now and later
     // replace this with verified transport/hotel/restaurant/attraction
     // matching as the WOS partner network grows.
-    const tripPlanningReply = buildTripPlanningReply(userMessage, customerLanguage);
+    const tripPlanningReply = buildTripPlanningReply(userMessage, journeyState, customerLanguage);
     if (tripPlanningReply) return tripPlanningReply;
 
     const dictionaryHints = await getLanguageDictionaryHints(userMessage, customerLanguage);

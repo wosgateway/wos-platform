@@ -138,6 +138,26 @@ describe('handoff concierge', () => {
     expect(getWosConciergeStage(withTime)).toBe('ask_transport_interest');
   });
 
+  it('parses colloquial service times without repeating the booking prompt', () => {
+    const history: WosAIHistoryMessage[] = [
+      { role: 'user', content: 'มีโปรแกรมอะไรบ้าง' },
+      { role: 'assistant', content: '1. ตรวจเข่า - INDY CLINICS - อุดรธานี\n2. ตรวจสุขภาพ - DNA Wellness Center - อุดรธานี' },
+      { role: 'user', content: '2' },
+      { role: 'assistant', content: 'เลือกตรวจสุขภาพแล้วค่ะ ขอวันที่และเวลาที่สะดวกด้วยค่ะ' },
+    ];
+
+    const colloquial = deriveWosJourneyState(history, 'วันที่ 8 ตุลาคม เวลาสัก บ่าย2');
+    expect(colloquial.selectedProgram).toBe('ตรวจสุขภาพ');
+    expect(colloquial.serviceDate).toContain('8 ตุลาคม');
+    expect(colloquial.serviceTime).toBe('14:00');
+    expect(getWosConciergeStage(colloquial)).toBe('ask_transport_interest');
+
+    const numeric = deriveWosJourneyState(history, 'วันที่ 8 ตุลาคม เวลาสัก 14.00');
+    expect(numeric.selectedProgram).toBe('ตรวจสุขภาพ');
+    expect(numeric.serviceTime).toBe('14.00');
+    expect(getWosConciergeStage(numeric)).toBe('ask_transport_interest');
+  });
+
   it('persists a bare customer name across later concierge turns', () => {
     const history: WosAIHistoryMessage[] = [
       { role: 'user', content: '1' },

@@ -148,14 +148,14 @@ function findTripDuration(texts: string[]): number | undefined {
 
 function findServiceTime(texts: string[]): string | undefined {
   for (let i = texts.length - 1; i >= 0; i--) {
-    const match = texts[i].match(/(?:เวลา|ช่วงเวลา|ตอน)\s*(\d{1,2}(?:[:.]\d{2})?\s*(?:นาฬิกา|โมง|am|pm)?)/iu) ??
+    const match = texts[i].match(/(?:เวลา|ช่วงเวลา|ตอน)\s*(?:(?:สัก|ประมาณ|ราว(?:ๆ)?|ราวประมาณ)\s*)?(\d{1,2}(?:[:.]\d{2})?\s*(?:นาฬิกา|โมง|am|pm)?)/iu) ??
       texts[i].match(/\b(\d{1,2}:\d{2}\s*(?:am|pm)?)\b/iu) ??
       texts[i].match(/(?:^|\s)((?:\d{1,2})\s*(?:โมง|นาฬิกา))/iu);
     if (match?.[1]) return match[1].trim();
     if (/(?:บ่ายโมง|ช่วงบ่าย|ตอนบ่าย)/iu.test(texts[i])) return '13:00';
     if (/(?:เที่ยง|เที่ยงวัน)/iu.test(texts[i])) return '12:00';
-    if (/(?:บ่ายสอง|บ่าย 2|ช่วงบ่ายสอง)/iu.test(texts[i])) return '14:00';
-    if (/(?:บ่ายสาม|บ่าย 3|ช่วงบ่ายสาม)/iu.test(texts[i])) return '15:00';
+    if (/(?:บ่ายสอง|บ่าย\s*2|ช่วงบ่ายสอง|ช่วงบ่าย\s*2)/iu.test(texts[i])) return '14:00';
+    if (/(?:บ่ายสาม|บ่าย\s*3|ช่วงบ่ายสาม|ช่วงบ่าย\s*3)/iu.test(texts[i])) return '15:00';
     if (/(?:บ่ายสี่|บ่าย 4|สี่โมงเย็น)/iu.test(texts[i])) return '16:00';
     if (/(?:บ่ายห้า|บ่าย 5|ห้าโมงเย็น)/iu.test(texts[i])) return '17:00';
   }
