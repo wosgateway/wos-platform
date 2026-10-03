@@ -85,17 +85,34 @@ async function sendTelegram(message: string): Promise<void> {
     );
     return;
   }
-  const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ chat_id: chatId, text: message }),
-  });
-  if (!res.ok) {
-    // Telegram's error body (e.g. "chat not found", "bot was blocked
-    // by the user") is far more useful than the bare status code for
-    // diagnosing config issues — surface it in the log.
-    const body = await res.text().catch(() => '');
-    throw new Error(`Telegram sendMessage responded ${res.status}: ${body}`);
+  for (let attempt = 1; attempt <= 2; attempt += 1) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000);
+    try {
+      const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ chat_id: chatId, text: message }),
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => '');
+        throw new Error(`Telegram sendMessage responded ${res.status}: ${body}`);
+      }
+      console.log('Telegram order notification sent successfully.');
+      return;
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      if (attempt < 2) {
+        console.warn('Telegram order notification transient failure; retrying once:', detail);
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        continue;
+      }
+      console.error('Telegram order notification failed:', detail);
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 }
 
@@ -122,6 +139,7 @@ async function sendLineMessage(message: string): Promise<void> {
 }
 
 export async function notifyNewOrder(payload: NotifyOrderPayload): Promise<void> {
+  console.log('notifyNewOrder: triggered', { orderId: payload.orderId, orderNumber: payload.orderNumber });
   const message = buildMessageText(payload);
   const results = await Promise.allSettled([
     sendGenericWebhook(payload),

@@ -37,7 +37,7 @@ export default function PartnerApplyPage({ params }: PageProps) {
 
       <section className="wos-section">
         <div className="wos-shell" style={{ maxWidth: 760 }}>
-          <ApplyForm content={content} />
+          <ApplyForm content={content} locale={params.locale} />
         </div>
       </section>
     </main>
