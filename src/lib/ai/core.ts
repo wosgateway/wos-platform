@@ -1,4 +1,4 @@
-import OpenAI from 'openai';
+﻿import OpenAI from 'openai';
 import { WOS_AI_SYSTEM_PROMPT } from './prompts';
 import { looksLikeLeakedToolCall, sanitizeHistory } from './leak-guard';
 import {
@@ -223,28 +223,20 @@ function looksLikeRepeatedLoop(text: string): boolean {
 }
 
 /**
- * Smart escalation guard:
- * The model is allowed to answer unknown questions from verified Notion
- * knowledge, but if it falls back to a generic refusal on a WOS question,
- * Fern should turn that dead-end into a useful human handoff.
- *
- * This runs only when the customer is clearly asking about WOS itself and
- * the generated answer is a refusal/knowledge-gap. It does not intercept
- * normal catalog, health, travel, or small-talk replies.
+ * Knowledge-gap escalation guard: if Fern's generated answer admits it cannot
+ * verify a substantive customer question, hand it to the WOS team instead of guessing.
+ * Deterministic catalog/booking paths keep their own verified fallbacks.
  */
-function shouldEscalateWosGap(userMessage: string, finalText: string): boolean {
+function shouldEscalateKnowledgeGap(userMessage: string, finalText: string): boolean {
   const user = userMessage.trim();
   const reply = finalText.trim();
+  if (!user || !reply) return false;
 
-  const asksAboutWos =
-    /\bWOS\b|wos\.asia|wellness operating system|(?:ทีม|ระบบ|บริการ|นโยบาย|ขั้นตอน|การจอง|ติดต่อ|ประสานงาน).*WOS/iu.test(user);
+  const refusalOrGap = /(?:cannot|can't|unable|don't know|do not know|not sure|no information|not available|not supported|cannot verify|unable to verify|ยังไม่มีข้อมูล|ไม่ทราบ|ไม่แน่ใจ|ไม่สามารถตอบ|ไม่สามารถยืนยัน|ไม่มีข้อมูล|ไม่รู้ข้อมูล)/iu.test(reply);
+  if (!refusalOrGap) return false;
 
-  if (!asksAboutWos) return false;
-
-  const refusalOrGap =
-    /(?:cannot|can't|unable|don't know|do not know|not sure|not available|no information|policy says|not supported|ไม่สามารถ|ตอบไม่ได้|ไม่ทราบ|ยังไม่มีข้อมูล|ไม่มีข้อมูล|ยืนยันไม่ได้|ไม่แน่ใจ|ไม่มีบริการ)/iu.test(reply);
-
-  return refusalOrGap;
+  const simpleSocial = /^(?:hi|hello|hey|thanks|thank you|ok|okay|สวัสดี|ขอบคุณ|โอเค|ครับ|ค่ะ|คะ)[\s!?.]*$/iu.test(user);
+  return !simpleSocial;
 }
 
 function buildSmartWosEscalation(language: WosLanguage): string {
@@ -2022,11 +2014,10 @@ const runToolRounds = async (
     let finalText =
       response.choices[0]?.message?.content?.trim() || '';
 
-    // Turn a model dead-end into a useful WOS-team escalation. This is
-    // deliberately narrow: it fires only when the customer asks about WOS
-    // and the model itself admits it cannot verify the answer.
-    if (shouldEscalateWosGap(userMessage, finalText)) {
-      console.warn('[WOS_AI_SMART_ESCALATION]', JSON.stringify({ reason: 'verified-knowledge-gap' }));
+    // Turn a model knowledge-gap dead-end into a useful WOS-team escalation.
+    // Never let an uncertain model answer reach the customer as a guess.
+    if (shouldEscalateKnowledgeGap(userMessage, finalText)) {
+      console.warn('[WOS_AI_SMART_ESCALATION]', JSON.stringify({ reason: 'knowledge-gap' }));
       finalText = buildSmartWosEscalation(customerLanguage);
     }
 
