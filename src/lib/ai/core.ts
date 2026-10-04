@@ -1058,7 +1058,8 @@ export async function runWosAI(
       journeyState.hotelNeeded !== undefined
     );
     const isExplicitProgramLookup = isProgramOverviewQuestion(userMessage) || Boolean(getSymptomSearchAliases(userMessage)[0]);
-    if (hasActiveConciergeState && !isExplicitProgramLookup && !isHotelAvailabilityIntent && !isNewJourneyIntent) {
+    const isCollectingTransportPickup = journeyState.transportNeeded === true && !journeyState.transportOrigin;
+    if (hasActiveConciergeState && !isCollectingTransportPickup && !isExplicitProgramLookup && !isHotelAvailabilityIntent && !isNewJourneyIntent) {
       if (!journeyState.customerName) {
         if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບລົງຂໍ້ມູນໃຫ້ທີມ WOS ປະສານງານຕໍ່ແດ່ຄ່ະ 😊';
         if (customerLanguage === 'en') return 'Sure 😊 What name should I use for the WOS team to coordinate with you?';
