@@ -34,6 +34,7 @@ import {
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
 import { deriveWosJourneyState, formatJourneyState, getWosConciergeStage } from './journey-state';
+import { buildHandoffConfirmation } from '@/lib/handoff/concierge';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -971,15 +972,10 @@ export async function runWosAI(
       ? detectWosLanguage(lastUserLanguageAnchor, languageHistory)
       : detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
-    const normalizedPickupTurn = userMessage.trim().normalize('NFC');
-    const isKnownBarePickupTurn = new Set([
-      '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19',
-      '\u0E40\u0E27\u0E22\u0E07\u0E08\u0E31\u0E19\u0E17\u0E19\u0E4C',
-      '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19\u0E17\u0E19',
-      'Vientiane', 'vientiane',
-    ]).has(normalizedPickupTurn);
-    // Deterministic concierge progression: pickup captured -> ask hotel, never re-ask transport.
-    if (isKnownBarePickupTurn && journeyState.transportNeeded === true && journeyState.transportOrigin && journeyState.hotelNeeded === undefined) {
+    // Deterministic concierge progression: once a pickup point is captured in
+    // Journey State, never ask for it again. This intentionally does not use a
+    // location allow-list: Laos pickup points are open-ended.
+    if (journeyState.transportNeeded === true && journeyState.transportOrigin && journeyState.hotelNeeded === undefined) {
       if (customerLanguage === 'en') return 'Perfect 😊 I have the pickup point. Would you like a hotel too?';
       if (customerLanguage === 'lo') return 'ຮັບຊາບແລ້ວ 😊 ຂ້ອຍມີຈຸດຮັບແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍ?';
       return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
@@ -1049,6 +1045,9 @@ export async function runWosAI(
         if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບເລື່ອງໂຮງແຮມໄວ້ແລ້ວ ທີມ WOS ຈະປະສານຕໍ່ໃຫ້ຄ່ະ';
         if (customerLanguage === 'en') return 'Got it 😊 I have noted the hotel request. The WOS team will coordinate the hotel details with you.';
         return 'รับทราบค่ะ 😊 ใบเฟิร์นรับเรื่องโรงแรมไว้แล้วนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดต่อให้ค่ะ';
+      }
+      if (conciergeStage === 'awaiting_confirmation' && journeyState.hotelNeeded === false) {
+        return buildHandoffConfirmation(customerLanguage);
       }
     }
 

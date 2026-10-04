@@ -30,13 +30,22 @@ if(!/รถ|รถรับส่ง|โรงแรม|ที่พัก|WOS/i
 const transportInterest=await ask('สนใจ');
 if(!/รถ|รถรับส่ง|จุดรับ|pickup/iu.test(transportInterest)) throw new Error('transport-interest step missing');
 
-const pickup=await ask('เวียงจันทน์');
-if(/สนใจรถ|รถรับส่งด้วยไหม|ต้องการรถ|สนใจรถรับส่ง/iu.test(pickup) || !/โรงแรม|ที่พัก|hotel/iu.test(pickup)) {
-  throw new Error('pickup was not captured and concierge did not advance to hotel');
+const pickup=await ask('คำม่วน');
+if(/สนใจรถ|รถรับส่งด้วยไหม|ต้องการรถ|สนใจรถรับส่ง|ขอจุดรับ|จุดรับอยู่ที่ไหน/iu.test(pickup) || !/โรงแรม|ที่พัก|hotel/iu.test(pickup)) {
+  throw new Error('arbitrary pickup was not captured and concierge did not advance to hotel');
 }
 
-const hotelInterest=await ask('สนใจ');
-if(/สนใจรถ|รถรับส่ง|จุดรับ|pickup/iu.test(hotelInterest)) throw new Error('hotel interest caused transport repetition');
-if(!/โรงแรม|ที่พัก|hotel|WOS/iu.test(hotelInterest)) throw new Error('hotel step did not advance correctly');
+// The exact production failure: repeating the same pickup must never reopen
+// the transport question.
+const repeatedPickup=await ask('คำม่วน');
+if(/สนใจรถ|รถรับส่งด้วยไหม|ต้องการรถ|สนใจรถรับส่ง|ขอจุดรับ|จุดรับอยู่ที่ไหน/iu.test(repeatedPickup) || !/โรงแรม|ที่พัก|hotel/iu.test(repeatedPickup)) {
+  throw new Error('repeated pickup reopened the transport step');
+}
+
+const hotelDecline=await ask('ไม่ต้องการ');
+if(/สนใจรถ|รถรับส่ง|จุดรับ|pickup|สนใจโรงแรม|โรงแรมด้วยไหม/iu.test(hotelDecline)) {
+  throw new Error('hotel rejection caused transport/hotel repetition');
+}
+if(!/ยืนยัน|สรุป|ข้อมูล/iu.test(hotelDecline)) throw new Error('hotel rejection did not advance to confirmation');
 
 console.log('\nTRANSPORT_HOTEL_REGRESSION=PASS');

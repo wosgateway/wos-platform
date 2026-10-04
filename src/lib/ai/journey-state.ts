@@ -432,9 +432,23 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   // bare answer when the immediately preceding assistant turn was asking for
   // the pickup point; never turn unrelated free text into a pickup location.
   const lastAssistantAskedPickup = /(?:จุดรับ|รับที่|รับจาก|pickup|pick-up|ຈຸດຮັບ|ຮັບຢູ່|ຮັບຈາກ)/iu.test(lastAssistantMessage);
-  const arbitraryPickupAnswer = lastAssistantAskedPickup
+  // Some chat transports trim or omit the immediately preceding assistant turn.
+  // Once the customer has already said they want transport, the next
+  // non-affirmative/non-negative free-text reply is the pickup point.
+  const transportAffirmedInHistory = (() => {
+    for (let i = effectiveHistory.length - 2; i >= 0; i--) {
+      const assistant = effectiveHistory[i];
+      const user = effectiveHistory[i + 1];
+      if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
+      if (!/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(user.content.trim())) continue;
+      if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test(assistant.content)) return true;
+    }
+    return false;
+  })();
+  const pickupCollectionActive = lastAssistantAskedPickup || transportAffirmedInHistory;
+  const arbitraryPickupAnswer = pickupCollectionActive
     && currentMessage.trim().length >= 2
-    && !/^(?:ไม่|ไม่ต้องการ|ไม่เอา|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim())
+    && !/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|ไม่|ไม่ต้องการ|ไม่เอา|ไม่สนใจ|yes|y|ok|okay|interested|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim())
     ? normalizeLocation(currentMessage)
     : undefined;
   const inferredBarePickup = lastUserMessageIsBareLocation
@@ -451,17 +465,19 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
           : /(?:สุขภาพ|ตรวจสุขภาพ|wellness|health|นวด|สปา|spa|massage)/iu.test(currentMessage)
             ? 'health'
             : needs[needs.length - 1];
-  const noAddons = /^(?:ไม่|ไม่ต้องการ|ไม่เอา|ไม่ต้องการทั้งสอง|ไม่เอาทั้งสอง|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim());
-  // Short affirmative replies inherit the optional-service question Fern just asked.
+  // Short affirmative/negative replies inherit the optional-service question Fern just asked.
   const lastAssistantForAddon = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
   const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   const shortNegative = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|n|none|not interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0EA5\u0EBB\u0E94\u0EAE\u0EB1\u0E9A\u0EAA\u0EBB\u0EC8\u0E87|\u0EA5\u0EBB\u0E94\u0EAA\u0EBB\u0EC8\u0E87|\u0E96\u0EB7\u0E81\u0EAA\u0EC8\u0E87)/iu.test(lastAssistantForAddon);
   const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
-  const assistantAskedHotel = /(?:\u0E2A\u0E19\u0E43\u0E08.*(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|hotel)|(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|hotel).*?(?:\u0E2A\u0E19\u0E43\u0E08|want|need|interested)|\u0E2A\u0E19\u0E43\u0E08.*\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01)/iu.test(lastAssistantForAddon);
+  const assistantAskedHotel = /(?:สนใจ.*(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)|(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room).*?(?:สนใจ|want|need|interested))/iu.test(lastAssistantForAddon);
 
-  const derivedTransportNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:รถ|รถรับส่ง)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:รถ|รถรับส่ง)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
-  const derivedHotelNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:don't|do not|no).*?(?:hotel|room)/iu);
+  // Do not apply a bare "ไม่ต้องการ" to both optional services. A short
+  // negative belongs only to the addon Fern just asked about; otherwise a
+  // hotel rejection can accidentally erase an already-captured transport request.
+  const derivedTransportNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:รถ|รถรับส่ง)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:รถ|รถรับส่ง)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
+  const derivedHotelNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:don't|do not|no).*?(?:hotel|room)/iu);
 
   // Short affirmations are state transitions. Preserve the affirmative fact
   // on the following turn (for example, the pickup-point message), because
