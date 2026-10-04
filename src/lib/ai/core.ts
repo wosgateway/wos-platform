@@ -988,6 +988,16 @@ export async function runWosAI(
       return 'สวัสดีค่ะ 😊 วันนี้มีอะไรให้ใบเฟิร์นช่วยไหมคะ';
     }
 
+    // Simple social acknowledgements must never advance or replay an active
+    // concierge stage. A customer saying "ขอบคุณ" after handoff is finished
+    // should get a natural acknowledgement, not the previous hotel message.
+    const isSimpleThanks = /^(?:thanks|thank you|thx|ขอบคุณ|ขอบคุณมาก|ขอบคุณครับ|ขอบคุณค่ะ|ຂອບໃຈ|ຂອບໃຈຫຼາຍ)[\s!?.]*$/iu.test(userMessage.trim());
+    if (isSimpleThanks) {
+      if (customerLanguage === 'lo') return 'ດ້ວຍຄວາມຍິນດີຄ່ະ 😊';
+      if (customerLanguage === 'en') return 'You’re very welcome 😊';
+      return 'ยินดีมากค่ะ 😊';
+    }
+
     // New explicit facts must update the journey instead of being swallowed by
     // a previously selected program. This is the key anti-stale-context rule.
     const journeyUpdateReply = buildJourneyDataUpdateReply(userMessage, journeyState, customerLanguage);
