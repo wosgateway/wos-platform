@@ -221,6 +221,41 @@ function looksLikeRepeatedLoop(text: string): boolean {
   return false;
 }
 
+/**
+ * Smart escalation guard:
+ * The model is allowed to answer unknown questions from verified Notion
+ * knowledge, but if it falls back to a generic refusal on a WOS question,
+ * Fern should turn that dead-end into a useful human handoff.
+ *
+ * This runs only when the customer is clearly asking about WOS itself and
+ * the generated answer is a refusal/knowledge-gap. It does not intercept
+ * normal catalog, health, travel, or small-talk replies.
+ */
+function shouldEscalateWosGap(userMessage: string, finalText: string): boolean {
+  const user = userMessage.trim();
+  const reply = finalText.trim();
+
+  const asksAboutWos =
+    /\bWOS\b|wos\.asia|wellness operating system|(?:ทีม|ระบบ|บริการ|นโยบาย|ขั้นตอน|การจอง|ติดต่อ|ประสานงาน).*WOS/iu.test(user);
+
+  if (!asksAboutWos) return false;
+
+  const refusalOrGap =
+    /(?:cannot|can't|unable|don't know|do not know|not sure|not available|no information|policy says|not supported|ไม่สามารถ|ตอบไม่ได้|ไม่ทราบ|ยังไม่มีข้อมูล|ไม่มีข้อมูล|ยืนยันไม่ได้|ไม่แน่ใจ|ไม่มีบริการ)/iu.test(reply);
+
+  return refusalOrGap;
+}
+
+function buildSmartWosEscalation(language: WosLanguage): string {
+  if (language === 'lo') {
+    return 'ຂໍໂທດຄ່ະ ເລື່ອງນີ້ໃບເຟີນຍັງບໍ່ມີຂໍ້ມູນທີ່ຢືນຢັນໄດ້ ຈຶ່ງບໍ່ຢາກເດົາໃຫ້ຜິດ. ໃບເຟີນຈະໃຫ້ທີມ WOS ກວດສອບ ແລະປະສານຕໍ່ໃຫ້ຄ່ະ';
+  }
+  if (language === 'en') {
+    return 'I don’t have verified information for that yet, so I don’t want to guess. I’ll have the WOS team verify it and follow up with you.';
+  }
+  return 'เรื่องนี้ใบเฟิร์นยังไม่มีข้อมูลที่ยืนยันได้ค่ะ เลยไม่อยากเดาให้ผิด เดี๋ยวใบเฟิร์นให้ทีม WOS ตรวจสอบและประสานต่อให้ค่ะ';
+}
+
 function isJourneyDataUpdate(message: string): boolean {
   return /(?:งบ(?:ประมาณ)?\s*\d|งบไม่จำกัด|งบไม่กำหนด|\d+\s*บาท|\d+\s*คน|วันที่\s*\d|วัน\s*ที่\s*\d|เดินทางวันที่|งบ\s*\d)/iu.test(message);
 }
@@ -1134,18 +1169,25 @@ export async function runWosAI(
     // For transport, turn already-captured facts into a short checklist so
     // the customer only gets asked for fields that are still missing.
     const buildTransportChecklist = (): string => {
+      if (journeyState.transportOrigin && !journeyState.transportDestination) {
+        return customerLanguage === 'en'
+          ? 'Got it. Where should we drop you off?'
+          : customerLanguage === 'lo'
+            ? 'ຮັບຊາບແລ້ວ. ຈະໃຫ້ລົດໄປສົ່ງບ່ອນໃດຄະ?'
+            : 'รับจุดรับแล้วค่ะ จุดส่งต้องการให้ไปส่งที่ไหนคะ?';
+      }
       if (journeyState.transportOrigin) {
         return customerLanguage === 'en'
-          ? 'Got it 😊 I have the pickup point. Would you like a hotel too?'
+          ? 'Got it. I have the pickup and destination. Would you like a hotel too?'
           : customerLanguage === 'lo'
-            ? 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນມີຈຸດຮັບແລ້ວ ສົນໃຈໂຮງແຮມເພີ່ມບໍຄ່ະ?'
-            : 'รับทราบค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
+            ? 'ຮັບຊາບແລ້ວ. ມີຈຸດຮັບແລະຈຸດສົ່ງແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍ?'
+            : 'เรียบร้อยค่ะ มีทั้งจุดรับและจุดส่งแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
       }
       return customerLanguage === 'en'
-        ? 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.'
+        ? 'Sure. What is the pickup point?'
         : customerLanguage === 'lo'
-          ? 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ'
-          : 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
+          ? 'ໄດ້ເລີຍ. ຈຸດຮັບຢູ່ໃສຄະ?'
+          : 'ได้เลยค่ะ จุดรับอยู่ที่ไหนคะ?';
     };
     const asksTransportEarly = /รถ|รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດ|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(userMessage);
     if (asksTransportEarly) {
@@ -1968,6 +2010,14 @@ const runToolRounds = async (
 
     let finalText =
       response.choices[0]?.message?.content?.trim() || '';
+
+    // Turn a model dead-end into a useful WOS-team escalation. This is
+    // deliberately narrow: it fires only when the customer asks about WOS
+    // and the model itself admits it cannot verify the answer.
+    if (shouldEscalateWosGap(userMessage, finalText)) {
+      console.warn('[WOS_AI_SMART_ESCALATION]', JSON.stringify({ reason: 'verified-knowledge-gap' }));
+      finalText = buildSmartWosEscalation(customerLanguage);
+    }
 
     // Language continuity guard. Typhoon-local can occasionally answer a
     // Thai multi-turn conversation in English when the latest user message

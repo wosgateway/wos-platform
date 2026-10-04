@@ -28,6 +28,7 @@ export type WosJourneyState = {
   transportTravelers?: number;
   transportOrigin?: string;
   transportDestination?: string;
+  transportDestinationSource?: 'program_default' | 'customer_override';
   hotelTravelers?: number;
   hotelRooms?: number;
 };
@@ -380,8 +381,28 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   }
   const likelyBareCustomerName = bareCustomerName && !/(?:จอง|booking|book|reserve|ตรวจ|โปรแกรม|บริการ|สนใจ|ต้องการ|เอา|รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้อง|เวียงจันทน์|อุดร|หนองคาย|ขอนแก่น|travel|trip|transport|hotel|ຈອງ|ກວດ|ໂຮງແຮມ|ລົດ|ສົນໃຈ|ຕ້ອງການ)/iu.test(bareCustomerName) ? bareCustomerName : undefined;
   const customerName = explicitCustomerName ?? likelyBareCustomerName;
-  const destination = findDestination(allTexts) ?? findProvince(allTexts);
+  const explicitDestination = findDestination(allTexts);
   const normalizedCurrent = currentMessage.trim().normalize('NFC');
+  const lastAssistantMessageForDestination = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+  const assistantAskedDestination = /(?:จุดส่ง|ส่งที่ไหน|ปลายทาง|destination|drop[- ]?off|ຈຸດສົ່ງ|ປາຍທາງ)/iu.test(lastAssistantMessageForDestination);
+  const customerDestinationOverride = assistantAskedDestination && currentMessage.trim().length >= 2
+    && !/^(?:ไม่|ไม่ต้องการ|ไม่เอา|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim())
+    ? normalizeLocation(currentMessage)
+    : undefined;
+  const selectedProgramDestination = (() => {
+    if (!selected?.title) return undefined;
+    for (let i = effectiveHistory.length - 1; i >= 0; i--) {
+      const message = effectiveHistory[i];
+      if (message.role !== 'assistant' || !message.content.includes(selected.title)) continue;
+      const province = findProvince([message.content]);
+      if (province) return province;
+    }
+    return undefined;
+  })();
+  const destination = customerDestinationOverride
+    ?? explicitDestination
+    ?? selectedProgramDestination
+    ?? findProvince(allTexts);
   const barePickupAliases = new Set([
     '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19',
     '\u0E40\u0E27\u0E35\u0E22\u0E07\u0E08\u0E31\u0E19\u0E17\u0E19\u0E4C',
@@ -397,15 +418,28 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
       if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
       if (!/(?:จุดรับ|รับที่|รับจาก|pickup|pick-up|ຈຸດຮັບ)/iu.test(assistant.content)) continue;
       const value = user.content.trim().normalize('NFC');
-      if (LOCATION_ALIASES[value] !== undefined || barePickupAliases.has(value)) {
+      // A pickup answer does not need to match a location dictionary.
+      // Preserve exactly what the customer supplied (after light cleanup).
+      if (value.length >= 2 && !/^(?:ไม่|ไม่ต้องการ|ไม่เอา|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(value)) {
         return normalizeLocation(value);
       }
     }
     return undefined;
   })();
+  // Laos pickup points are intentionally open-ended. WOS can arrange pickup
+  // throughout Laos, so a customer-provided place must be stored even when
+  // Fern does not know that place name or province. Only capture an arbitrary
+  // bare answer when the immediately preceding assistant turn was asking for
+  // the pickup point; never turn unrelated free text into a pickup location.
+  const lastAssistantAskedPickup = /(?:จุดรับ|รับที่|รับจาก|pickup|pick-up|ຈຸດຮັບ|ຮັບຢູ່|ຮັບຈາກ)/iu.test(lastAssistantMessage);
+  const arbitraryPickupAnswer = lastAssistantAskedPickup
+    && currentMessage.trim().length >= 2
+    && !/^(?:ไม่|ไม่ต้องการ|ไม่เอา|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim())
+    ? normalizeLocation(currentMessage)
+    : undefined;
   const inferredBarePickup = lastUserMessageIsBareLocation
     ? normalizeLocation(currentMessage)
-    : historicalBarePickup;
+    : historicalBarePickup ?? arbitraryPickupAnswer;
   const activeNeed = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|รับส่ง|transport|transfer|shuttle)/iu.test(currentMessage)
     ? 'transport'
     : /(?:ปวดเข่า|ตรวจเข่า|เข่า|รักษา|หาหมอ|พบแพทย์|treatment|doctor|surgery)/iu.test(currentMessage)
@@ -420,11 +454,12 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   const noAddons = /^(?:ไม่|ไม่ต้องการ|ไม่เอา|ไม่ต้องการทั้งสอง|ไม่เอาทั้งสอง|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim());
   // Short affirmative replies inherit the optional-service question Fern just asked.
   const lastAssistantForAddon = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-  const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
+  const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
+  const shortNegative = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|n|none|not interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0EA5\u0EBB\u0E94\u0EAE\u0EB1\u0E9A\u0EAA\u0EBB\u0EC8\u0E87|\u0EA5\u0EBB\u0E94\u0EAA\u0EBB\u0EC8\u0E87|\u0E96\u0EB7\u0E81\u0EAA\u0EC8\u0E87)/iu.test(lastAssistantForAddon);
   const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
   const assistantAskedHotel = /(?:\u0E2A\u0E19\u0E43\u0E08.*(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|hotel)|(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|hotel).*?(?:\u0E2A\u0E19\u0E43\u0E08|want|need|interested)|\u0E2A\u0E19\u0E43\u0E08.*\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01)/iu.test(lastAssistantForAddon);
-  const shortHotelAffirmation = shortAffirmative && assistantAskedHotel;
+
   const derivedTransportNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:รถ|รถรับส่ง)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:รถ|รถรับส่ง)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
   const derivedHotelNeeded = noAddons ? false : findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:don't|do not|no).*?(?:hotel|room)/iu);
 
@@ -448,6 +483,10 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
       }
     }
   }
+
+  const shortHotelAffirmation = shortAffirmative && assistantAskedHotel;
+  const shortHotelRejection = shortNegative && assistantAskedHotel;
+  const shortTransportRejection = shortNegative && assistantAskedTransport;
 
   return {
     destination,
@@ -475,11 +514,12 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     transportTime: findServiceTime(allTexts),
     transportTravelers: findTravelers(allTexts),
     transportOrigin: findOrigin(allTexts) ?? inferredBarePickup,
-    transportDestination: findDestination(allTexts),
+    transportDestination: destination,
+    transportDestinationSource: customerDestinationOverride || explicitDestination ? 'customer_override' : selectedProgramDestination ? 'program_default' : undefined,
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),
     hotelRooms: findRooms(allTexts),
-    transportNeeded: shortTransportAffirmation ? true : derivedTransportNeeded ?? historicalTransportNeeded,
-    hotelNeeded: shortHotelAffirmation ? true : derivedHotelNeeded ?? historicalHotelNeeded,
+    transportNeeded: shortTransportAffirmation ? true : shortTransportRejection ? false : derivedTransportNeeded ?? historicalTransportNeeded,
+    hotelNeeded: shortHotelAffirmation ? true : shortHotelRejection ? false : derivedHotelNeeded ?? historicalHotelNeeded,
   };
 }
 
