@@ -381,14 +381,12 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   }
   const likelyBareCustomerName = bareCustomerName && !/(?:จอง|booking|book|reserve|ตรวจ|โปรแกรม|บริการ|สนใจ|ต้องการ|เอา|รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้อง|เวียงจันทน์|อุดร|หนองคาย|ขอนแก่น|travel|trip|transport|hotel|ຈອງ|ກວດ|ໂຮງແຮມ|ລົດ|ສົນໃຈ|ຕ້ອງການ)/iu.test(bareCustomerName) ? bareCustomerName : undefined;
   const customerName = explicitCustomerName ?? likelyBareCustomerName;
+  // Transport V1 does not ask the customer for a drop-off/destination.
+  // Keep destination out of the transport intake so a bare location such as
+  // "อุดร" cannot accidentally reopen catalog/province routing. WOS Admin
+  // will coordinate the remaining transport details after handoff.
   const explicitDestination = findDestination(allTexts);
   const normalizedCurrent = currentMessage.trim().normalize('NFC');
-  const lastAssistantMessageForDestination = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-  const assistantAskedDestination = /(?:จุดส่ง|ส่งที่ไหน|ปลายทาง|destination|drop[- ]?off|ຈຸດສົ່ງ|ປາຍທາງ)/iu.test(lastAssistantMessageForDestination);
-  const customerDestinationOverride = assistantAskedDestination && currentMessage.trim().length >= 2
-    && !/^(?:ไม่|ไม่ต้องการ|ไม่เอา|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim())
-    ? normalizeLocation(currentMessage)
-    : undefined;
   const selectedProgramDestination = (() => {
     if (!selected?.title) return undefined;
     for (let i = effectiveHistory.length - 1; i >= 0; i--) {
@@ -399,8 +397,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     }
     return undefined;
   })();
-  const destination = customerDestinationOverride
-    ?? explicitDestination
+  const destination = explicitDestination
     ?? selectedProgramDestination
     ?? findProvince(allTexts);
   const barePickupAliases = new Set([
@@ -530,8 +527,8 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     transportTime: findServiceTime(allTexts),
     transportTravelers: findTravelers(allTexts),
     transportOrigin: findOrigin(allTexts) ?? inferredBarePickup,
-    transportDestination: destination,
-    transportDestinationSource: customerDestinationOverride || explicitDestination ? 'customer_override' : selectedProgramDestination ? 'program_default' : undefined,
+    transportDestination: undefined,
+    transportDestinationSource: undefined,
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),
     hotelRooms: findRooms(allTexts),
     transportNeeded: shortTransportAffirmation ? true : shortTransportRejection ? false : derivedTransportNeeded ?? historicalTransportNeeded,

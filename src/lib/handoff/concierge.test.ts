@@ -110,7 +110,8 @@ describe('handoff concierge', () => {
     expect(state.transportNeeded).toBe(true);
     expect(state.transportTime).toContain('11 โมง');
     expect(state.transportOrigin).toBe('เวียงจันทน์');
-    expect(state.transportDestination).toBe('อุดรธานี');
+    // V1 intentionally does not collect transport drop-off/destination.
+    expect(state.transportDestination).toBeUndefined();
     expect(state.transportTravelers).toBe(2);
     expect(state.hotelNeeded).toBe(true);
     expect(state.hotelTravelers).toBe(2);

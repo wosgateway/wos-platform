@@ -291,13 +291,10 @@ function isJourneyPlanningFollowUp(message: string): boolean {
 function buildJourneyPlanningReply(userMessage: string, state: ReturnType<typeof deriveWosJourneyState>, language: WosLanguage): string | null {
   if (state.selectedProgram) return null;
   if (!isJourneyPlanningFollowUp(userMessage)) return null;
+  // V1 concierge deliberately collects only the minimum front-desk data.
+  // Admin will collect dates, travelers, budget, drop-off, room type, etc. after handoff.
   const missing: string[] = [];
-  if (!state.destination) missing.push('ปลายทาง');
-  if (!state.serviceDate) missing.push('วันที่ต้องการเดินทาง/เข้ารับบริการ');
-  if (!state.travelers) missing.push('จำนวนผู้เดินทาง');
-  if (!state.budgetThb && !state.budgetUnlimited) missing.push('งบประมาณโดยประมาณ');
-  if (state.needs.includes('transport')) missing.push('จุดรับ-ส่ง และช่วงเวลาที่ต้องการรถ');
-  if (state.needs.includes('hotel')) missing.push('จำนวนคืน/วันเข้าพัก และประเภทห้องที่ต้องการ');
+  if (!state.customerName) missing.push('ชื่อผู้จอง');
   const known = [
     state.selectedProgram ? `โปรแกรม: ${state.selectedProgram}` : '',
     state.destination ? `ปลายทาง: ${state.destination}` : '',
@@ -1051,6 +1048,24 @@ export async function runWosAI(
       }
     }
 
+    // An active concierge journey owns ambiguous short replies (for example
+    // a bare province such as "อุดร"). Do not let catalog lookup steal the
+    // turn while Fern is still collecting the minimum handoff data.
+    const hasActiveConciergeState = Boolean(
+      journeyState.selectedProgram ||
+      journeyState.transportNeeded !== undefined ||
+      journeyState.transportOrigin ||
+      journeyState.hotelNeeded !== undefined
+    );
+    const isExplicitProgramLookup = isProgramOverviewQuestion(userMessage) || Boolean(getSymptomSearchAliases(userMessage)[0]);
+    if (hasActiveConciergeState && !isExplicitProgramLookup && !isHotelAvailabilityIntent && !isNewJourneyIntent) {
+      if (!journeyState.customerName) {
+        if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບລົງຂໍ້ມູນໃຫ້ທີມ WOS ປະສານງານຕໍ່ແດ່ຄ່ະ 😊';
+        if (customerLanguage === 'en') return 'Sure 😊 What name should I use for the WOS team to coordinate with you?';
+        return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
+      }
+    }
+
     // Program-overview requests are explicit topic switches. Resolve them
     // before journey planning so a stale hotel/transport/program state cannot
     // swallow a fresh "what programs are available?" question.
@@ -1168,25 +1183,21 @@ export async function runWosAI(
     // For transport, turn already-captured facts into a short checklist so
     // the customer only gets asked for fields that are still missing.
     const buildTransportChecklist = (): string => {
-      if (journeyState.transportOrigin && !journeyState.transportDestination) {
-        return customerLanguage === 'en'
-          ? 'Got it. Where should we drop you off?'
-          : customerLanguage === 'lo'
-            ? 'ຮັບຊາບແລ້ວ. ຈະໃຫ້ລົດໄປສົ່ງບ່ອນໃດຄະ?'
-            : 'รับจุดรับแล้วค่ะ จุดส่งต้องการให้ไปส่งที่ไหนคะ?';
-      }
+      // V1 intentionally collects only transport interest + pickup point.
+      // Do not ask for drop-off/destination; WOS Admin coordinates the
+      // remaining transport details after handoff.
       if (journeyState.transportOrigin) {
         return customerLanguage === 'en'
-          ? 'Got it. I have the pickup and destination. Would you like a hotel too?'
+          ? 'Got it 😊 I have the pickup point. Would you like a hotel too?'
           : customerLanguage === 'lo'
-            ? 'ຮັບຊາບແລ້ວ. ມີຈຸດຮັບແລະຈຸດສົ່ງແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍ?'
-            : 'เรียบร้อยค่ะ มีทั้งจุดรับและจุดส่งแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
+            ? 'ຮັບຊາບແລ້ວ 😊 ຂ້ອຍມີຈຸດຮັບແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍ?'
+            : 'เรียบร้อยค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
       }
       return customerLanguage === 'en'
-        ? 'Sure. What is the pickup point?'
+        ? 'Sure 😊 What is the pickup point?'
         : customerLanguage === 'lo'
-          ? 'ໄດ້ເລີຍ. ຈຸດຮັບຢູ່ໃສຄະ?'
-          : 'ได้เลยค่ะ จุดรับอยู่ที่ไหนคะ?';
+          ? 'ໄດ້ເລີຍ 😊 ຈຸດຮັບຢູ່ໃສຄະ?'
+          : 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
     };
     const asksTransportEarly = /รถ|รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດ|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(userMessage);
     if (asksTransportEarly) {
