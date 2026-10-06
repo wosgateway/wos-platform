@@ -1,4 +1,4 @@
-﻿import OpenAI from 'openai';
+import OpenAI from 'openai';
 import { WOS_AI_SYSTEM_PROMPT } from './prompts';
 import { looksLikeLeakedToolCall, sanitizeHistory } from './leak-guard';
 import {
@@ -1159,8 +1159,39 @@ export async function runWosAI(
       }
     }
 
+    // Unsupported WOS policy questions must not be echoed or guessed.
+    const isUnsupportedWosPolicyQuestion = /(?:นโยบาย|กฎ|ข้อกำหนด|policy|rules)/iu.test(userMessage);
+    if (isUnsupportedWosPolicyQuestion) {
+      if (customerLanguage === 'en') return 'Fern does not have verified information about that WOS policy right now. I can help ask the WOS team to verify it for you.';
+      if (customerLanguage === 'lo') return 'ເລື່ອງນີ້ໃບເຟີນຍັງບໍ່ມີຂໍ້ມູນທີ່ຢືນຢັນໄດ້ຄ່ະ ໃບເຟີນຊ່ວຍປະສານທີມ WOS ໃຫ້ກວດສອບຕໍ່ໄດ້ຄ່ະ';
+      return 'เรื่องนี้ใบเฟิร์นยังไม่มีข้อมูลที่ยืนยันได้ค่ะ ใบเฟิร์นช่วยประสานทีม WOS ให้ตรวจสอบต่อได้ค่ะ';
+    }
+
     // Only after explicit catalog requests are resolved should structured
     // journey planning get a chance to answer the message.
+    // A general "how do I book?" question without a selected program is
+    // a process question, not a request to restart catalog selection.
+    const asksGeneralBookingProcess = /(?:จองยังไง|จองอย่างไร|ขั้นตอนจอง|ต้องจองยังไง|how.*book|how.*booking|ຈອງແນວໃດ|ຈະຈອງແນວໃດ)/iu.test(userMessage);
+    if (asksGeneralBookingProcess && !journeyState.selectedProgram) {
+      if (customerLanguage === 'lo') {
+        return 'ໄດ້ຄ່ະ 😊 ການຈອງຜ່ານ WOS ໂດຍຫຍໍ້ຄື: ເລືອກໂປຣແກຣມ → ແຈ້ງວັນ-ເວລາ ແລະຊື່/ເບີໂທ → WOS ກວດຄິວແລະລາຄາ → ຮັບການຢືນຢັນຈາກ WOS. ບອກໂປຣແກຣມທີ່ສົນໃຈໄດ້ເລີຍຄ່ະ';
+      }
+      if (customerLanguage === 'en') {
+        return 'Sure 😊 Booking through WOS is simple: choose a program → share your preferred date/time and contact details → WOS checks the current queue and price → WOS confirms the booking. Tell Fern which program you are interested in and I will guide you from there.';
+      }
+      return 'ได้เลยค่ะ 😊 การจองผ่าน WOS โดยสรุปคือ เลือกโปรแกรม → แจ้งวัน/เวลาและข้อมูลติดต่อ → WOS ตรวจสอบคิวและราคาปัจจุบัน → WOS ยืนยันการจองค่ะ ถ้าสนใจโปรแกรมไหน บอกใบเฟิร์นได้เลยนะคะ';
+    }
+
+    // Standalone hotel questions should collect only the minimum intake
+    // fields; do not force a full booking flow or live availability lookup.
+    const asksHotelRequirement = isHotelRequirementQuestion(userMessage);
+    const hasExactHotelDates = /\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[/-]\d{1,2}[/-]\d{2,4}/.test(userMessage);
+    if (asksHotelRequirement && journeyState.hotelNeeded === undefined && !hasExactHotelDates) {
+      if (customerLanguage === 'lo') return 'ໄດ້ຄ່ະ 😊 ຖ້າຕ້ອງການໂຮງແຮມ ຂໍຈຳນວນຄົນ, ຈຳນວນຫ້ອງ ແລະ ປະເພດຕຽງ ຫຼື ຊ່ວງລາຄາທີ່ຕ້ອງການໄດ້ຄ່ະ';
+      if (customerLanguage === 'en') return 'Sure 😊 If you need a hotel, Fern can note the number of guests, number of rooms, bed type, and preferred rate range for the WOS team.';
+      return 'ได้ค่ะ 😊 ถ้าต้องการโรงแรม ใบเฟิร์นขอจำนวนคน จำนวนห้อง ประเภทเตียงเดี่ยว/เตียงคู่ และช่วงราคาที่ต้องการไว้ให้ทีม WOS ประสานต่อได้ค่ะ';
+    }
+
     const journeyPlanningReply = buildJourneyPlanningReply(userMessage, journeyState, customerLanguage);
     if (journeyPlanningReply) return journeyPlanningReply;
 
@@ -1237,6 +1268,32 @@ export async function runWosAI(
         }
       } catch (healthLookupError) {
         console.warn('[WOS_AI_HEALTH_OVERVIEW_LOOKUP_FAILED]', healthLookupError instanceof Error ? healthLookupError.message : String(healthLookupError));
+      }
+    }
+
+    // Exact hotel availability must be resolved before generic trip-planning intake.
+    // This is operational inventory and must come only from verified live data.
+    const directHotelDates = userMessage.match(/\d{4}-\d{2}-\d{2}/g) ?? [];
+    const directHotelRoomMatch = userMessage.match(/(?:^|\s)(\d{1,2})\s*(?:\u0e2b\u0e49\u0e2d\u0e07|room|rooms)(?=\s|$)/iu);
+    const directHotelRooms = directHotelRoomMatch ? Number(directHotelRoomMatch[1]) : 1;
+    const directHotelRequest =
+      /(?:hotel|hotels|room|rooms|\u0e42\u0e23\u0e07\u0e41\u0e23\u0e21|\u0e2b\u0e49\u0e2d\u0e07|\u0e17\u0e35\u0e48\u0e1e\u0e31\u0e01)/iu.test(userMessage) &&
+      directHotelDates.length >= 2 &&
+      /(?:\u0e40\u0e0a\u0e47\u0e04\u0e2d\u0e34\u0e19|\u0e40\u0e0a\u0e47\u0e04\u0e40\u0e2d\u0e32\u0e15\u0e4c|checkout|check-out)/iu.test(userMessage);
+    if (directHotelRequest && directHotelRooms >= 1 && directHotelRooms <= 10) {
+      try {
+        const directProvince = detectLocationFromRawText(userMessage)[0] ?? '';
+        if (directProvince) {
+          const checkin = directHotelDates[0] as string;
+          const checkout = directHotelDates[1] as string;
+          const hotelItems = await searchHotelAvailability({ province: directProvince, checkin, checkout, rooms: directHotelRooms, limit: 5 });
+          if (hotelItems.length > 0) {
+            return `พบโรงแรมที่ว่างตามข้อมูลยืนยันสำหรับ ${checkin} ถึง ${checkout} ค่ะ\n${hotelItems.map((item) => `• ${item.title} / ${item.partner.name} — ${item.price_per_night != null ? `${item.price_per_night.toLocaleString('th-TH')} บาท/คืน` : 'ราคาต่อคืนต้องยืนยัน'}${item.total_estimated != null ? ` — ประมาณ ${item.total_estimated.toLocaleString('th-TH')} บาทรวม` : ''}`).join('\n')}`;
+          }
+          return 'ตอนนี้ยังไม่พบห้องที่ว่างตามข้อมูลยืนยันสำหรับวันที่และจำนวนห้องที่ระบุค่ะ';
+        }
+      } catch (hotelError) {
+        console.warn('[WOS_AI_HOTEL_DIRECT_LOOKUP_FAILED]', hotelError instanceof Error ? hotelError.message : String(hotelError));
       }
     }
 
@@ -1377,10 +1434,7 @@ export async function runWosAI(
     // returned by the program catalog. Answer the basic "มีรถรับส่งไหม?"
     // question from approved WOS knowledge, then collect the minimum details
     // needed before any real availability/price claim.
-    const asksTransport =
-      /รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(
-        userMessage
-      );
+    const asksTransport = /รถรับส่ง|รถรับ|รับส่ง|transport|transfer|shuttle|ລົດຮັບສົ່ງ|ຮັບສົ່ງ/iu.test(userMessage);
 
     if (asksTransport) {
       if (customerLanguage === 'lo') {
@@ -1645,6 +1699,27 @@ CONTACT INFO RULE:
       const hasDate = /\d{1,2}[-\/]\d{1,2}[-\/]\d{2,4}|\d{4}-\d{2}-\d{2}/.test(text) || ['เข้าพัก', 'เช็คอิน', 'เช็กอิน', 'checkout', 'check-out', 'คืน'].some((term) => text.includes(term));
       return hasHotel && hasDate;
     };
+
+    // Verified hotel availability is operational data; query it directly from the raw customer request instead of relying on model tool-call JSON.
+    if (shouldForceHotelAvailability(userMessage)) {
+      const dateMatches = userMessage.match(/\b\d{4}-\d{2}-\d{2}\b/g) ?? [];
+      const rawRoomMatch = userMessage.match(/(?:^|\s)(\d{1,2})\s*(?:ห้อง|room|rooms)\b/i);
+      const rawRooms = rawRoomMatch ? Number(rawRoomMatch[1]) : 1;
+      const detectedProvince = detectLocationFromRawText(userMessage)[0] ?? '';
+      if (detectedProvince && dateMatches.length >= 2 && Number.isInteger(rawRooms) && rawRooms > 0 && rawRooms <= 10) {
+        try {
+          const checkin = dateMatches[0] as string;
+          const checkout = dateMatches[1] as string;
+          const hotelItems = await searchHotelAvailability({ province: detectedProvince, checkin, checkout, rooms: rawRooms, limit: 5 });
+          if (hotelItems.length > 0) {
+            return `พบโรงแรมที่ว่างตามข้อมูลยืนยันสำหรับ ${dateMatches[0]} ถึง ${dateMatches[1]} ค่ะ\n${hotelItems.map((item) => `• ${item.title} / ${item.partner.name} — ${item.price_per_night != null ? `${item.price_per_night.toLocaleString('th-TH')} บาท/คืน` : 'ราคาต่อคืนต้องยืนยัน'}${item.total_estimated != null ? ` — ประมาณ ${item.total_estimated.toLocaleString('th-TH')} บาทรวม` : ''}`).join('\n')}`;
+          }
+          return 'ตอนนี้ยังไม่พบห้องที่ว่างตามข้อมูลยืนยันสำหรับวันที่และจำนวนห้องที่ระบุค่ะ';
+        } catch (hotelError) {
+          console.warn('[WOS_AI_HOTEL_DIRECT_LOOKUP_FAILED]', hotelError instanceof Error ? hotelError.message : String(hotelError));
+        }
+      }
+    }
 
     // Catalog truth should come from WOS operational data, not from the
     // local model deciding whether to call a tool. This direct retrieval

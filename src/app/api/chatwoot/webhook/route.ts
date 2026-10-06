@@ -117,6 +117,7 @@ async function processClaimedWebhook(args: {
     }
 
     await sendChatwootReply(conversationId, replyText);
+    await openChatwootConversation(conversationId);
     await recordWebhookEventResult(supabase, claimedEventId, aiResult.ok ? 'sent' : 'failed', aiResult.ok ? null : aiResult.reason);
     const orderNumber = extractOrderNumber(content);
     if (orderNumber) {
@@ -394,6 +395,26 @@ async function sendChatwootReply(conversationId: number, content: string) {
     // throw ต่อให้ POST() catch แล้วตอบ { status: 'error' }, 500 แทน สะท้อนผลจริง
     // (AI ตอบสำเร็จแต่ Chatwoot รับข้อความไม่สำเร็จ ควรนับเป็นความล้มเหลว ไม่ใช่ 'ok')
     throw new Error(`chatwoot_send_failed:${res.status}`);
+  }
+}
+
+async function openChatwootConversation(conversationId: number) {
+  const url = CHATWOOT_BASE_URL + '/api/v1/accounts/' + CHATWOOT_ACCOUNT_ID + '/conversations/' + conversationId;
+  const res = await fetchWithTimeout(
+    url,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        api_access_token: CHATWOOT_API_ACCESS_TOKEN,
+      },
+      body: JSON.stringify({ status: 'open' }),
+    },
+    FETCH_TIMEOUT_MS
+  );
+  if (!res.ok) {
+    console.error('[chatwoot] failed to open conversation', { status: res.status });
+    throw new Error('chatwoot_open_failed:' + res.status);
   }
 }
 

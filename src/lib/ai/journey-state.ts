@@ -314,7 +314,10 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   // selectedProgram = the entire question.
   if (isGenericProgramRequest(currentMessage) || isAddonInterestMessage(currentMessage)) return undefined;
 
-  const named = currentMessage.match(/(?:สนใจ|เลือก|เอา|ต้องการ|interested in|choose)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
+  // "สนใจ ..." without a prior catalog option is an interest/topic
+  // signal, not a confirmed selection. Let the catalog router show the
+  // matching program first; selection becomes explicit after an option list.
+  const named = currentMessage.match(/(?:เลือก|เอา|ต้องการ|interested in|choose)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
   if (named?.[1] && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(named[1].trim())) {
     return { title: named[1].trim() };
   }
