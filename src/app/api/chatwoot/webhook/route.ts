@@ -240,17 +240,24 @@ export async function POST(req: NextRequest) {
     }
     claimedEventId = claim.eventId;
 
-    // ACK Chatwoot immediately after the idempotency claim. AI/tool work continues
-    // in Vercel's waitUntil() so model latency does not trigger AgentBot timeout.
-    waitUntil(processClaimedWebhook({
+    const claimedWebhook = {
       supabase,
       claimedEventId,
       conversationId,
       messageId,
       content,
       sender: payload.sender ?? payload.contact ?? undefined,
-    }));
+    };
 
+    // Vercel needs waitUntil() so AI/tool work survives the request lifecycle.
+    // Our long-running local Node runtime must await the work itself; otherwise
+    // the webhook can ACK Chatwoot and return before the reply is sent.
+    if (process.env.VERCEL === '1') {
+      waitUntil(processClaimedWebhook(claimedWebhook));
+      return NextResponse.json({ status: 'ok' });
+    }
+
+    await processClaimedWebhook(claimedWebhook);
     return NextResponse.json({ status: 'ok' });
   } catch (err) {
     // ถึงจุดนี้แปลว่า sendChatwootReply เอง throw (ตอบลูกค้าไม่สำเร็จ — ลูกค้า
