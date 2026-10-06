@@ -230,6 +230,28 @@ const cases = [
     },
   },
   {
+    id: "T1j_province_continuation_priority",
+    label: "Province answer after province prompt must override stale selected-program state",
+    query: "อุดร",
+    history: [
+      { role: "user", content: "เลือกตรวจเข่า" },
+      { role: "assistant", content: "ได้เลยค่ะ 😊 รับทราบโปรแกรมตรวจเข่าแล้วนะคะ" },
+      { role: "user", content: "มีโปรแกรมอะไรบ้าง" },
+      { role: "assistant", content: "ตอนนี้ WOS มีโปรแกรมสุขภาพใน หนองคาย, อุดรธานี ค่ะ สนใจโปรแกรมที่จังหวัดไหนคะ?" },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล|ประสานงานต่อ/iu.test(r.replyText)) {
+        return { pass: false, reason: "province continuation incorrectly jumped into stale booking/name flow" };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|INDY CLINICS|DNA Wellness Center/iu.test(r.replyText)) {
+        return { pass: false, reason: "province continuation did not return the verified Udon catalog" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T1i_generic_program_discovery",
     label: "Generic program discovery must not become a selected-program booking/name flow",
     query: "ผมสนใจมีโปรแกรมอะไรแนะนำมั้ย",
@@ -343,7 +365,7 @@ async function main() {
     process.stdout.write(`[${c.id}] ${c.label} ... `);
     let result;
     try {
-      const r = await askAI(c.query);
+      const r = await askAI(c.query, c.history ?? []);
       if (!r.replyText.trim()) {
         result = { pass: false, reason: "empty AI response" };
       } else {

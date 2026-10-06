@@ -1014,7 +1014,16 @@ export async function runWosAI(
     const isHotelAvailabilityIntent =
       /(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|accommodation|ຮ້ານແຮມ|ໂຮງແຮມ|ຫ້ອງພັກ).*?(?:ว่าง|มีห้อง|availability|available|ເຫຼືອ|ວ່າງ)|(?:เช็คอิน|เช็กอิน|check[- ]?in|เข้าพัก|checkout|check[- ]?out).*?(?:โรงแรม|ที่พัก|ห้อง|hotel|room|ໂຮງແຮມ|ຫ້ອງ)/iu.test(userMessage);
 
-    if (journeyState.selectedProgram && !journeyState.customerName && !isHotelAvailabilityIntent) {
+    // A bare province immediately after Fern asks "จังหวัดไหน?" is a catalog
+    // continuation, never a program selection. This must win over stale
+    // selectedProgram state so "อุดร" cannot jump straight into booking.
+    const requestedProvinceForCatalog = detectLocationFromRawText(userMessage)[0];
+    const previousAssistantAskedProvinceForCatalog = [...cleanHistory]
+      .reverse()
+      .find((m) => m.role === 'assistant' && /(?:จังหวัดไหน|which province|ຈັງຫວັດໃດ)/iu.test(m.content));
+    const isProvinceCatalogContinuation = Boolean(requestedProvinceForCatalog && previousAssistantAskedProvinceForCatalog);
+
+    if (journeyState.selectedProgram && !journeyState.customerName && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation) {
       if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
       if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
       return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
@@ -1023,7 +1032,7 @@ export async function runWosAI(
     // The selected-program concierge is state-driven. Once the program and
     // customer name are known, never fall back to catalog/model selection:
     // move through transport -> pickup -> hotel -> handoff exactly once.
-    if (journeyState.selectedProgram && journeyState.customerName) {
+    if (journeyState.selectedProgram && journeyState.customerName && !isProvinceCatalogContinuation) {
       const conciergeStage = getWosConciergeStage(journeyState);
       if (conciergeStage === 'ask_transport_interest') {
         if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈລົດຮັບສົ່ງນຳບໍຄ່ະ?';
@@ -1061,7 +1070,7 @@ export async function runWosAI(
     );
     const isExplicitProgramLookup = isProgramOverviewQuestion(userMessage) || Boolean(getSymptomSearchAliases(userMessage)[0]);
     const isCollectingTransportPickup = journeyState.transportNeeded === true && !journeyState.transportOrigin;
-    if (hasActiveConciergeState && !isCollectingTransportPickup && !isExplicitProgramLookup && !isHotelAvailabilityIntent && !isNewJourneyIntent) {
+    if (hasActiveConciergeState && !isProvinceCatalogContinuation && !isCollectingTransportPickup && !isExplicitProgramLookup && !isHotelAvailabilityIntent && !isNewJourneyIntent) {
       if (!journeyState.customerName) {
         if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບລົງຂໍ້ມູນໃຫ້ທີມ WOS ປະສານງານຕໍ່ແດ່ຄ່ະ 😊';
         if (customerLanguage === 'en') return 'Sure 😊 What name should I use for the WOS team to coordinate with you?';
@@ -1117,10 +1126,8 @@ export async function runWosAI(
     // A province-only reply is a deterministic continuation of the catalog
     // question above. Never send a bare province through the LLM: it can be
     // misread as an incomplete fragment and produce unrelated language.
-    const requestedProvince = detectLocationFromRawText(userMessage)[0];
-    const previousAssistantAskedProvince = [...cleanHistory]
-      .reverse()
-      .find((m) => m.role === 'assistant' && /(?:จังหวัดไหน|which province|ຈັງຫວັດໃດ)/iu.test(m.content));
+    const requestedProvince = requestedProvinceForCatalog;
+    const previousAssistantAskedProvince = previousAssistantAskedProvinceForCatalog;
     if (requestedProvince && previousAssistantAskedProvince) {
       try {
         const items = await searchHealthProgramOverview(5, requestedProvince);
