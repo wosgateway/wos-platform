@@ -268,6 +268,30 @@ const cases = [
     },
   },
   {
+    id: "T1k_catalog_choice_followup",
+    label: "Catalog choice follow-up must stay in catalog mode instead of stale booking/hotel flow",
+    query: "คุณมีให้เลือกมั้ย",
+    history: [
+      { role: "user", content: "เลือกตรวจเข่า" },
+      { role: "assistant", content: "ได้เลยค่ะ 😊 รับทราบโปรแกรมตรวจเข่าแล้วนะคะ" },
+      { role: "user", content: "มีโปรแกรมอะไรบ้าง" },
+      { role: "assistant", content: "ตอนนี้ WOS มีโปรแกรมสุขภาพใน หนองคาย, อุดรธานี ค่ะ สนใจโปรแกรมที่จังหวัดไหนคะ?" },
+      { role: "user", content: "อุดร" },
+      { role: "assistant", content: "ได้เลยค่ะ 😊 ตอนนี้มีโปรแกรมสุขภาพในอุดรธานีให้เลือกค่ะ" },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล|รับเรื่องโรงแรม|ประสานงานต่อ/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog choice follow-up incorrectly jumped into booking/hotel flow: " + r.replyText };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|INDY CLINICS|DNA Wellness Center|โปรแกรม/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog choice follow-up did not return catalog options" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T2_hotel_availability_read",
     label: "Hotel availability: exact dates + Udon must return only verified available hotel data",
     query: "มีโรงแรมในอุดรธานีว่างไหม เช็คอิน 2026-09-29 เช็คเอาต์ 2026-10-01 1 ห้อง",

@@ -796,6 +796,12 @@ function isProgramOverviewQuestion(message: string): boolean {
   return /(?:มี|ขอ|อยากทราบ).*(?:โปรแกรม|บริการ).*(?:อะไร|อะไรบ้าง|ไหน|บ้าง)|(?:โปรแกรม|บริการ).*(?:อะไรบ้าง|ไหนบ้าง|มีอะไร)|(?:what|which).*(?:program|service)|(?:ມີ|ຂໍ|ຢາກຮູ້).*(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງ|ໃດ|ແດ່)|(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງແດ່|ໃດແດ່)/iu.test(message);
 }
 
+// Short follow-up questions such as "มีให้เลือกมั้ย" are still catalog intent.
+// Treat them as a fresh program lookup so stale concierge state cannot hijack the turn.
+function isCatalogChoiceQuestion(message: string): boolean {
+  return /มี\s*ให้\s*เลือก|มี\s*(?:ตัวเลือก|อะไร)\s*(?:ให้)?\s*(?:เลือก|บ้าง)|มีอะไรให้เลือก|what.*(?:options|choices)/iu.test(message);
+}
+
 function isHotelRequirementQuestion(message: string): boolean {
   return /(?:โรงแรม|ที่พัก|ห้องพัก|ห้องเตียง|hotel|accommodation|room|stay|ກະໂຮງແຮມ|ໂຮງແຮມ|ທີ່ພັກ|ຫ້ອງພັກ|ຕຽງ)/iu.test(message);
 }
@@ -1022,8 +1028,9 @@ export async function runWosAI(
       .reverse()
       .find((m) => m.role === 'assistant' && /(?:จังหวัดไหน|which province|ຈັງຫວັດໃດ)/iu.test(m.content));
     const isProvinceCatalogContinuation = Boolean(requestedProvinceForCatalog && previousAssistantAskedProvinceForCatalog);
+    const isExplicitProgramLookup = isProgramOverviewQuestion(userMessage) || isCatalogChoiceQuestion(userMessage) || Boolean(getSymptomSearchAliases(userMessage)[0]);
 
-    if (journeyState.selectedProgram && !journeyState.customerName && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation) {
+    if (journeyState.selectedProgram && !journeyState.customerName && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
       if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
       if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
       return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
@@ -1032,7 +1039,7 @@ export async function runWosAI(
     // The selected-program concierge is state-driven. Once the program and
     // customer name are known, never fall back to catalog/model selection:
     // move through transport -> pickup -> hotel -> handoff exactly once.
-    if (journeyState.selectedProgram && journeyState.customerName && !isProvinceCatalogContinuation) {
+    if (journeyState.selectedProgram && journeyState.customerName && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
       const conciergeStage = getWosConciergeStage(journeyState);
       if (conciergeStage === 'ask_transport_interest') {
         if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈລົດຮັບສົ່ງນຳບໍຄ່ະ?';
@@ -1068,7 +1075,6 @@ export async function runWosAI(
       journeyState.transportOrigin ||
       journeyState.hotelNeeded !== undefined
     );
-    const isExplicitProgramLookup = isProgramOverviewQuestion(userMessage) || Boolean(getSymptomSearchAliases(userMessage)[0]);
     const isCollectingTransportPickup = journeyState.transportNeeded === true && !journeyState.transportOrigin;
     if (hasActiveConciergeState && !isProvinceCatalogContinuation && !isCollectingTransportPickup && !isExplicitProgramLookup && !isHotelAvailabilityIntent && !isNewJourneyIntent) {
       if (!journeyState.customerName) {
@@ -1084,7 +1090,7 @@ export async function runWosAI(
     // Never dump unrelated hotel/transport inventory just because those records
     // also live in the catalog. Those are concierge capabilities that Fern
     // should offer later, when the journey calls for them.
-    if (isProgramOverviewQuestion(userMessage)) {
+    if (isProgramOverviewQuestion(userMessage) || isCatalogChoiceQuestion(userMessage)) {
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? undefined;
         if (!province) {
