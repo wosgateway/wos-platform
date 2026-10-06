@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
+import { createHash } from 'node:crypto';
 import { createServiceClient } from '@/lib/supabase/service';
 import { deriveWosJourneyState, getWosConciergeStage } from '@/lib/ai/journey-state';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
@@ -26,7 +27,8 @@ import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from
 const CHATWOOT_BASE_URL = process.env.CHATWOOT_BASE_URL!;
 const CHATWOOT_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID!;
 const CHATWOOT_API_ACCESS_TOKEN = process.env.CHATWOOT_API_ACCESS_TOKEN!;
-const WEBHOOK_SECRET = process.env.CHATWOOT_WEBHOOK_SECRET!; // ต้องตั้งค่านี้และแนบใน outgoing_url เป็น ?secret=...
+const WEBHOOK_SECRET = process.env.CHATWOOT_WEBHOOK_SECRET!; // legacy shared secret
+const WEBHOOK_SECRET_SHA256 = process.env.CHATWOOT_WEBHOOK_SECRET_SHA256!; // preferred: SHA-256 of Chatwoot AgentBot secret
 const DEBUG_LOG = process.env.DEBUG_LOG === 'true'; // ตั้ง DEBUG_LOG=true ใน .env.local เฉพาะตอนอยาก debug เท่านั้น ปิดไว้บน production
 
 function debugLog(...args: unknown[]) {
@@ -159,11 +161,17 @@ export async function POST(req: NextRequest) {
   let claimedEventId: string | null = null;
 
   try {
-    // --- 1. Verify shared secret ---
-    // Chatwoot AgentBot ไม่แนบ signature มาให้ ต้องตั้ง secret เองใน outgoing_url
-    // เช่น http://192.168.99.7:3001/api/chatwoot/webhook?secret=xxxxx
+    // --- 1. Verify AgentBot secret ---
+    // This inbox uses the outgoing_url query-secret form. The hash form lets
+    // WOS verify Chatwoot's generated secret without storing that secret in WOS.
     const secret = req.nextUrl.searchParams.get('secret');
-    if (!WEBHOOK_SECRET || secret !== WEBHOOK_SECRET) {
+    const secretMatchesLegacy = Boolean(WEBHOOK_SECRET && secret === WEBHOOK_SECRET);
+    const secretMatchesHash = Boolean(
+      WEBHOOK_SECRET_SHA256 &&
+      secret &&
+      createHash('sha256').update(secret, 'utf8').digest('hex') === WEBHOOK_SECRET_SHA256,
+    );
+    if (!secretMatchesLegacy && !secretMatchesHash) {
       console.warn('[chatwoot-webhook] rejected: invalid or missing secret');
       return NextResponse.json({ status: 'unauthorized' }, { status: 401 });
     }
