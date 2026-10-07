@@ -230,6 +230,26 @@ const cases = [
     },
   },
   {
+    id: "T1i_bare_lao_interest_after_reset",
+    label: "Bare Lao interest after reset must re-enter catalog discovery, never ask for name without a selected program",
+    query: "ສົນໃຈ",
+    history: [
+      { role: "user", content: "ເລີ່ມໃໝ່" },
+      { role: "assistant", content: "ໄດ້ເລີຍຄ່ະ 😊 ໃບເຟີນລ້າງຂໍ້ມູນການຈອງເກົ່າໃຫ້ແລ້ວ. ເລີ່ມຂໍ້ມູນໃໝ່ໄດ້ເລີຍຄ່ະ" },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ຂໍຊື່|ຊື່ສຳລັບ|ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "bare Lao interest after reset incorrectly entered name/booking flow" };
+      }
+      if (!/ໂປຣແກຣມ|ສຸຂະພາບ|ກວດ|program|ตรวจสุขภาพ|ตรวจเข่า/iu.test(r.replyText)) {
+        return { pass: false, reason: "bare Lao interest did not return to verified catalog discovery" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T1j_province_continuation_priority",
     label: "Province answer after province prompt must override stale selected-program state",
     query: "อุดร",
@@ -333,6 +353,47 @@ const cases = [
           reason: "response leaked an unrelated catalog item (hotel/onsen) for a nonsense query",
         };
       }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T5_hotel_affirmative_handoff",
+    label: "Hotel affirmative after Fern's hotel question should immediately produce the handoff summary",
+    query: "ສົນໃຈ",
+    kind: "hard",
+    history: [
+      { role: "assistant", content: "1. Knee Check — 1,500 THB\n2. Health Check — 1,900 THB" },
+      { role: "user", content: "Knee Check" },
+      { role: "assistant", content: "Sure 😊 What name should I use for the WOS team to coordinate with you?" },
+      { role: "user", content: "Wos Admin" },
+      { role: "assistant", content: "Would you like transport?" },
+      { role: "user", content: "No" },
+      { role: "assistant", content: "Would you like a hotel?" },
+    ],
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (!/Knee Check/iu.test(r.replyText) || !/WOS/iu.test(r.replyText)) return { pass: false, reason: 'hotel affirmative did not produce a handoff summary' };
+      if (!/(needed|ໂຮງແຮມ: ຕ້ອງການ)/iu.test(r.replyText)) return { pass: false, reason: 'handoff summary did not record hotel as needed' };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T5b_hotel_question_not_handoff",
+    label: "Hotel information question after hotel prompt must not be swallowed by the handoff summary",
+    query: "What hotels are available?",
+    kind: "hard",
+    history: [
+      { role: "assistant", content: "1. Knee Check — 1,500 THB\n2. Health Check — 1,900 THB" },
+      { role: "user", content: "Knee Check" },
+      { role: "assistant", content: "Sure 😊 What name should I use for the WOS team to coordinate with you?" },
+      { role: "user", content: "Wos Admin" },
+      { role: "assistant", content: "Would you like transport?" },
+      { role: "user", content: "No" },
+      { role: "assistant", content: "Would you like a hotel?" },
+    ],
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/(here(?:'s| is) a quick summary|summary for the WOS team)/iu.test(r.replyText)) return { pass: false, reason: "hotel information question was incorrectly converted into a handoff summary" };
       return { pass: true };
     },
   },

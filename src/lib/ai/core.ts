@@ -34,7 +34,7 @@ import {
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
 import { deriveWosJourneyState, formatJourneyState, getWosConciergeStage } from './journey-state';
-import { buildHandoffConfirmation } from '@/lib/handoff/concierge';
+import { buildConciergeHandoffSummary, buildHandoffConfirmation } from '@/lib/handoff/concierge';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -188,6 +188,18 @@ function normalizeFernThaiReply(text: string, isThaiConversation: boolean): stri
   return text
     .replace(/ผม(?=\s*(?:ช่วย|ขอ|แนะนำ|คิดว่า|ขอเสนอ|สามารถ))/g, 'ใบเฟิร์น')
     .replace(/ครับ/g, 'ค่ะ');
+}
+
+// U+FFFD (�) means some upstream text was decoded as an invalid byte
+// sequence. Never let the replacement character reach Chatwoot/WhatsApp.
+// Remove only the replacement marker and preserve valid Thai/Lao/English/emoji.
+function sanitizeCustomerFacingText(text: string): string {
+  if (!text.includes('\uFFFD')) return text;
+  console.warn(
+    '[WOS_AI_UTF8_GUARD]',
+    JSON.stringify({ replacementCharacters: (text.match(/\uFFFD/g) ?? []).length }),
+  );
+  return text.replace(/\uFFFD+/g, '').replace(/[ \t]{2,}/g, ' ').trim();
 }
 
 // Small local models can occasionally fall into a repetition loop, especially
@@ -874,6 +886,58 @@ export async function runWosAI(
   history: WosAIHistoryMessage[] = []
 ) {
   try {
+    // HARD CONVERSATION BOUNDARY: standalone greetings must never fall
+    // through to catalog/knowledge/LLM lookup. This keeps simple "hello"
+    // messages deterministic even when the LLM endpoint is unavailable.
+    const normalizedMessage = userMessage.trim().replace(/[!?.,،。！？]+$/gu, '').trim();
+    const standaloneGreeting = /^(?:สวัสดี|หวัดดี|ສະບາຍດີ|hello|hi|hey|good morning|good afternoon|good evening)(?:ครับ|ค่ะ|คะ|ครับผม|ຄ່ະ|ຄະ)?$/iu.test(normalizedMessage);
+    const casualSmallTalk = /^(?:(?:สวัสดี|หวัดดี|ສະບາຍດີ|hello|hi|hey)(?:ครับ|ค่ะ|คะ|ครับผม|ຄ່ະ|ຄະ)?[\s,]*(?:วันนี้เป็นยังไงบ้าง|วันนี้เป็นอย่างไรบ้าง|วันนี้เป็นไงบ้าง|เป็นยังไงบ้าง|เป็นอย่างไรบ้าง|สบายดีไหม|วันนี้สบายดีไหม|ມື້ນີ້ເປັນແນວໃດ|ສະບາຍດີບໍ|how are you|how's it going|how are things))$/iu.test(normalizedMessage);
+    if (standaloneGreeting || casualSmallTalk) {
+      const language = detectWosLanguage(userMessage, history.filter((message) => message.role === 'user').map((message) => message.content));
+      if (language === 'lo') return 'ສະບາຍດີຄ່ະ 😊 ໃບເຟີນສະບາຍດີຄ່ະ ມື້ນີ້ມີຫຍັງໃຫ້ຊ່ວຍບໍ?';
+      if (language === 'en') return 'Hi 😊 I\'m doing well. How can I help you today?';
+      return 'สวัสดีค่ะ 😊 ใบเฟิร์นสบายดีค่ะ วันนี้มีอะไรให้ช่วยไหมคะ';
+    }
+
+    // HARD CONVERSATION BOUNDARY: a bare "interest" message without a
+    // program selection must enter catalog discovery, not booking/name
+    // collection. Keep this before every model/knowledge path so a small
+    // model cannot reinterpret "ສົນໃຈ" as confirmation of a stale journey.
+    const bareInterestMessage = /^(?:สนใจ|ต้องการ|เอา|yes|yeah|yep|sure|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
+    if (bareInterestMessage) {
+      const resetPattern = /^(?:เริ่มข้อมูลใหม่|เริ่มใหม่|เริ่มคุยใหม่|จองใหม่(?:เลย)?|ล้างข้อมูล(?:เดิม)?|เริ่มการจองใหม่|start over|start new|new booking|new journey|reset|clear previous|clear data|ລ້າງຂໍ້ມູນເກົ່າ|ລ້າງຂໍ້ມູນ|ເລີ່ມໃໝ່|ຈອງໃໝ່)$/iu;
+      let boundary = -1;
+      for (let i = history.length - 1; i >= 0; i--) {
+        if (history[i].role === 'user' && resetPattern.test(history[i].content.trim())) {
+          boundary = i;
+          break;
+        }
+      }
+      const postResetHistory = boundary >= 0 ? history.slice(boundary + 1) : history;
+      const hasProgramContext = postResetHistory.some((message) =>
+        message.role === 'assistant' && (
+          /^\\s*\\d+[.)]/m.test(message.content) ||
+          /(?:โปรแกรม|ໂປຣແກຣມ|selected program)\\s*:/iu.test(message.content) ||
+          /(?:รับทราบ|เลือก|selected|ເລືອກ).*?(?:โปรแกรม|ໂປຣແກຣມ)/iu.test(message.content)
+        )
+      );
+      const lastAssistant = [...postResetHistory].reverse().find((message) => message.role === 'assistant')?.content ?? '';
+      const isOptionalServiceContinuation = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(lastAssistant);
+      if (!hasProgramContext && !isOptionalServiceContinuation) {
+        const language = detectWosLanguage(userMessage, history.filter((message) => message.role === 'user').map((message) => message.content));
+        try {
+          const items = await searchHealthProgramOverview(5);
+          const answer = buildProgramAnswer(items, userMessage, '', language);
+          if (answer) return answer;
+        } catch (bareInterestCatalogError) {
+          console.warn('[WOS_AI_BARE_INTEREST_CATALOG_FAILED]', bareInterestCatalogError instanceof Error ? bareInterestCatalogError.message : String(bareInterestCatalogError));
+        }
+        if (language === 'lo') return 'ໄດ້ເລີຍຄ່ະ 😊 ສົນໃຈໂປຣແກຣມໃດຄະ? ໃບເຟີນຊ່ວຍແນະນຳໂປຣແກຣມທີ່ມີຕອນນີ້ໃຫ້ໄດ້ຄ່ະ';
+        if (language === 'en') return 'Sure 😊 Which program are you interested in? I can show you the WOS programs available now.';
+        return 'ได้เลยค่ะ 😊 สนใจโปรแกรมไหนคะ? ใบเฟิร์นแนะนำโปรแกรมที่มีตอนนี้ให้ดูก่อนได้ค่ะ';
+      }
+    }
+
     // Symptom intent has priority over broad catalog wording. A message
     // such as "ปวดเข่า...มีโปรแกรมอะไรที่เกี่ยวข้องไหม" is asking for a
     // relevant service, not a province/program overview.
@@ -986,6 +1050,27 @@ export async function runWosAI(
       return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นล้างข้อมูลการจองเดิมให้แล้วนะคะ เริ่มข้อมูลใหม่ได้เลยค่ะ';
     }
 
+    // A bare affirmative after a reset (for example Lao "ສົນໃຈ") is only
+    // an interest signal. It is never enough to enter the booking/name stage.
+    // Put this guard immediately after the reset boundary so later journey,
+    // model, or stale-context branches cannot swallow it.
+    const isBareInterestAfterReset = /^(?:สนใจ|ต้องการ|เอา|yes|yeah|yep|sure|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim())
+      && !journeyState.selectedProgram
+      && recentOptions.length === 0
+      && !/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(lastAssistantForLanguage);
+    if (isBareInterestAfterReset) {
+      try {
+        const items = await searchHealthProgramOverview(5);
+        const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
+        if (answer) return answer;
+      } catch (bareInterestAfterResetError) {
+        console.warn('[WOS_AI_BARE_INTEREST_AFTER_RESET_LOOKUP_FAILED]', bareInterestAfterResetError instanceof Error ? bareInterestAfterResetError.message : String(bareInterestAfterResetError));
+      }
+      if (customerLanguage === 'lo') return 'ໄດ້ເລີຍຄ່ະ 😊 ສົນໃຈໂປຣແກຣມໃດຄະ? ໃບເຟີນຊ່ວຍແນະນຳໂປຣແກຣມທີ່ມີຕອນນີ້ໃຫ້ໄດ້ຄ່ະ';
+      if (customerLanguage === 'en') return 'Sure 😊 Which program are you interested in? I can show you the WOS programs available now.';
+      return 'ได้เลยค่ะ 😊 สนใจโปรแกรมไหนคะ? ใบเฟิร์นแนะนำโปรแกรมที่มีตอนนี้ให้ดูก่อนได้ค่ะ';
+    }
+
     // Short conversational turns must never inherit a stale language from an
     // earlier corrupted assistant reply. The latest customer message wins.
     if (/^(?:สวัสดี|สบายดี|หวัดดี|hello|hi|hey|ສະບາຍດີ|ສະບາຍດີບໍ|ສບາຍດີ|ສບາຍດີບໍ|ສະບາຍດີແດ່)$/iu.test(userMessage.trim())) {
@@ -1029,6 +1114,30 @@ export async function runWosAI(
       .find((m) => m.role === 'assistant' && /(?:จังหวัดไหน|which province|ຈັງຫວັດໃດ)/iu.test(m.content));
     const isProvinceCatalogContinuation = Boolean(requestedProvinceForCatalog && previousAssistantAskedProvinceForCatalog);
     const isExplicitProgramLookup = isProgramOverviewQuestion(userMessage) || isCatalogChoiceQuestion(userMessage) || Boolean(getSymptomSearchAliases(userMessage)[0]);
+    const previousAssistantAskedHotel = cleanHistory
+      .filter((m) => m.role === 'assistant')
+      .some((m) => /(?:สนใจโรงแรม|hotel too|would you like a hotel|hotel?ໂຮງແຮມນຳ)/iu.test(m.content));
+    const isAffirmativeHotelReply = /^(?:สนใจ|ต้องการ|เอา|เอาด้วย|yes|yeah|yep|sure|want it|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ)[\s!?.]*(?:ครับ|ค่ะ|ครับผม|ค่ะผม|please)?[\s!?.]*$/iu.test(userMessage.trim());
+    const isNegativeHotelReply = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|nope|not interested|ບໍ່|ບໍ່ເອົາ|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ)[\s!?.]*$/iu.test(userMessage.trim());
+
+    // Once Fern has explicitly asked whether a hotel is needed, only a short
+    // affirmative answer completes the concierge intake. Keep unrelated hotel
+    // questions from being swallowed by the handoff summary.
+    if (journeyState.selectedProgram && previousAssistantAskedHotel && isAffirmativeHotelReply && !isHotelAvailabilityIntent && !isExplicitProgramLookup) {
+      return buildConciergeHandoffSummary(customerLanguage, {
+        ...journeyState,
+        transportNeeded: journeyState.transportNeeded ?? false,
+        hotelNeeded: true,
+      });
+    }
+
+    if (journeyState.selectedProgram && journeyState.customerName && previousAssistantAskedHotel && isNegativeHotelReply && !isHotelAvailabilityIntent && !isExplicitProgramLookup) {
+      return buildConciergeHandoffSummary(customerLanguage, {
+        ...journeyState,
+        transportNeeded: journeyState.transportNeeded ?? false,
+        hotelNeeded: false,
+      });
+    }
 
     if (journeyState.selectedProgram && !journeyState.customerName && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
       if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
@@ -1057,9 +1166,7 @@ export async function runWosAI(
         return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
       }
       if (conciergeStage === 'awaiting_confirmation' && journeyState.hotelNeeded === true) {
-        if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ໃບເຟີນຮັບເລື່ອງໂຮງແຮມໄວ້ແລ້ວ ທີມ WOS ຈະປະສານຕໍ່ໃຫ້ຄ່ະ';
-        if (customerLanguage === 'en') return 'Got it 😊 I have noted the hotel request. The WOS team will coordinate the hotel details with you.';
-        return 'รับทราบค่ะ 😊 ใบเฟิร์นรับเรื่องโรงแรมไว้แล้วนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดต่อให้ค่ะ';
+        return buildConciergeHandoffSummary(customerLanguage, journeyState);
       }
       if (conciergeStage === 'awaiting_confirmation' && journeyState.hotelNeeded === false) {
         return buildHandoffConfirmation(customerLanguage);
@@ -1170,6 +1277,26 @@ export async function runWosAI(
       } catch (symptomLookupError) {
         console.warn('[WOS_AI_EARLY_SYMPTOM_LOOKUP_FAILED]', symptomLookupError instanceof Error ? symptomLookupError.message : String(symptomLookupError));
       }
+    }
+
+    // A bare affirmative after a reset is not a booking confirmation.
+    // There is no selected program yet, so never jump into concierge/name
+    // collection. Re-enter catalog discovery first. This is especially
+    // important for Lao "ສົນໃຈ", which by itself only means "interested".
+    const isBareInterest = /^(?:สนใจ|ต้องการ|เอา|yes|yeah|yep|sure|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
+    const lastAssistantTextForInterest = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+    const assistantAskedOptionalService = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(lastAssistantTextForInterest);
+    if (isBareInterest && !journeyState.selectedProgram && !assistantAskedOptionalService && recentOptions.length === 0) {
+      try {
+        const items = await searchHealthProgramOverview(5);
+        const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
+        if (answer) return answer;
+      } catch (bareInterestLookupError) {
+        console.warn('[WOS_AI_BARE_INTEREST_LOOKUP_FAILED]', bareInterestLookupError instanceof Error ? bareInterestLookupError.message : String(bareInterestLookupError));
+      }
+      if (customerLanguage === 'lo') return 'ໄດ້ເລີຍຄ່ະ 😊 ສົນໃຈໂປຣແກຣມໃດຄະ? ໃບເຟີນຊ່ວຍແນະນຳໂປຣແກຣມທີ່ມີຕອນນີ້ໃຫ້ໄດ້ຄ່ະ';
+      if (customerLanguage === 'en') return 'Sure 😊 Which program are you interested in? I can show you the WOS programs available now.';
+      return 'ได้เลยค่ะ 😊 สนใจโปรแกรมไหนคะ? ใบเฟิร์นแนะนำโปรแกรมที่มีตอนนี้ให้ดูก่อนได้ค่ะ';
     }
 
     // Unsupported WOS policy questions must not be echoed or guessed.
@@ -2238,11 +2365,11 @@ const runToolRounds = async (
         '[WOS_AI] using verified catalog answer',
         JSON.stringify({ programs: verifiedPrograms.length })
       );
-      return programAnswer;
+      return sanitizeCustomerFacingText(programAnswer);
     }
 
     if (finalText && !looksLikeLeakedToolCall(finalText)) {
-      return finalText;
+      return sanitizeCustomerFacingText(finalText);
     }
 
     if (programAnswer) {
@@ -2250,7 +2377,7 @@ const runToolRounds = async (
         '[WOS_AI] using server-built answer from verified program data',
         JSON.stringify({ programs: verifiedPrograms.length })
       );
-      return programAnswer;
+      return sanitizeCustomerFacingText(programAnswer);
     }
 
     // Either the model was still requesting tools after MAX_TOOL_ROUNDS (or

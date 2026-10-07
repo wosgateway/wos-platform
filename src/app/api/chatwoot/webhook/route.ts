@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { waitUntil } from '@vercel/functions';
-import { createHash } from 'node:crypto';
+import { createHash, createHmac, timingSafeEqual } from 'node:crypto';
 import { createServiceClient } from '@/lib/supabase/service';
 import { deriveWosJourneyState, getWosConciergeStage } from '@/lib/ai/journey-state';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
@@ -27,8 +27,8 @@ import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from
 const CHATWOOT_BASE_URL = process.env.CHATWOOT_BASE_URL!;
 const CHATWOOT_ACCOUNT_ID = process.env.CHATWOOT_ACCOUNT_ID!;
 const CHATWOOT_API_ACCESS_TOKEN = process.env.CHATWOOT_API_ACCESS_TOKEN!;
+// Read the webhook secret at request time so Next.js cannot freeze a stale build-time value.
 const WEBHOOK_SECRET = process.env.CHATWOOT_WEBHOOK_SECRET!; // legacy shared secret
-const WEBHOOK_SECRET_SHA256 = process.env.CHATWOOT_WEBHOOK_SECRET_SHA256!; // preferred: SHA-256 of Chatwoot AgentBot secret
 const DEBUG_LOG = process.env.DEBUG_LOG === 'true'; // ตั้ง DEBUG_LOG=true ใน .env.local เฉพาะตอนอยาก debug เท่านั้น ปิดไว้บน production
 
 function debugLog(...args: unknown[]) {
@@ -112,9 +112,23 @@ async function processClaimedWebhook(args: {
           ? buildHandoffResultMessage(language, handoff.notification)
           : buildHandoffFailureMessage(language);
       }
-    } else if (journeyReady) {
-      // Concierge is state-driven: once the core booking is complete, Fern
-      // collects optional transport/hotel details before asking for final confirmation.
+    } else if (
+      journey.selectedProgram &&
+      journey.customerName &&
+      /(?:what name|your name|ชื่อ.*(?:จอง|booking|wos)|ຊື່.*(?:ຈອງ|WOS))/iu.test(replyText)
+    ) {
+      // Chatwoot gives us the contact name, while AI Core only receives the
+      // conversation turns. If the model therefore asks for the name again,
+      // prefer the deterministic concierge stage that already knows the name.
+      // This is especially important for short Lao confirmations such as
+      // "ສົນໃຈ", where the model can otherwise restart the intake.
+      replyText = buildConciergeStagePrompt(language, journey);
+    } else if (journeyReady && !aiResult.ok) {
+      // AI Core is the single source of truth for normal conversational turns.
+      // Only fall back to the deterministic concierge stage prompt when AI Core
+      // itself failed; never overwrite a valid AI Core answer just because the
+      // journey happens to be ready. This prevents short Lao replies such as
+      // "ສົນໃຈ" from being replaced by a stale Thai booking summary.
       replyText = buildConciergeStagePrompt(language, journey);
     }
 
@@ -157,26 +171,74 @@ function isRateLimitedError(error: unknown): boolean {
 }
 
 export async function POST(req: NextRequest) {
-  const supabase = createServiceClient();
+  let supabase: ReturnType<typeof createServiceClient> | null = null;
   let claimedEventId: string | null = null;
 
   try {
-    // --- 1. Verify AgentBot secret ---
-    // This inbox uses the outgoing_url query-secret form. The hash form lets
-    // WOS verify Chatwoot's generated secret without storing that secret in WOS.
+    // Create the service client only after entering the guarded request path.
+    // This ensures authentication failures return 401 instead of becoming a
+    // generic 500 when Supabase configuration/client creation is the problem.
+    supabase = createServiceClient();
+
+    // --- 1. Verify AgentBot webhook ---
+    // Read this at request time; do not rely on a build-time inlined env value.
+    const webhookSecretSha256 = process.env.CHATWOOT_WEBHOOK_SECRET_SHA256 || '';
+    const webhookUrlSecretSha256 = process.env.CHATWOOT_WEBHOOK_URL_SECRET_SHA256 || '';
+    // Current Chatwoot AgentBot webhooks use signed headers. Keep the old
+    // query-secret form as a compatibility fallback for older configurations.
+    const rawBody = await req.text();
+    const signature = req.headers.get('x-chatwoot-signature');
+    const timestamp = req.headers.get('x-chatwoot-timestamp');
+    let signatureValid = false;
+    if (WEBHOOK_SECRET && signature && timestamp) {
+      const timestampSeconds = Number(timestamp);
+      const fresh = Number.isFinite(timestampSeconds) && Math.abs(Math.floor(Date.now() / 1000) - timestampSeconds) <= 300;
+      const expected = 'sha256=' + createHmac('sha256', WEBHOOK_SECRET).update(timestamp + '.' + rawBody, 'utf8').digest('hex');
+      const received = Buffer.from(signature, 'utf8');
+      const expectedBuffer = Buffer.from(expected, 'utf8');
+      signatureValid = fresh && received.length === expectedBuffer.length && timingSafeEqual(received, expectedBuffer);
+    }
     const secret = req.nextUrl.searchParams.get('secret');
+    // Chatwoot webhook records may carry their signing secret in the webhook URL.
+    // Keep the configured env secret as the primary credential, but support the
+    // existing signed webhook URL as a compatibility candidate when its query
+    // secret is present. This lets us recover from an env/UI secret mismatch
+    // without disabling HMAC verification.
+    const hmacCandidates: string[] = [WEBHOOK_SECRET, secret].filter((value): value is string => Boolean(value)).filter((value, index, all) => all.indexOf(value) === index);
+    if (!signatureValid && timestamp && signature && hmacCandidates.length > 0) {
+      const timestampSeconds = Number(timestamp);
+      const fresh = Number.isFinite(timestampSeconds) && Math.abs(Math.floor(Date.now() / 1000) - timestampSeconds) <= 300;
+      if (fresh) {
+        for (const candidate of hmacCandidates) {
+          const candidateExpected = 'sha256=' + createHmac('sha256', candidate).update(timestamp + '.' + rawBody, 'utf8').digest('hex');
+          const candidateReceived = Buffer.from(signature, 'utf8');
+          const candidateExpectedBuffer = Buffer.from(candidateExpected, 'utf8');
+          if (candidateReceived.length === candidateExpectedBuffer.length && timingSafeEqual(candidateReceived, candidateExpectedBuffer)) {
+            signatureValid = true;
+            break;
+          }
+        }
+      }
+    }
     const secretMatchesLegacy = Boolean(WEBHOOK_SECRET && secret === WEBHOOK_SECRET);
     const secretMatchesHash = Boolean(
-      WEBHOOK_SECRET_SHA256 &&
       secret &&
-      createHash('sha256').update(secret, 'utf8').digest('hex') === WEBHOOK_SECRET_SHA256,
+      ((webhookSecretSha256 && createHash('sha256').update(secret, 'utf8').digest('hex') === webhookSecretSha256) ||
+       (webhookUrlSecretSha256 && createHash('sha256').update(secret, 'utf8').digest('hex') === webhookUrlSecretSha256)),
     );
-    if (!secretMatchesLegacy && !secretMatchesHash) {
-      console.warn('[chatwoot-webhook] rejected: invalid or missing secret');
+    if (!signatureValid && !secretMatchesLegacy && !secretMatchesHash) {
+      console.warn('[chatwoot-webhook] rejected: invalid webhook authentication', {
+        signaturePresent: Boolean(signature),
+        timestampPresent: Boolean(timestamp),
+        querySecretPresent: Boolean(secret),
+        signatureValid,
+        secretMatchesLegacy,
+        secretMatchesHash,
+      });
       return NextResponse.json({ status: 'unauthorized' }, { status: 401 });
     }
 
-    const payload = await req.json();
+    const payload = JSON.parse(rawBody);
 
     debugLog(
       `[debug] event=${payload.event} message_type=${payload.message_type} private=${payload.private} status=${payload.conversation?.status} assignee=${payload.conversation?.meta?.assignee?.id} assignee_type=${payload.conversation?.meta?.assignee?.type}`
@@ -273,7 +335,7 @@ export async function POST(req: NextRequest) {
     // ซึ่งถูกจับแยกใน getAIReply() แล้วไม่ throw ต่อ (ลูกค้าเคสนั้นได้ fallback
     // message ไปแล้ว)
     console.error('[chatwoot-webhook] error', err instanceof Error ? err.message : String(err));
-    if (claimedEventId) {
+    if (claimedEventId && supabase) {
       // ปล่อย claim (ลบแถวทิ้ง) แทนการบันทึก 'failed' — ถ้าปล่อยให้แถวค้างเป็น
       // 'failed' การ retry ของ Chatwoot เองจะชน unique constraint (23505)
       // กลายเป็น "duplicate" แล้วถูกข้าม ทำให้ลูกค้าไม่มีทางได้รับคำตอบเลย

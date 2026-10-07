@@ -146,6 +146,35 @@ export function buildConciergeReviewPrompt(language: WosLanguage, state: WosJour
   return `สรุปสั้น ๆ นะคะ 😊\n${summary}\n\nสนใจรถรับส่งหรือโรงแรมเพิ่มไหมคะ?`;
 }
 
+export function buildConciergeHandoffSummary(language: WosLanguage, state: WosJourneyState): string {
+  const lines = [
+    state.selectedProgram ? `• โปรแกรม: ${state.selectedProgram}` : '',
+    state.customerName ? `• ชื่อผู้จอง: ${state.customerName}` : '',
+    state.transportNeeded === true ? '• รถรับส่ง: ต้องการ' : state.transportNeeded === false ? '• รถรับส่ง: ไม่ต้องการ' : '',
+    state.transportNeeded === true && state.transportOrigin ? `• จุดรับ: ${state.transportOrigin}` : '',
+    state.hotelNeeded === true ? '• โรงแรม: ต้องการ' : state.hotelNeeded === false ? '• โรงแรม: ไม่ต้องการ' : '',
+  ].filter(Boolean);
+
+  if (language === 'lo') {
+    const laoLines = lines
+      .map((line) => line
+        .replace('• โปรแกรม:', '• ໂປຣແກຣມ:')
+        .replace('• ชื่อผู้จอง:', '• ຊື່ຜູ້ຈອງ:')
+        .replace('• รถรับส่ง: ต้องการ', '• ລົດຮັບສົ່ງ: ຕ້ອງການ')
+        .replace('• รถรับส่ง: ไม่ต้องการ', '• ລົດຮັບສົ່ງ: ບໍ່ຕ້ອງການ')
+        .replace('• จุดรับ:', '• ຈຸດຮັບ:')
+        .replace('• โรงแรม: ต้องการ', '• ໂຮງແຮມ: ຕ້ອງການ')
+        .replace('• โรงแรม: ไม่ต้องการ', '• ໂຮງແຮມ: ບໍ່ຕ້ອງການ'));
+    return `ສະຫຼຸບຂໍ້ມູນໃຫ້ທີມ WOS ນະຄ່ະ 😊\n\n${laoLines.join('\n')}\n\nໃບເຟີນຈະປະສານທີມ WOS ຕໍ່ໃຫ້ຄ່ະ ແລະທີມງານຈະຕິດຕໍ່ກັບເພື່ອຢືນຢັນລາຍລະອຽດ.`;
+  }
+  if (language === 'en') {
+    const englishLines = lines
+      .map((line) => line.replace('• โปรแกรม:', '• Program:').replace('• ชื่อผู้จอง:', '• Name:').replace('• รถรับส่ง: ต้องการ', '• Transport: needed').replace('• รถรับส่ง: ไม่ต้องการ', '• Transport: not needed').replace('• จุดรับ:', '• Pickup:').replace('• โรงแรม: ต้องการ', '• Hotel: needed').replace('• โรงแรม: ไม่ต้องการ', '• Hotel: not needed'));
+    return `Here’s a quick summary for the WOS team 😊\n\n${englishLines.join('\n')}\n\nFern will pass this to the WOS team, and they will contact you to confirm the remaining details.`;
+  }
+  return `สรุปข้อมูลให้ทีม WOS นะคะ 😊\n\n${lines.join('\n')}\n\nใบเฟิร์นจะประสานทีม WOS ต่อให้ค่ะ แล้วทีมงานจะติดต่อกลับเพื่อยืนยันรายละเอียดที่เหลือนะคะ`;
+}
+
 export function buildHandoffConfirmation(language: WosLanguage): string {
   if (language === 'lo') {
     return 'ສະຫຼຸບຂໍ້ມູນໃຫ້ແລ້ວ 😊 ຖ້າລາຍລະອຽດຖືກຕ້ອງ ຕອບ “ຢືນຢັນ” ໄດ້ເລີຍ.';

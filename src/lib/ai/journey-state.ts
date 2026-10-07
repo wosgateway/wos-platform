@@ -276,6 +276,20 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
     }
   }
 
+  // Fern's concierge summary is also a durable signal. Once the original
+  // numbered catalog has fallen out of the 20-message history window, recover
+  // the selected program from the summary Fern already sent to the customer.
+  for (let i = history.length - 1; i >= 0; i--) {
+    const message = history[i];
+    if (message.role !== 'assistant') continue;
+    const programMatch = message.content.match(/(?:^|\n)\s*[•*-]\s*(?:โปรแกรม|ໂປຣແກຣມ|selected program)\s*:\s*([^\n]+)/iu);
+    if (!programMatch?.[1]) continue;
+    const title = programMatch[1].trim();
+    if (!title) continue;
+    const providerMatch = message.content.match(/(?:^|\n)\s*[•*-]\s*(?:ผู้ให้บริการ|ຜູ້ໃຫ້ບໍລິການ|provider)\s*:\s*([^\n]+)/iu);
+    return { title, provider: providerMatch?.[1]?.trim() || undefined };
+  }
+
   // Named selections such as "สนใจตรวจเข่า" must persist into later turns.
   // Numeric selections were already handled above; this branch matches the
   // latest customer message after the latest assistant catalog list against
@@ -383,7 +397,22 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     }
   }
   const likelyBareCustomerName = bareCustomerName && !/(?:จอง|booking|book|reserve|ตรวจ|โปรแกรม|บริการ|สนใจ|ต้องการ|เอา|รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้อง|เวียงจันทน์|อุดร|หนองคาย|ขอนแก่น|travel|trip|transport|hotel|ຈອງ|ກວດ|ໂຮງແຮມ|ລົດ|ສົນໃຈ|ຕ້ອງການ)/iu.test(bareCustomerName) ? bareCustomerName : undefined;
-  const customerName = explicitCustomerName ?? likelyBareCustomerName;
+
+  // Fern's own booking summary is durable state evidence. Chatwoot may not
+  // provide a usable sender name on every WhatsApp event, so recover the
+  // customer name from the summary already shown to the customer before
+  // asking for it again.
+  let summaryCustomerName: string | undefined;
+  for (let i = effectiveHistory.length - 1; i >= 0; i--) {
+    const message = effectiveHistory[i];
+    if (message.role !== 'assistant') continue;
+    const match = message.content.match(/(?:^|\\n)\\s*[•*-]\\s*(?:ชื่อผู้จอง|ຊື່ຜູ້ຈອງ|customer name|name)\\s*:\\s*([^\\n]+)/iu);
+    if (match?.[1]?.trim()) {
+      summaryCustomerName = match[1].trim();
+      break;
+    }
+  }
+  const customerName = explicitCustomerName ?? likelyBareCustomerName ?? summaryCustomerName;
   // Transport V1 does not ask the customer for a drop-off/destination.
   // Keep destination out of the transport intake so a bare location such as
   // "อุดร" cannot accidentally reopen catalog/province routing. WOS Admin
@@ -440,7 +469,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
       const assistant = effectiveHistory[i];
       const user = effectiveHistory[i + 1];
       if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
-      if (!/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(user.content.trim())) continue;
+      if (!/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(user.content.trim())) continue;
       if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test(assistant.content)) return true;
     }
     return false;
@@ -467,17 +496,17 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
             : needs[needs.length - 1];
   // Short affirmative/negative replies inherit the optional-service question Fern just asked.
   const lastAssistantForAddon = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-  const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
-  const shortNegative = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|n|none|not interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
-  const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0EA5\u0EBB\u0E94\u0EAE\u0EB1\u0E9A\u0EAA\u0EBB\u0EC8\u0E87|\u0EA5\u0EBB\u0E94\u0EAA\u0EBB\u0EC8\u0E87|\u0E96\u0EB7\u0E81\u0EAA\u0EC8\u0E87)/iu.test(lastAssistantForAddon);
+  const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
+  const shortNegative = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|n|none|not interested|ບໍ່|ບໍ່ເອົາ|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
+  const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|ລົດຮັບສົ່ງ|ລົດສົ່ງ|ລົດຮັບ)/iu.test(lastAssistantForAddon);
   const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
-  const assistantAskedHotel = /(?:สนใจ.*(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)|(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room).*?(?:สนใจ|want|need|interested))/iu.test(lastAssistantForAddon);
+  const assistantAskedHotel = /(?:(?:สนใจ|ສົນໃຈ|ຕ້ອງການ).*?(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)|(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ).*?(?:สนใจ|want|need|interested|ສົນໃຈ|ຕ້ອງການ))/iu.test(lastAssistantForAddon);
 
   // Do not apply a bare "ไม่ต้องการ" to both optional services. A short
   // negative belongs only to the addon Fern just asked about; otherwise a
   // hotel rejection can accidentally erase an already-captured transport request.
-  const derivedTransportNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:รถ|รถรับส่ง)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:รถ|รถรับส่ง)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
-  const derivedHotelNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ).*?(?:โรงแรม|ที่พัก|ห้องพัก)|(?:don't|do not|no).*?(?:hotel|room)/iu);
+  const derivedTransportNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ|ຕ້ອງການ|ເອົາ|ຂໍ|ສົນໃຈ).*?(?:รถ|รถรับส่ง|ລົດ|ຮັບສົ່ງ)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ|ບໍ່ຕ້ອງການ|ບໍ່ເອົາ|ບໍ່ຂໍ).*?(?:รถ|รถรับส่ง|ລົດ|ຮັບສົ່ງ)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
+  const derivedHotelNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ|ຕ້ອງການ|ເອົາ|ຂໍ|ສົນໃຈ).*?(?:โรงแรม|ที่พัก|ห้องพัก|ໂຮງແຮມ|ທີ່ພັກ)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ|ບໍ່ຕ້ອງການ|ບໍ່ເອົາ|ບໍ່ຂໍ).*?(?:โรงแรม|ที่พัก|ห้องพัก|ໂຮງແຮມ|ທີ່ພັກ)|(?:don't|do not|no).*?(?:hotel|room)/iu);
 
   // Short affirmations are state transitions. Preserve the affirmative fact
   // on the following turn (for example, the pickup-point message), because
@@ -490,11 +519,11 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     const user = effectiveHistory[i + 1];
     if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
     const userText = user.content.trim();
-    if (/^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userText)) {
-      if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|\u0E23\u0E16|\u0E23\u0E31\u0E1A\u0E2A\u0E48\u0E07)/iu.test(assistant.content)) {
+    if (/^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ຂໍ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userText)) {
+      if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|ລົດຮັບສົ່ງ)/iu.test(assistant.content)) {
         historicalTransportNeeded = true;
       }
-      if (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|accommodation|\u0E42\u0EAE\u0E07\u0E41\u0EAE\u0E21|\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E81)/iu.test(assistant.content)) {
+      if (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|accommodation|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(assistant.content)) {
         historicalHotelNeeded = true;
       }
     }
