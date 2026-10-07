@@ -10,18 +10,17 @@
 // ไม่มีคอลัมน์รองรับ (เลขทะเบียน, ผู้ติดต่อ, consent ฯลฯ) ไว้ใน message
 // แบบ structured text แทน ไม่มี field ไหนหายไป
 import { useState, type FormEvent } from "react";
-import { createClient } from "@/lib/supabase/client";
 import type { PartnerPageContent } from "@/content/partner/types";
 
 // ผูกกับ BUSINESS_TYPE_LABEL ใน src/components/admin/PartnerLeadsManager.tsx
 // (ต้อง sync กันสองที่นี้ถ้าจะเพิ่ม/แก้ประเภทธุรกิจ)
 const BUSINESS_TYPE_TO_LABEL_KEY: Record<string, string> = {
-  HOSPITAL: "hospital",
-  CLINIC: "clinic",
-  HOTEL: "hotel",
-  TRANSPORT: "transport",
-  CORPORATE: "corporate",
-  WELLNESS_SPA: "wellness_spa",
+  HOSPITAL: "clinic_hospital",
+  CLINIC: "clinic_hospital",
+  HOTEL: "hotel_resort",
+  TRANSPORT: "transport_agent",
+  CORPORATE: "investor",
+  WELLNESS_SPA: "clinic_hospital",
 };
 
 interface FormState {
@@ -96,12 +95,11 @@ function isFilled(value: FormState[keyof FormState]): boolean {
   return value.trim().length > 0;
 }
 
-export function ApplyForm({ content }: { content: PartnerPageContent }) {
+export function ApplyForm({ content, locale }: { content: PartnerPageContent; locale: string }) {
   const { fields, sections, consent, ...copy } = content.applyForm;
   const [form, setForm] = useState<FormState>(initialState);
   const [status, setStatus] = useState<Status>("idle");
   const [invalidFields, setInvalidFields] = useState<Set<keyof FormState>>(new Set());
-  const supabase = createClient();
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -150,19 +148,39 @@ export function ApplyForm({ content }: { content: PartnerPageContent }) {
       .join("\n");
 
     const payload = {
-      patient_name: `${form.primaryName.trim()} (${form.companyName.trim()})`,
-      phone_number: form.primaryPhone.trim(),
-      service_type: `[B2B] ${businessTypeKey}`,
-      hospital: form.companyName.trim(),
-      travel_date: null,
+      language: locale,
+      companyName: form.companyName.trim(),
+      registrationNumber: form.registrationNumber,
+      taxId: form.taxId,
+      businessType: businessTypeKey,
+      yearEstablished: form.yearEstablished,
+      employeeCount: form.employeeCount,
+      primaryName: form.primaryName.trim(),
+      primaryTitle: form.primaryTitle,
+      primaryEmail: form.primaryEmail.trim(),
+      primaryPhone: form.primaryPhone.trim(),
+      primaryLineId: form.primaryLineId,
+      address: form.address,
+      district: form.district,
+      province: form.province,
+      postalCode: form.postalCode,
+      serviceTypes: form.serviceTypes ? form.serviceTypes.split(",").map((v) => v.trim()).filter(Boolean) : [],
+      languages: form.languages ? form.languages.split(",").map((v) => v.trim()).filter(Boolean) : [],
+      operatingHours: form.operatingHours,
+      capacity: form.capacity,
+      acceptTerms: form.acceptTerms,
+      acceptPrivacy: form.acceptPrivacy,
+      acceptSLA: form.acceptSLA,
       message: extraDetails || null,
-      status: "new_lead_b2b",
-      created_at: new Date().toISOString(),
     };
 
     try {
-      const { error } = await supabase.from("cases").insert([payload]);
-      if (error) throw error;
+      const response = await fetch("/api/partner/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) throw new Error("partner application submit failed");
       setStatus("success");
       setForm(initialState);
     } catch {

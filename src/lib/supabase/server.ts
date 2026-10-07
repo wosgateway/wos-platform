@@ -4,6 +4,48 @@ import { cookies } from 'next/headers';
 import type { NextResponse } from 'next/server';
 
 /**
+ * Root cause of "supabaseUrl is required" in the AI search path
+ * (searchPrograms -> data.ts -> createAnonClient()) even when the running
+ * container's env clearly has NEXT_PUBLIC_SUPABASE_URL/ANON_KEY set:
+ *
+ * Next.js inlines every `process.env.NEXT_PUBLIC_*` reference into a
+ * literal value AT BUILD TIME (`next build`, i.e. during `docker build`
+ * here) - for BOTH client and server compiled output, not only code that
+ * ends up in the browser bundle. If those two vars were not present as
+ * build-time ARG/ENV when the image was built (only passed later via
+ * `docker run --env-file`), every reference below was already replaced
+ * with the literal `undefined` inside the compiled .next output - no
+ * runtime env var can change that afterwards. That's why constructing a
+ * client directly in the running container works (that's a fresh,
+ * un-inlined process.env read) while the exact same call inside the built
+ * app fails.
+ *
+ * Fix: read a plain (non-NEXT_PUBLIC_) SUPABASE_URL/SUPABASE_ANON_KEY
+ * first - Next.js does NOT inline these, so they are read live from
+ * process.env at request time on the server, same as SUPABASE_URL already
+ * is in supabase/service.ts. Falls back to the NEXT_PUBLIC_ names so this
+ * still works unchanged wherever only those are set (e.g. Vercel, where
+ * NEXT_PUBLIC_* are supplied at build time correctly). Add
+ * SUPABASE_ANON_KEY=<same value as NEXT_PUBLIC_SUPABASE_ANON_KEY> to the
+ * local/candidate env file to take the fast path here.
+ */
+function resolveSupabasePublicConfig(): { url: string; anonKey: string } {
+  const url =
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const anonKey =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !anonKey) {
+    throw new Error(
+      'Missing SUPABASE_URL/SUPABASE_ANON_KEY (or NEXT_PUBLIC_ fallback) — Supabase client cannot be created.'
+    );
+  }
+
+  return { url, anonKey };
+}
+
+/**
  * Server-side Supabase instance (Server Components, Route Handlers).
  * Needed for the new admin auth flow (supabase.auth.signInWithPassword)
  * so the session persists via cookies instead of only living in the browser.
@@ -27,10 +69,11 @@ import type { NextResponse } from 'next/server';
  */
 export function createClient(response?: NextResponse) {
   const cookieStore = cookies();
+  const { url, anonKey } = resolveSupabasePublicConfig();
 
   return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       cookieOptions: {
         name: 'sb-wos-partner',
@@ -87,9 +130,11 @@ export function createClient(response?: NextResponse) {
  * anon key (respects RLS) instead of the service-role key (bypasses RLS).
  */
 export function createAnonClient() {
+  const { url, anonKey } = resolveSupabasePublicConfig();
+
   return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    url,
+    anonKey,
     {
       auth: {
         autoRefreshToken: false,

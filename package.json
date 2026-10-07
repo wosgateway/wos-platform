@@ -5,15 +5,33 @@
   "scripts": {
     "dev": "next dev -p 3001",
     "build": "next build",
+    "preflight": "node scripts/preflight-automation.mjs",
+    "production:guard": "node scripts/production-guard.mjs",
+    "production:gate": "node scripts/production-deployment-gate.mjs",
+    "production:deploy": "node scripts/production-deploy.mjs",
+    "ai:regression": "node ai-regression-test.mjs",
+    "ai:dev-agent": "node scripts/wos-ai-agent.mjs",
     "start": "next start -p 3000",
-    "lint": "next lint"
+    "lint": "next lint",
+    "production:rollback:check": "node scripts/production-rollback-check.mjs",
+    "production:smoke:check": "node scripts/production-smoke-check.mjs",
+    "production:rollback": "node scripts/production-rollback.mjs",
+    "ai:dev-agent:git": "node scripts/wos-ai-agent-git-gate.mjs",
+    "production:recover": "node scripts/production-recover.mjs",
+    "ai:dev-agent:status": "node scripts/wos-ai-agent-status.mjs",
+    "ai:dev-agent:audit": "node scripts/wos-ai-agent-audit.mjs",
+    "security:order-links": "node scripts/order-link-security-check.mjs",
+    "ai:dev-agent:repo": "node scripts/wos-ai-agent-repo.mjs",
+    "test:handoff": "vitest run src/lib/handoff"
   },
   "dependencies": {
+    "@notionhq/client": "^5.26.0",
     "@pdf-lib/fontkit": "^1.1.1",
     "@supabase/ssr": "^0.5.2",
     "@supabase/supabase-js": "^2.112.3",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.1",
+    "@vercel/functions": "^3.9.9",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "crisp-sdk-web": "^1.2.0",
@@ -24,6 +42,7 @@
     "nanoid": "^3.3.18",
     "next": "14.2.35",
     "next-intl": "^3.17.2",
+    "openai": "^7.18.0",
     "pdf-lib": "^1.17.1",
     "radix-ui": "^1.6.7",
     "react": "^18.3.1",
@@ -45,6 +64,7 @@
     "postcss": "^8.4.40",
     "tailwindcss": "^3.4.7",
     "tsx": "^4.23.12",
-    "typescript": "^5.5.4"
+    "typescript": "^5.5.4",
+    "vitest": "^2.1.9"
   }
 }

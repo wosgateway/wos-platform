@@ -17,3 +17,5 @@ src-tree.txt
 test-payload.json
 
 deployment.json
+wos-webhook-test.env
+wos-webhook-prod.env
