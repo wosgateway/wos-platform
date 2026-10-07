@@ -814,6 +814,15 @@ function isCatalogChoiceQuestion(message: string): boolean {
   return /มี\s*ให้\s*เลือก|มี\s*(?:ตัวเลือก|อะไร)\s*(?:ให้)?\s*(?:เลือก|บ้าง)|มีอะไรให้เลือก|what.*(?:options|choices)/iu.test(message);
 }
 
+// Topic-switch guard: once concierge/hotel state exists, substantive questions
+// about a WOS program must still go back to the verified catalog.
+function isProgramTopicRequest(message: string): boolean {
+  const text = message.trim();
+  const programTopic = /(?:ตรวจเข่า|ตรวจสุขภาพ|สุขภาพ|wellness|health check|ກວດເຂົ່າ|ກວດສຸຂະພາບ|ໂປຣແກຣມ)/iu;
+  const detailWords = /(?:ข้อมูล|รายละเอียด|ราคา|ค่าใช้จ่าย|เท่าไร|ราคาเท่าไร|information|details?|price|cost|how much|ຂໍ້ມູນ|ລາຍລະອຽດ|ລາຄາ)/iu;
+  return programTopic.test(text) && (detailWords.test(text) || /^(?:ตรวจเข่า|ตรวจสุขภาพ|ກວດເຂົ່າ|ກວດສຸຂະພາບ)$/iu.test(text));
+}
+
 function isHotelRequirementQuestion(message: string): boolean {
   return /(?:โรงแรม|ที่พัก|ห้องพัก|ห้องเตียง|hotel|accommodation|room|stay|ກະໂຮງແຮມ|ໂຮງແຮມ|ທີ່ພັກ|ຫ້ອງພັກ|ຕຽງ)/iu.test(message);
 }
@@ -923,7 +932,11 @@ export async function runWosAI(
       );
       const lastAssistant = [...postResetHistory].reverse().find((message) => message.role === 'assistant')?.content ?? '';
       const isOptionalServiceContinuation = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(lastAssistant);
-      if (!hasProgramContext && !isOptionalServiceContinuation) {
+      // A concrete program-detail reply is already a program-selection context.
+      // Do not let the broad bare-interest catalog guard intercept "สนใจครับ".
+      const hasConcreteProgramDetail = /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(lastAssistant) &&
+        /[0-9]+[.)].+(?:—|-|–).+/u.test(lastAssistant);
+      if (!hasProgramContext && !isOptionalServiceContinuation && !hasConcreteProgramDetail) {
         const language = detectWosLanguage(userMessage, history.filter((message) => message.role === 'user').map((message) => message.content));
         try {
           const items = await searchHealthProgramOverview(5);
@@ -1091,6 +1104,26 @@ export async function runWosAI(
 
     // New explicit facts must update the journey instead of being swallowed by
     // a previously selected program. This is the key anti-stale-context rule.
+    // A short affirmative immediately after Fern shows one concrete program
+    // means "select that program". Resolve it from the last assistant detail
+    // directly, before any catalog-discovery or stale-state guard can restart.
+    const isBareProgramAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
+    const lastAssistantContent = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+    const lastConcreteProgramDetail =
+      /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(lastAssistantContent) &&
+      /[0-9]+[.)].+(?:—|-|–).+/u.test(lastAssistantContent)
+        ? { content: lastAssistantContent }
+        : undefined;
+    if (isBareProgramAffirmative && lastConcreteProgramDetail) {
+      const acceptedMatch = lastConcreteProgramDetail.content.match(/[0-9]+[.)] +(.+?) (?:—|-|–) /u);
+      const acceptedTitle = acceptedMatch?.[1]?.trim();
+      if (acceptedTitle) {
+        if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
+        if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
+        return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
+      }
+    }
+
     const journeyUpdateReply = buildJourneyDataUpdateReply(userMessage, journeyState, customerLanguage);
     const isNewJourneyIntent = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|โรงแรม|ที่พัก|hotel|transport|transfer|shuttle|นวด|สปา|spa|massage|ตรวจสุขภาพ|สุขภาพ|wellness)/iu.test(userMessage);
     const isConversationProgressMessage = /(?:ทำไงต่อ|ทำอะไรต่อ|ต้องการอะไรอีก|ต้องทำอะไรต่อ|ผมแจ้งไปแล้ว|แจ้งไปแล้ว|แล้วไงต่อ|ต้องทำอะไรเพิ่ม|what(?:'s| is) next|next step|i already told you)/iu.test(userMessage);
@@ -1113,7 +1146,118 @@ export async function runWosAI(
       .reverse()
       .find((m) => m.role === 'assistant' && /(?:จังหวัดไหน|which province|ຈັງຫວັດໃດ)/iu.test(m.content));
     const isProvinceCatalogContinuation = Boolean(requestedProvinceForCatalog && previousAssistantAskedProvinceForCatalog);
-    const isExplicitProgramLookup = isProgramOverviewQuestion(userMessage) || isCatalogChoiceQuestion(userMessage) || Boolean(getSymptomSearchAliases(userMessage)[0]);
+    const isExplicitProgramLookup =
+      isProgramOverviewQuestion(userMessage) ||
+      isCatalogChoiceQuestion(userMessage) ||
+      isProgramTopicRequest(userMessage) ||
+      Boolean(getSymptomSearchAliases(userMessage)[0]);
+    // A customer can switch back to the selected program and ask for its
+    // details after the concierge handoff has already been prepared. This is
+    // a real topic switch, not a hotel confirmation. Resolve it from the live
+    // catalog before any concierge/handoff guard can swallow the request.
+    const selectedProgramTitle = journeyState.selectedProgram?.trim();
+    const latestConcreteProgramTitle = (() => {
+      const latestDetail = [...cleanHistory].reverse().find((m) =>
+        m.role === 'assistant' &&
+        /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(m.content) &&
+        /[0-9]+[.)].+(?:—|-|–).+/u.test(m.content)
+      );
+      const match = latestDetail?.content.match(/[0-9]+[.)] +(.+?) (?:—|-|–) /u);
+      return match?.[1]?.trim();
+    })();
+    const effectiveSelectedProgramTitle = latestConcreteProgramTitle || selectedProgramTitle;
+    const isSelectedProgramDetailRequest = Boolean(
+      effectiveSelectedProgramTitle &&
+      !isProgramOverviewQuestion(userMessage) &&
+      /(?:ข้อมูล|รายละเอียด|รายละเอียดเพิ่มเติม|ขอข้อมูล|ขอรายละเอียด|มีอะไรบ้าง|รายละเอียดเป็นอย่างไร|what.*(?:detail|information)|details?|more information)/iu.test(userMessage)
+    );
+    const isSelectedProgramPriceRequest = Boolean(
+      effectiveSelectedProgramTitle &&
+      /(?:ราคา|กี่บาท|เท่าไร|เท่าไหร่|ค่าบริการ|price|cost|how much)/iu.test(userMessage)
+    );
+    if (isSelectedProgramDetailRequest || isSelectedProgramPriceRequest) {
+      try {
+        const detailCandidates = await searchPrograms(effectiveSelectedProgramTitle!, 3);
+        const selectedTitle = effectiveSelectedProgramTitle!;
+        const matched = detailCandidates.find((program) => {
+          const title = String(program.title ?? '').trim();
+          return title === selectedTitle || title.includes(selectedTitle) || selectedTitle.includes(title);
+        }) ?? detailCandidates[0];
+        if (matched?.id) {
+          const details = await getProgramDetails(String(matched.id));
+          if (details) {
+            const price = details.special_price ?? details.original_price;
+            const original = details.original_price;
+            const duration = details.duration || (details.duration_minutes ? `${details.duration_minutes} นาที` : '');
+            const description = String(details.description ?? '').trim();
+            if (customerLanguage === 'en') {
+              return [
+                `Here are the verified details for ${details.title}:`,
+                details.partner?.name ? `• Provider: ${details.partner.name}` : '',
+                details.partner?.province ? `• Location: ${details.partner.province}` : '',
+                price != null ? `• Price: ${price.toLocaleString('th-TH')} THB${original != null && original !== price ? ` (regular ${original.toLocaleString('th-TH')} THB)` : ''}` : '',
+                duration ? `• Duration: ${duration}` : '',
+                description ? `• ${description}` : '',
+              ].filter(Boolean).join('\n');
+            }
+            if (customerLanguage === 'lo') {
+              return [
+                `ຂໍ້ມູນທີ່ຢືນຢັນແລ້ວຂອງ ${details.title}:`,
+                details.partner?.name ? `• ຜູ້ໃຫ້ບໍລິການ: ${details.partner.name}` : '',
+                details.partner?.province ? `• ສະຖານທີ່: ${details.partner.province}` : '',
+                price != null ? `• ລາຄາ: ${price.toLocaleString('th-TH')} ບາດ${original != null && original !== price ? ` (ລາຄາປົກກະຕິ ${original.toLocaleString('th-TH')} ບາດ)` : ''}` : '',
+                duration ? `• ໄລຍະເວລາ: ${duration}` : '',
+                description ? `• ${description}` : '',
+              ].filter(Boolean).join('\n');
+            }
+            return [
+              `ข้อมูลที่ยืนยันแล้วของ ${details.title}:`,
+              details.partner?.name ? `• ผู้ให้บริการ: ${details.partner.name}` : '',
+              details.partner?.province ? `• สถานที่: ${details.partner.province}` : '',
+              price != null ? `• ราคา: ${price.toLocaleString('th-TH')} บาท${original != null && original !== price ? ` (ราคาปกติ ${original.toLocaleString('th-TH')} บาท)` : ''}` : '',
+              duration ? `• ระยะเวลา: ${duration}` : '',
+              description ? `• ${description}` : '',
+            ].filter(Boolean).join('\n');
+          }
+        }
+      } catch (programDetailError) {
+        console.warn('[WOS_AI_SELECTED_PROGRAM_DETAIL_FAILED]', programDetailError instanceof Error ? programDetailError.message : String(programDetailError));
+      }
+    }
+    // Customers often name another catalog item directly after handoff.
+    // Resolve an exact catalog match before stale hotel/concierge state wins.
+    const isShortProgramLookup = userMessage.trim().length >= 3 && userMessage.trim().length <= 80;
+    if (journeyState.selectedProgram && isShortProgramLookup && !isSimpleThanks) {
+      try {
+        const directCandidates = await searchPrograms(userMessage.trim(), 3);
+        const normalizedInput = userMessage.trim().toLocaleLowerCase();
+        const directMatch = directCandidates.find((program) => {
+          const title = String(program.title ?? '').trim();
+          const normalizedTitle = title.toLocaleLowerCase();
+          return normalizedTitle === normalizedInput ||
+            normalizedTitle.includes(normalizedInput) ||
+            normalizedInput.includes(normalizedTitle);
+        });
+        if (directMatch) {
+          const answer = buildProgramAnswer([directMatch], userMessage, '', customerLanguage);
+          if (answer) return answer;
+        }
+      } catch (directProgramLookupError) {
+        console.warn('[WOS_AI_DIRECT_PROGRAM_LOOKUP_FAILED]', directProgramLookupError instanceof Error ? directProgramLookupError.message : String(directProgramLookupError));
+      }
+    }
+
+    const isSummaryRequest = /^(?:\u0e2a\u0e23\u0e38\u0e1b|summary|summarize)$/iu.test(userMessage.trim());
+    const isNextStepRequest = /^(?:\u0e17\u0e33\u0e44\u0e07\u0e15\u0e48\u0e2d|\u0e17\u0e33\u0e2d\u0e30\u0e44\u0e23\u0e15\u0e48\u0e2d|\u0e02\u0e31\u0e49\u0e19\u0e15\u0e2d\u0e19\u0e15\u0e48\u0e2d\u0e44\u0e1b|next step|what(?:'s| is) next)$/iu.test(userMessage.trim());
+    if (isSummaryRequest && journeyState.selectedProgram) {
+      return buildConciergeHandoffSummary(customerLanguage, journeyState);
+    }
+    if (isNextStepRequest && journeyState.selectedProgram) {
+      if (customerLanguage === 'lo') return 'Next: WOS will contact you to confirm the remaining details. 😊';
+      if (customerLanguage === 'en') return 'Next, the WOS team will contact you to confirm the remaining date, time, and service details 😊';
+      return 'ต่อไปทีม WOS จะติดต่อกลับเพื่อยืนยันวันเวลาและรายละเอียดที่เหลือให้ค่ะ 😊';
+    }
+
     const previousAssistantAskedHotel = cleanHistory
       .filter((m) => m.role === 'assistant')
       .some((m) => /(?:สนใจโรงแรม|hotel too|would you like a hotel|hotel?ໂຮງແຮມນຳ)/iu.test(m.content));
@@ -1139,7 +1283,20 @@ export async function runWosAI(
       });
     }
 
-    if (journeyState.selectedProgram && !journeyState.customerName && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
+    // Transport affirmation is a turn-level transition and must not depend on
+    // customer-name inference (the public API has no Chatwoot sender metadata).
+    if (journeyState.selectedProgram && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation) {
+      const bareTransportAffirmation = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
+      const lastRawAssistantText = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+      const rawTurnAskedTransport = /(?:สนใจรถ|รถรับส่งด้วยไหม|transport|transfer|shuttle|ລົດຮັບສົ່ງ|ຮັບສົ່ງ)/iu.test(lastRawAssistantText);
+      if (bareTransportAffirmation && rawTurnAskedTransport) {
+        if (customerLanguage === 'lo') return 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ';
+        if (customerLanguage === 'en') return 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.';
+        return 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
+      }
+    }
+
+    if (journeyState.selectedProgram && !journeyState.customerName && !/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test([...history].reverse().find((m) => m.role === 'assistant')?.content ?? '') && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
       if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
       if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
       return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
@@ -1149,6 +1306,16 @@ export async function runWosAI(
     // customer name are known, never fall back to catalog/model selection:
     // move through transport -> pickup -> hotel -> handoff exactly once.
     if (journeyState.selectedProgram && journeyState.customerName && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
+      const bareTransportAffirmation = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
+      const lastRawAssistantText = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+      // Use the actual immediately preceding turn for this transition. State
+      // inference may lag one message, but the raw conversation turn is exact.
+      const rawTurnAskedTransport = /(?:สนใจรถ|รถรับส่งด้วยไหม|transport|transfer|shuttle|ລົດຮັບສົ່ງ|ຮັບສົ່ງ)/iu.test(lastRawAssistantText);
+      if (bareTransportAffirmation && rawTurnAskedTransport) {
+        if (customerLanguage === 'lo') return 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ';
+        if (customerLanguage === 'en') return 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.';
+        return 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
+      }
       const conciergeStage = getWosConciergeStage(journeyState);
       if (conciergeStage === 'ask_transport_interest') {
         if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈລົດຮັບສົ່ງນຳບໍຄ່ະ?';

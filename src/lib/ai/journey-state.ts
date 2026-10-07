@@ -290,6 +290,46 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
     return { title, provider: providerMatch?.[1]?.trim() || undefined };
   }
 
+  // If Fern just showed one concrete program in detail, a short affirmative
+  // ("สนใจครับ", "สนใจค่ะ", "ສົນໃຈ") means the customer accepted that
+  // specific program. Treat it as an explicit selection, not a new catalog
+  // discovery request.
+  const bareSelectionAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
+  if (bareSelectionAffirmative) {
+    const latestConcreteProgram = [...optionMessages].reverse().find((message) =>
+      /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(message.content) &&
+      /(?:^|\n)\s*(?:\d+[.)]\s*)?[^\n]{2,80}?\s+(?:—|-)\s+/u.test(message.content)
+    );
+    if (latestConcreteProgram) {
+      const firstProgramLine = latestConcreteProgram.content
+        .split('\n')
+        .map((line) => line.trim())
+        .find((line) => /.+?\s+(?:—|-)\s+/u.test(line));
+      if (firstProgramLine) {
+        const title = firstProgramLine
+          .replace(/^\d+[.)]\s*/u, '')
+          .split(/\s+[—-]\s+/)[0]
+          .trim();
+        if (title && !/(?:ถ้าสนใจ|บอกใบเฟิร์น|ราคา|ระยะเวลา)/iu.test(title)) {
+          return { title };
+        }
+      }
+    }
+  }
+
+  // Persist the same selection across the next turn (usually the customer's name).
+  // Example: detail -> "สนใจครับ" -> "Vith Hub" must keep the detail's program.
+  for (let i = history.length - 1; i >= 1; i--) {
+    const priorUser = history[i];
+    const priorAssistant = history[i - 1];
+    if (priorUser.role !== 'user' || priorAssistant.role !== 'assistant') continue;
+    if (!/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(priorUser.content.trim())) continue;
+    if (!/(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(priorAssistant.content)) continue;
+    const match = priorAssistant.content.match(/[0-9]+[.)] +(.+?) (?:—|-|–) /u);
+    const title = match?.[1]?.trim();
+    if (title) return { title };
+  }
+
   // Named selections such as "สนใจตรวจเข่า" must persist into later turns.
   // Numeric selections were already handled above; this branch matches the
   // latest customer message after the latest assistant catalog list against
@@ -445,11 +485,15 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
       const assistant = effectiveHistory[i];
       const user = effectiveHistory[i + 1];
       if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
-      if (!/(?:จุดรับ|รับที่|รับจาก|pickup|pick-up|ຈຸດຮັບ)/iu.test(assistant.content)) continue;
+      if (!/(?:ขอจุดรับ|จุดรับด้วย|ขอ.*(?:รับที่|รับจาก)|รับที่|รับจาก|pickup point|pick-up point|what.*pickup|ຂໍຈຸດຮັບ|ຮັບຢູ່|ຮັບຈາກ)/iu.test(assistant.content)) continue;
       const value = user.content.trim().normalize('NFC');
-      // A pickup answer does not need to match a location dictionary.
-      // Preserve exactly what the customer supplied (after light cleanup).
-      if (value.length >= 2 && !/^(?:ไม่|ไม่ต้องการ|ไม่เอา|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(value)) {
+      // A pickup answer does not need to match a location dictionary, but a
+      // bare yes/interest is NEVER a pickup point. This prevents a short
+      // transport affirmation ("สนใจครับ") from becoming transportOrigin.
+      if (
+        value.length >= 2 &&
+        !/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ|ไม่|ไม่ต้องการ|ไม่เอา|ไม่สนใจ|no|none|ບໍ່|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ)$/iu.test(value)
+      ) {
         return normalizeLocation(value);
       }
     }
@@ -558,7 +602,10 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     transportDate: findDate(allTexts),
     transportTime: findServiceTime(allTexts),
     transportTravelers: findTravelers(allTexts),
-    transportOrigin: findOrigin(allTexts) ?? inferredBarePickup,
+    // Transport pickup must come only from an explicit pickup-answer transition.
+    // Never reuse the generic journey origin here; that can make a bare
+    // transport affirmation look like a pickup point and skip the pickup question.
+    transportOrigin: shortTransportAffirmation ? undefined : inferredBarePickup,
     transportDestination: undefined,
     transportDestinationSource: undefined,
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),
