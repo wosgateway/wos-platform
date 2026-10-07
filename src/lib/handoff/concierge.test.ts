@@ -32,6 +32,8 @@ describe('handoff concierge', () => {
   it('requires explicit confirmation and rejects negative wording', () => {
     expect(isHandoffConfirmation('ใช่ครับ ยืนยันได้เลย')).toBe(true);
     expect(isHandoffConfirmation('yes, confirm')).toBe(true);
+    expect(isHandoffConfirmation('สนใจครับ')).toBe(true);
+    expect(isHandoffConfirmation('ต้องการค่ะ')).toBe(true);
     expect(isHandoffConfirmation('ไม่ใช่ครับ')).toBe(false);
   });
 

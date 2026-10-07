@@ -15,7 +15,12 @@ export function detectHandoffLanguage(text: string): WosLanguage {
 
 export function isHandoffConfirmation(text: string): boolean {
   if (/(?:ไม่ใช่|ยังไม่|not yet|don't|do not)/iu.test(text)) return false;
-  return /(?:yes|y|ok|okay|confirm|confirmed|correct|ใช่|ถูกต้อง|ยืนยัน|ตกลง|โอเค|ได้เลย)/iu.test(text);
+  // At the final concierge step, customers commonly answer the hotel's
+  // "สนใจไหม" question with "สนใจ" rather than the formal word "ยืนยัน".
+  // The webhook only evaluates this after the journey reaches
+  // `awaiting_confirmation`, so this does not trigger an early handoff for
+  // transport/hotel questions.
+  return /(?:yes|y|ok|okay|confirm|confirmed|correct|ใช่|ถูกต้อง|ยืนยัน|ตกลง|โอเค|ได้เลย|สนใจ|ต้องการ)/iu.test(text);
 }
 
 export function extractContact(sender: ChatwootSender | undefined, text: string): {
