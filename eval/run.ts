@@ -2,6 +2,8 @@
 //   npx tsx eval/run.ts            (needs LITELLM_* / OPENAI_* env, same as core.ts)
 //   npx tsx eval/run.ts --lock     (write the achieved pass rate to eval/baseline.json)
 // Exit code 1 when the pass rate drops below baseline OR any H- (hallucination) case fails.
+import dotenv from 'dotenv';
+dotenv.config({ path: '.env.local' });
 import fs from 'node:fs';
 import path from 'node:path';
 import { decide, type DecideContext } from '../src/lib/ai/understanding/orchestrator';
