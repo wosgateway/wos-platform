@@ -35,6 +35,7 @@ import {
 import { getSymptomSearchAliases } from './symptom-intent';
 import { deriveWosJourneyState, formatJourneyState, getWosConciergeStage } from './journey-state';
 import { buildConciergeHandoffSummary, buildHandoffConfirmation } from '@/lib/handoff/concierge';
+import { runUnderstandingGate } from './understanding/gate';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -804,8 +805,20 @@ function isHealthServiceOverview(message: string): boolean {
 }
 
 function isProgramOverviewQuestion(message: string): boolean {
-  if (/(?:ໂປຣແກຣມ|ໂຄງການ|ບໍລິການ|ແຂວງ|ແຂວງໃດ)/iu.test(message)) return true;
-  return /(?:มี|ขอ|อยากทราบ).*(?:โปรแกรม|บริการ).*(?:อะไร|อะไรบ้าง|ไหน|บ้าง)|(?:โปรแกรม|บริการ).*(?:อะไรบ้าง|ไหนบ้าง|มีอะไร)|(?:what|which).*(?:program|service)|(?:ມີ|ຂໍ|ຢາກຮູ້).*(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງ|ໃດ|ແດ່)|(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງແດ່|ໃດແດ່)/iu.test(message);
+  const text = message.trim();
+
+  // Broad catalog intent is discovery, never selection. These natural
+  // Thai forms are intentionally handled before fuzzy catalog search:
+  // "สนใจโปรแกรมในอุดร", "สนใจโปรแกรม", "ขอดูโปรแกรมในอุดร",
+  // and "ดูโปรแกรมในอุดร". A program is selected only by an explicit
+  // program name or a valid numbered choice from a displayed list.
+  if (/(?:สนใจ|ขอดู|ดู|อยากดู|อยากทราบ)\s*(?:โปรแกรม|บริการ)(?=\s*(?:ใน|ที่|ของ)\s|\s*$)/iu.test(text)) {
+    return true;
+  }
+
+  if (/(?:ໂປຣແກຣມ|ໂຄງການ|ບໍລິການ|ແຂວງ|ແຂວງໃດ)/iu.test(text)) return true;
+
+  return /(?:มี|ขอ|อยากทราบ).*(?:โปรแกรม|บริการ).*(?:อะไร|อะไรบ้าง|ไหน|บ้าง)|(?:โปรแกรม|บริการ).*(?:อะไรบ้าง|ไหนบ้าง|มีอะไร)|(?:what|which).*(?:program|service)|(?:ມີ|ຂໍ|ຢາກຮູ້).*(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງ|ໃດ|ແດ່)|(?:ໂຄງການ|ໂປຣແກຣມ|ບໍລິການ).*(?:ຫຍັງແດ່|ໃດແດ່)/iu.test(text);
 }
 
 // Short follow-up questions such as "มีให้เลือกมั้ย" are still catalog intent.
@@ -892,7 +905,10 @@ export async function runWosAI(
   // owns context assembly — callers (the Chatwoot webhook, /api/ai/chat)
   // pass raw history; they must not build their own prompt around it.
   // Defaults to [] so existing single-string call sites keep working.
-  history: WosAIHistoryMessage[] = []
+  history: WosAIHistoryMessage[] = [],
+  // Optional transport context. conversationId enables stored conversation state
+  // (Chatwoot conversation id); without it the understanding gate runs stateless.
+  opts: { conversationId?: string; channel?: string } = {}
 ) {
   try {
     // HARD CONVERSATION BOUNDARY: standalone greetings must never fall
@@ -907,6 +923,18 @@ export async function runWosAI(
       if (language === 'en') return 'Hi 😊 I\'m doing well. How can I help you today?';
       return 'สวัสดีค่ะ 😊 ใบเฟิร์นสบายดีค่ะ วันนี้มีอะไรให้ช่วยไหมคะ';
     }
+
+    // UNDERSTANDING GATE (WOS_AI_UNDERSTANDING=off|shadow|on, default off).
+    // LLM -> intent/entities (validated against canonical provinces) -> business rules ->
+    // verified catalog. Handles only the program-catalog intents; anything else, any error
+    // and any low-confidence result falls through to the legacy path below unchanged.
+    const gate = await runUnderstandingGate({
+      userMessage,
+      history,
+      conversationId: opts.conversationId,
+      channel: opts.channel,
+    });
+    if (gate.handled) return gate.text;
 
     // HARD CONVERSATION BOUNDARY: a bare "interest" message without a
     // program selection must enter catalog discovery, not booking/name

@@ -725,7 +725,7 @@ export async function searchPrograms(
   const normalizedServiceQuery = normalizeQuery(serviceQuery).toLowerCase();
   const isProvinceBrowse =
     locationAliases.length > 0 &&
-    /^(?:มี|ขอ|หา|ดู|แนะนำ|อยากดู)?\s*(?:โปรแกรม|บริการ)(?:อะไร|อะไรบ้าง|บ้าง)?(?:\s*(?:ที่|ใน|ของ))?\s*$/.test(
+    /^(?:มี|ขอ|หา|ดู|ขอดู|สนใจ|แนะนำ|อยากดู|อยากทราบ)?\s*(?:โปรแกรม|บริการ)(?:อะไร|อะไรบ้าง|บ้าง)?(?:\s*(?:ที่|ใน|ของ))?\s*$/.test(
       normalizedServiceQuery
     );
 

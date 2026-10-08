@@ -288,6 +288,54 @@ const cases = [
     },
   },
   {
+    id: "T1l_program_discovery_exact_phrases",
+    label: "Exact natural Thai catalog discovery phrases must never auto-select the first program",
+    query: "สนใจโปรแกรมในอุดร",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล|จอง|รับเรื่องโรงแรม|ตรวจเข่า.*บันทึก|บันทึก.*ตรวจเข่า/iu.test(r.replyText)) {
+        return { pass: false, reason: "discovery phrase was incorrectly treated as a selected program" };
+      }
+      if (!/ตรวจเข่า.*1,?500|ตรวจสุขภาพ.*1,?900|ตรวจเข่า|ตรวจสุขภาพ/iu.test(r.replyText)) {
+        return { pass: false, reason: "province discovery did not return the verified Udon catalog" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1m_program_discovery_view_phrase",
+    label: "Viewing the Udon catalog must return options, not a fallback/unknown response",
+    query: "ขอดูโปรแกรมในอุดร",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ยังไม่พบ|ไม่พบโปรแกรม|ไม่พบข้อมูล|ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog viewing phrase fell through to unknown or booking flow" };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|1,?500|1,?900/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog viewing phrase did not return verified Udon options" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1n_program_discovery_without_province",
+    label: "Generic program discovery without a province must ask for the province, not select a program",
+    query: "สนใจโปรแกรม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ตรวจเข่า.*บันทึก|บันทึก.*ตรวจเข่า|ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic discovery incorrectly selected a program or entered booking flow" };
+      }
+      if (!/หนองคาย|อุดรธานี|จังหวัด/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic discovery did not ask for or identify available provinces" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T1k_catalog_choice_followup",
     label: "Catalog choice follow-up must stay in catalog mode instead of stale booking/hotel flow",
     query: "คุณมีให้เลือกมั้ย",

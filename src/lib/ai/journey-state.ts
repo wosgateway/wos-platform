@@ -605,7 +605,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     // Transport pickup must come only from an explicit pickup-answer transition.
     // Never reuse the generic journey origin here; that can make a bare
     // transport affirmation look like a pickup point and skip the pickup question.
-    transportOrigin: shortTransportAffirmation ? undefined : inferredBarePickup,
+    transportOrigin: shortTransportAffirmation ? undefined : findOrigin(allTexts) ?? inferredBarePickup,
     transportDestination: undefined,
     transportDestinationSource: undefined,
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),

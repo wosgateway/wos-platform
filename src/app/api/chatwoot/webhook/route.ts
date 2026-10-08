@@ -49,7 +49,7 @@ async function processClaimedWebhook(args: {
     const history = await fetchConversationHistory(conversationId, messageId);
     debugLog(`[debug] history messages included: ${history.length}`);
     const t0 = Date.now();
-    const aiResult = await getAIReply(content, history);
+    const aiResult = await getAIReply(content, history, String(conversationId));
     const t1 = Date.now();
     debugLog(`[timing] runWosAI took ${t1 - t0}ms, ok=${aiResult.ok}`);
 
@@ -423,10 +423,11 @@ type AIReplyResult =
 // ไม่งั้น 429 จะถูกบันทึกเป็น 'sent' ทั้งที่โควตา OpenAI หมดจริง
 async function getAIReply(
   userMessage: string,
-  history: WosAIHistoryMessage[]
+  history: WosAIHistoryMessage[],
+  conversationId?: string
 ): Promise<AIReplyResult> {
   try {
-    const text = await runWosAI(userMessage, history);
+    const text = await runWosAI(userMessage, history, { conversationId, channel: 'chatwoot' });
     return { ok: true, text };
   } catch (err) {
     if (isRateLimitedError(err)) {
