@@ -812,7 +812,7 @@ function isProgramOverviewQuestion(message: string): boolean {
   // "สนใจโปรแกรมในอุดร", "สนใจโปรแกรม", "ขอดูโปรแกรมในอุดร",
   // and "ดูโปรแกรมในอุดร". A program is selected only by an explicit
   // program name or a valid numbered choice from a displayed list.
-  if (/(?:สนใจ|ขอดู|ดู|อยากดู|อยากทราบ)\s*(?:โปรแกรม|บริการ)(?=\s*(?:ใน|ที่|ของ)\s|\s*$)/iu.test(text)) {
+  if (/(?:สนใจ|ขอดู|ดู|อยากดู|อยากทราบ)\s*(?:โปรแกรม|บริการ)(?=\s*(?:ใน|ที่|ของ)\s*.+|\s*$)/iu.test(text)) {
     return true;
   }
 
@@ -1286,9 +1286,8 @@ export async function runWosAI(
       return 'ต่อไปทีม WOS จะติดต่อกลับเพื่อยืนยันวันเวลาและรายละเอียดที่เหลือให้ค่ะ 😊';
     }
 
-    const previousAssistantAskedHotel = cleanHistory
-      .filter((m) => m.role === 'assistant')
-      .some((m) => /(?:สนใจโรงแรม|hotel too|would you like a hotel|hotel?ໂຮງແຮມນຳ)/iu.test(m.content));
+    const lastAssistantForHotel = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+    const previousAssistantAskedHotel = /(?:สนใจโรงแรม|hotel too|would you like a hotel|hotel?ໂຮງແຮມນຳ)/iu.test(lastAssistantForHotel);
     const isAffirmativeHotelReply = /^(?:สนใจ|ต้องการ|เอา|เอาด้วย|yes|yeah|yep|sure|want it|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ)[\s!?.]*(?:ครับ|ค่ะ|ครับผม|ค่ะผม|please)?[\s!?.]*$/iu.test(userMessage.trim());
     const isNegativeHotelReply = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|nope|not interested|ບໍ່|ບໍ່ເອົາ|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ)[\s!?.]*$/iu.test(userMessage.trim());
 
