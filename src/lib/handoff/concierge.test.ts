@@ -44,6 +44,20 @@ describe('handoff concierge', () => {
     )).toEqual({ name: 'Boy', channel: 'phone', value: '+66812345678' });
   });
 
+  it('prefers a customer-typed name over a generic Chatwoot profile', () => {
+    expect(extractContact(
+      { name: 'Wos Admin', phone_number: '0855667566' },
+      '\u0e0a\u0e37\u0e48\u0e2d\u0e1b\u0e23\u0e30\u0e0a\u0e32',
+    )).toEqual({ name: '\u0e1b\u0e23\u0e30\u0e0a\u0e32', channel: 'phone', value: '0855667566' });
+  });
+
+  it('does not use a generic profile as the customer name', () => {
+    expect(extractContact(
+      { name: 'Wos Admin', phone_number: '0855667566' },
+      'yes',
+    )).toEqual({ name: '', channel: 'phone', value: '0855667566' });
+  });
+
   it('extracts email from message when sender metadata is missing', () => {
     expect(extractContact({ name: 'A' }, 'confirm a@example.com')).toEqual({
       name: 'A',

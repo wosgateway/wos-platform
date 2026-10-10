@@ -126,6 +126,15 @@ function journeyToRequestTypes(journey: WosJourneyState): RequestType[] {
     const mapped = NEED_TO_REQUEST_TYPE[need];
     if (mapped) types.add(mapped);
   }
+
+  const program = String(journey.selectedProgram ?? '').toLowerCase();
+  if (/(?:\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e|health\s*check|checkup)/iu.test(program)) {
+    types.add('health_checkup');
+  } else if (/(?:\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32|knee|orthop(?:edic|aedic)|hospital|clinic)/iu.test(program)) {
+    types.add('hospital_clinic');
+  }
+
+  if (types.size > 1) types.delete('not_sure');
   if (types.size === 0) types.add('not_sure');
   return Array.from(types);
 }

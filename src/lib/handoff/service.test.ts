@@ -47,6 +47,20 @@ describe('buildHandoffKey', () => {
 });
 
 describe('submitHandoff', () => {
+  it('maps a selected knee-check program to hospital_clinic', async () => {
+    mocks.rpc.mockResolvedValueOnce({ data: null, error: { message: 'test stop' } });
+    await submitHandoff({
+      ...input(),
+      journey: {
+        needs: ['trip'],
+        selectedProgram: '\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32',
+      } as unknown as WosJourneyState,
+    });
+    expect(mocks.rpc).toHaveBeenCalledWith('submit_ai_handoff', expect.objectContaining({
+      p_request_types: ['hospital_clinic'],
+    }));
+  });
+
   it('rejects invalid input before touching DB', async () => {
     const result = await submitHandoff({ ...input(), name: '' });
     expect(result).toEqual({ ok: false, reason: 'validation', field: 'name' });

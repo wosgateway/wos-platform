@@ -23,16 +23,27 @@ export function isHandoffConfirmation(text: string): boolean {
   return /(?:yes|y|ok|okay|confirm|confirmed|correct|ใช่|ถูกต้อง|ยืนยัน|ตกลง|โอเค|ได้เลย|สนใจ|ต้องการ)/iu.test(text);
 }
 
+function usableContactName(value: unknown): string {
+  const name = String(value ?? '').trim();
+  const normalized = name.toLowerCase().replace(/[\s._-]+/g, '');
+  const generic = new Set([
+    'wosadmin', 'admin', 'administrator', 'visitor', 'guest', 'user', 'customer',
+    '\u0e1c\u0e39\u0e49\u0e43\u0e0a\u0e49\u0e07\u0e32\u0e19',
+    '\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32', '\u0e41\u0e2d\u0e14\u0e21\u0e34\u0e19',
+  ]);
+  return name && !generic.has(normalized) ? name : '';
+}
+
 export function extractContact(sender: ChatwootSender | undefined, text: string): {
   name: string;
   channel: 'phone' | 'email';
   value: string;
 } | null {
-  const name = String(sender?.name ?? '').trim();
+  const name = usableContactName(sender?.name);
   const email = String(sender?.email ?? '').trim();
   const phone = String(sender?.phone_number ?? '').trim();
   const textName = text.match(/(?:ชื่อนาย|ชื่อนางสาว|ชื่อนาง|ชื่อ|ผมชื่อ|ฉันชื่อ|ดิฉันชื่อ)\s*([ก-๙A-Za-z]+)/iu)?.[1]?.trim();
-  const resolvedName = name || textName || '';
+  const resolvedName = usableContactName(textName) || name || '';
   if (phone) return { name: resolvedName, channel: 'phone', value: phone };
   if (email) return { name: resolvedName, channel: 'email', value: email };
   const emailInText = text.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/iu)?.[0];

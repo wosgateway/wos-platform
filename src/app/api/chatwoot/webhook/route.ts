@@ -55,13 +55,17 @@ async function processClaimedWebhook(args: {
 
     let replyText = aiResult.text;
     const derivedJourney = deriveWosJourneyState(history, content);
-    const senderName = String(sender?.name ?? '').trim();
-    const usableSenderName = senderName && !/^(?:visitor|guest|user|customer|ผู้ใช้งาน|ลูกค้า)$/iu.test(senderName)
-      ? senderName
-      : undefined;
+    const isUsableCustomerName = (value: unknown): value is string => {
+      const name = String(value ?? '').trim();
+      const normalized = name.toLowerCase().replace(/[\s._-]+/g, '');
+      return Boolean(name) && !/^(?:wosadmin|admin|administrator|visitor|guest|user|customer|\u0e1c\u0e39\u0e49\u0e0a\u0e49\u0e07\u0e32\u0e19|\u0e25\u0e39\u0e01\u0e04\u0e49\u0e32|\u0e41\u0e2d\u0e14\u0e21\u0e34\u0e19)$/iu.test(normalized);
+    };
+    const senderName = isUsableCustomerName(sender?.name) ? String(sender?.name).trim() : undefined;
     const journey = {
       ...derivedJourney,
-      customerName: derivedJourney.customerName ?? usableSenderName,
+      customerName: isUsableCustomerName(derivedJourney.customerName)
+        ? derivedJourney.customerName
+        : senderName,
     };
     const language = detectHandoffLanguage(content);
     const contact = extractContact(sender, content);
