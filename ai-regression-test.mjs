@@ -77,6 +77,9 @@ async function askAI(message, history = []) {
       headers: {
         "Content-Type": "application/json",
         "x-forwarded-for": TEST_IP.replace(/\d+$/, String(142 + (requestIndex++ % 100))),
+        ...(process.env.WOS_AI_REGRESSION_TOKEN
+          ? { "x-wos-ai-regression-token": process.env.WOS_AI_REGRESSION_TOKEN }
+          : {}),
       },
       body: JSON.stringify({ message, history }),
     });
@@ -530,6 +533,7 @@ async function main() {
       }
       result.response = r.replyText;
       result.httpStatus = r.status;
+      if (r.status !== 200) result.httpBody = JSON.stringify(r.raw);
     } catch (err) {
       result = { pass: false, reason: `request failed: ${err.message}` };
     }
@@ -538,6 +542,11 @@ async function main() {
       console.log("PASS");
     } else if (result.pass === false) {
       console.log(`FAIL - ${result.reason}`);
+      if (result.httpStatus && result.httpStatus !== 200) {
+        console.log(`  HTTP status: ${result.httpStatus}`);
+        if (result.httpBody) console.log(`  HTTP body: ${result.httpBody.slice(0, 1000)}`);
+      }
+
       // Hard assertion failures and execution/infrastructure failures both gate the suite.
       // Review cases remain non-gated only when they return pass:null.
       if (c.kind === "hard") hardFailures++;

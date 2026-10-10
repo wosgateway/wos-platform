@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { simpleRateLimit } from '@/lib/rate-limit';
@@ -35,6 +36,20 @@ function getClientIp(request: Request): string {
   return forwarded?.split(',')[0]?.trim() || 'unknown';
 }
 
+function hasValidRegressionToken(request: Request): boolean {
+  if (process.env.VERCEL_ENV !== 'preview') return false;
+
+  const expected = process.env.WOS_AI_REGRESSION_TOKEN;
+  const supplied = request.headers.get('x-wos-ai-regression-token');
+  if (!expected || !supplied) return false;
+
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  const suppliedBytes = Buffer.from(supplied, 'utf8');
+
+  return expectedBytes.length === suppliedBytes.length &&
+    timingSafeEqual(expectedBytes, suppliedBytes);
+}
+
 function getErrorStatus(error: unknown): number | undefined {
   return (error as { status?: number } | null)?.status;
 }
@@ -61,9 +76,12 @@ export async function POST(request: Request) {
   try {
     // This endpoint is public and every call costs OpenAI tokens.
     try {
+      const isRegressionRequest = hasValidRegressionToken(request);
       const limit = await simpleRateLimit(
-        `ai-chat:${getClientIp(request)}`,
-        RATE_LIMIT_MAX,
+        isRegressionRequest
+          ? 'ai-chat-regression:preview'
+          : `ai-chat:${getClientIp(request)}`,
+        isRegressionRequest ? 50 : RATE_LIMIT_MAX,
         RATE_LIMIT_WINDOW_MS
       );
 
