@@ -446,6 +446,30 @@ const cases = [
     },
   },
   {
+    id: "T5c_thanks_after_hotel_handoff",
+    label: "Thank-you after hotel handoff must not repeat the acknowledgement or summary",
+    query: "\u0e02\u0e2d\u0e1a\u0e04\u0e38\u0e13\u0e04\u0e23\u0e31\u0e1a",
+    kind: "hard",
+    history: [
+      { role: "assistant", content: "1. Knee Check - 1,500 THB\n2. Health Check - 1,900 THB" },
+      { role: "user", content: "Knee Check" },
+      { role: "assistant", content: "What name should I use for the WOS team to coordinate with you?" },
+      { role: "user", content: "Wos Admin" },
+      { role: "assistant", content: "Would you like transport?" },
+      { role: "user", content: "No" },
+      { role: "assistant", content: "Would you like a hotel?" },
+      { role: "user", content: "\u0e2a\u0e19\u0e43\u0e08" },
+      { role: "assistant", content: "\u0e2a\u0e23\u0e38\u0e1b\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e43\u0e2b\u0e49\u0e17\u0e35\u0e21 WOS\n\u2022 \u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21: Knee Check\n\u2022 \u0e0a\u0e37\u0e48\u0e2d\u0e1c\u0e39\u0e49\u0e08\u0e2d\u0e07: Wos Admin\n\u2022 \u0e23\u0e16\u0e23\u0e31\u0e1a\u0e2a\u0e48\u0e07: \u0e44\u0e21\u0e48\u0e15\u0e49\u0e2d\u0e07\u0e01\u0e32\u0e23\n\u2022 \u0e42\u0e23\u0e07\u0e41\u0e23\u0e21: \u0e15\u0e49\u0e2d\u0e07\u0e01\u0e32\u0e23\n\u0e17\u0e35\u0e21 WOS \u0e08\u0e30\u0e1b\u0e23\u0e30\u0e2a\u0e32\u0e19\u0e07\u0e32\u0e19\u0e15\u0e48\u0e2d\u0e43\u0e2b\u0e49\u0e04\u0e48\u0e30" }
+    ],
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/Knee Check|Wos Admin|\u0e23\u0e31\u0e1a\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e42\u0e23\u0e07\u0e41\u0e23\u0e21|\u0e2a\u0e23\u0e38\u0e1b\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25/iu.test(r.replyText)) {
+        return { pass: false, reason: "thank-you reply repeated hotel acknowledgement or handoff summary" };
+      }
+      return { pass: true };
+    },
+  },
+  {
     id: "T3_province_scoped_query",
     label: "Province-scoped query: results should be filtered to that province",
     query: "มีโปรแกรมอะไรในอุดรธานีบ้าง",

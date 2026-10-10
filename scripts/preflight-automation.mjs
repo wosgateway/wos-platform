@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { existsSync } from "node:fs";
 
 const ROOT = process.cwd();
@@ -102,12 +102,18 @@ const preflightArgs = [
   "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", ".\\preflight-build.ps1"
 ];
 if (skipBuild) preflightArgs.push("-SkipBuild");
-const preflight = run("powershell.exe", preflightArgs);
-if (!preflight.ok) {
-  console.error(preflight.output);
+const preflight = spawnSync("powershell.exe", preflightArgs, {
+  cwd: ROOT,
+  stdio: "inherit",
+  windowsHide: true,
+});
+if (preflight.error) {
+  console.error(`Failed to launch build preflight: ${preflight.error.message}`);
   console.error("\nPREFLIGHT AUTOMATION FAILED");
   process.exit(1);
 }
-
-console.log(preflight.output);
+if (preflight.status !== 0) {
+  console.error("\nPREFLIGHT AUTOMATION FAILED");
+  process.exit(preflight.status ?? 1);
+}
 console.log("\nPREFLIGHT AUTOMATION PASSED");

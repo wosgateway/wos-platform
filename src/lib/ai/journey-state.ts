@@ -545,6 +545,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|ລົດຮັບສົ່ງ|ລົດສົ່ງ|ລົດຮັບ)/iu.test(lastAssistantForAddon);
   const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
   const assistantAskedHotel = /(?:(?:สนใจ|ສົນໃຈ|ຕ້ອງການ).*?(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)|(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ).*?(?:สนใจ|want|need|interested|ສົນໃຈ|ຕ້ອງການ))/iu.test(lastAssistantForAddon);
+  const assistantAskedHotelEnglish = /(?:would\s+you\s+like|do\s+you\s+want|do\s+you\s+need)\s+(?:a\s+)?(?:hotel|room|accommodation)\??/iu.test(lastAssistantForAddon);
 
   // Do not apply a bare "ไม่ต้องการ" to both optional services. A short
   // negative belongs only to the addon Fern just asked about; otherwise a
@@ -557,7 +558,6 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   // derivedTransportNeeded only sees user text and the word "สนใจ" alone does
   // not contain the transport noun.
   let historicalTransportNeeded: boolean | undefined;
-  let historicalHotelNeeded: boolean | undefined;
   for (let i = effectiveHistory.length - 2; i >= 0; i--) {
     const assistant = effectiveHistory[i];
     const user = effectiveHistory[i + 1];
@@ -567,14 +567,11 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
       if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|ລົດຮັບສົ່ງ)/iu.test(assistant.content)) {
         historicalTransportNeeded = true;
       }
-      if (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|accommodation|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(assistant.content)) {
-        historicalHotelNeeded = true;
-      }
     }
   }
 
-  const shortHotelAffirmation = shortAffirmative && assistantAskedHotel;
-  const shortHotelRejection = shortNegative && assistantAskedHotel;
+  const shortHotelAffirmation = shortAffirmative && (assistantAskedHotel || assistantAskedHotelEnglish);
+  const shortHotelRejection = shortNegative && (assistantAskedHotel || assistantAskedHotelEnglish);
   const shortTransportRejection = shortNegative && assistantAskedTransport;
 
   return {
@@ -611,7 +608,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),
     hotelRooms: findRooms(allTexts),
     transportNeeded: shortTransportAffirmation ? true : shortTransportRejection ? false : derivedTransportNeeded ?? historicalTransportNeeded,
-    hotelNeeded: shortHotelAffirmation ? true : shortHotelRejection ? false : derivedHotelNeeded ?? historicalHotelNeeded,
+    hotelNeeded: shortHotelAffirmation ? true : shortHotelRejection ? false : derivedHotelNeeded,
   };
 }
 

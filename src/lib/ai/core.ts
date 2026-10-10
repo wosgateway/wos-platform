@@ -1286,28 +1286,28 @@ export async function runWosAI(
       return 'ต่อไปทีม WOS จะติดต่อกลับเพื่อยืนยันวันเวลาและรายละเอียดที่เหลือให้ค่ะ 😊';
     }
 
-    const lastAssistantForHotel = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-    const previousAssistantAskedHotel = /(?:สนใจโรงแรม|hotel too|would you like a hotel|hotel?ໂຮງແຮມນຳ)/iu.test(lastAssistantForHotel);
-    const isAffirmativeHotelReply = /^(?:สนใจ|ต้องการ|เอา|เอาด้วย|yes|yeah|yep|sure|want it|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ)[\s!?.]*(?:ครับ|ค่ะ|ครับผม|ค่ะผม|please)?[\s!?.]*$/iu.test(userMessage.trim());
-    const isNegativeHotelReply = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|nope|not interested|ບໍ່|ບໍ່ເອົາ|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ)[\s!?.]*$/iu.test(userMessage.trim());
+    // Handle short hotel answers only after the immediately preceding hotel question.
+    // Keep hotel-information questions on the normal lookup path.
+    const lastAssistantForHotel = [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
+    const rawTurnAskedHotel = /(?:would\s+you\s+like|do\s+you\s+want|do\s+you\s+need)\s+(?:a\s+)?(?:hotel|room|accommodation)\??|(?:\u0E2A\u0E19\u0E43\u0E08|\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23|\u0EAA\u0EBB\u0E99\u0EC3\u0E88).*?(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01|hotel|room|\u0EC2\u0EAE\u0E87\u0EC1\u0EAE\u0E87)/iu.test(lastAssistantForHotel);
+    const bareHotelAffirmation = /^(?:\u0E2A\u0E19\u0E43\u0E08|\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23|\u0E40\u0E2D\u0E32|yes|yeah|sure|want it|interested|\u0EAA\u0EBB\u0E99\u0EC3\u0E88|\u0E95\u0EC9\u0EAD\u0E87\u0E81\u0EB2\u0E99|\u0EC0\u0EAD\u0EBB\u0EB2)[\s!?.]*(?:\u0E04\u0E23\u0E31\u0E1A|\u0E04\u0E48\u0E30|\u0E04\u0E30)?[\s!?.]*$/iu.test(userMessage.trim());
+    const bareHotelRejection = /^(?:\u0E44\u0E21\u0E48|\u0E44\u0E21\u0E48\u0E40\u0E2D\u0E32|\u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23|\u0E44\u0E21\u0E48\u0E2A\u0E19\u0E43\u0E08|no|nope|not interested|\u0E9A\u0ECD\u0EC8|\u0E9A\u0ECD\u0EC8\u0EC0\u0EAD\u0EBB\u0EB2|\u0E9A\u0ECD\u0EC8\u0E95\u0EC9\u0EAD\u0E87\u0E81\u0EB2\u0E99)[\s!?.]*(?:\u0E04\u0E23\u0E31\u0E1A|\u0E04\u0E48\u0E30|\u0E04\u0E30)?[\s!?.]*$/iu.test(userMessage.trim());
 
-    // Once Fern has explicitly asked whether a hotel is needed, only a short
-    // affirmative answer completes the concierge intake. Keep unrelated hotel
-    // questions from being swallowed by the handoff summary.
-    if (journeyState.selectedProgram && previousAssistantAskedHotel && isAffirmativeHotelReply && !isHotelAvailabilityIntent && !isExplicitProgramLookup) {
-      return buildConciergeHandoffSummary(customerLanguage, {
-        ...journeyState,
-        transportNeeded: journeyState.transportNeeded ?? false,
-        hotelNeeded: true,
-      });
-    }
-
-    if (journeyState.selectedProgram && journeyState.customerName && previousAssistantAskedHotel && isNegativeHotelReply && !isHotelAvailabilityIntent && !isExplicitProgramLookup) {
-      return buildConciergeHandoffSummary(customerLanguage, {
-        ...journeyState,
-        transportNeeded: journeyState.transportNeeded ?? false,
-        hotelNeeded: false,
-      });
+    if (journeyState.selectedProgram && journeyState.customerName && rawTurnAskedHotel && !isHotelAvailabilityIntent && !isExplicitProgramLookup && !isProvinceCatalogContinuation) {
+      if (bareHotelAffirmation) {
+        return buildConciergeHandoffSummary(customerLanguage, {
+          ...journeyState,
+          transportNeeded: journeyState.transportNeeded ?? false,
+          hotelNeeded: true,
+        });
+      }
+      if (bareHotelRejection) {
+        return buildConciergeHandoffSummary(customerLanguage, {
+          ...journeyState,
+          transportNeeded: journeyState.transportNeeded ?? false,
+          hotelNeeded: false,
+        });
+      }
     }
 
     // Transport affirmation is a turn-level transition and must not depend on

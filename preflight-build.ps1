@@ -1,4 +1,4 @@
-﻿param(
+param(
   [string]$EnvFile = ".env.local",
   [string]$ImageTag = "latest",
   [string]$ImageName = "wos-webhook-promote-candidate",
@@ -264,10 +264,10 @@ if ($dockerignore -notmatch '(?m)^\.env\*$') {
 }
 
 $backupFiles = @(& git ls-files) |
-  Where-Object { $_ -match '(?i)(\.bak\d*|\.backup|\.before-)(/|\\|$)' }
+  Where-Object { $_ -match '(?i)(\.bak\d*|\.backup|\.before-).*$' }
 
 $untrackedBackupFiles = @(& git status --porcelain=v1 --untracked-files=all) |
-  Where-Object { $_ -match '(?i)(\.bak\d*|\.backup|\.before-)(/|\\|$)' }
+  Where-Object { $_ -match '(?i)(\.bak\d*|\.backup|\.before-).*$' }
 
 if ($backupFiles.Count -gt 0 -or $untrackedBackupFiles.Count -gt 0) {
   Warn "Backup/temp-like files exist in repository/build context:"
