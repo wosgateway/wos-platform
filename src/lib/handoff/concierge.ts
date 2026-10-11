@@ -14,13 +14,15 @@ export function detectHandoffLanguage(text: string): WosLanguage {
 }
 
 export function isHandoffConfirmation(text: string): boolean {
-  if (/(?:ไม่ใช่|ยังไม่|not yet|don't|do not)/iu.test(text)) return false;
+  // A refusal ("ไม่สนใจ", "ไม่ต้องการ", "ไม่เอา", "no") must never read as agreement just
+  // because it contains the positive word ("สนใจ", "ต้องการ").
+  if (/(?:ไม่ใช่|ยังไม่|ไม่(?:ต้อง|เอา|สนใจ|ยืนยัน|ตกลง|ถูก)|ບໍ່(?:ຕ້ອງການ|ເອົາ|ສົນໃຈ|ແມ່ນ)|ยกเลิก|not yet|don't|do not|cancel|\bnope?\b)/iu.test(text)) return false;
   // At the final concierge step, customers commonly answer the hotel's
   // "สนใจไหม" question with "สนใจ" rather than the formal word "ยืนยัน".
   // The webhook only evaluates this after the journey reaches
   // `awaiting_confirmation`, so this does not trigger an early handoff for
   // transport/hotel questions.
-  return /(?:yes|y|ok|okay|confirm|confirmed|correct|ใช่|ถูกต้อง|ยืนยัน|ตกลง|โอเค|ได้เลย|สนใจ|ต้องการ)/iu.test(text);
+  return /(?:\b(?:yes|y|ok|okay|confirm|confirmed|correct)\b|ใช่|ถูกต้อง|ยืนยัน|ตกลง|โอเค|ได้เลย|สนใจ|ต้องการ)/iu.test(text);
 }
 
 function usableContactName(value: unknown): string {

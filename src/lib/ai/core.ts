@@ -33,8 +33,9 @@ import {
   type WosLanguage,
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
-import { deriveWosJourneyState, formatJourneyState, getWosConciergeStage } from './journey-state';
-import { buildConciergeHandoffSummary, buildHandoffConfirmation } from '@/lib/handoff/concierge';
+import { deriveWosJourneyState, formatJourneyState } from './journey-state';
+import { buildConciergeHandoffSummary } from '@/lib/handoff/concierge';
+import { buildAskHotelReply, decideConciergeReply } from './concierge-flow';
 import { runUnderstandingGate } from './understanding/gate';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
@@ -1072,13 +1073,18 @@ export async function runWosAI(
       ? detectWosLanguage(lastUserLanguageAnchor, languageHistory)
       : detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
-    // Deterministic concierge progression: once a pickup point is captured in
-    // Journey State, never ask for it again. This intentionally does not use a
-    // location allow-list: Laos pickup points are open-ended.
-    if (journeyState.transportNeeded === true && journeyState.transportOrigin && journeyState.hotelNeeded === undefined) {
-      if (customerLanguage === 'en') return 'Perfect 😊 I have the pickup point. Would you like a hotel too?';
-      if (customerLanguage === 'lo') return 'ຮັບຊາບແລ້ວ 😊 ຂ້ອຍມີຈຸດຮັບແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍ?';
-      return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
+    // The customer just answered the pickup question: go straight to the hotel
+    // question before any catalog/model branch can swallow the reply. This is
+    // scoped to THIS turn (answeredQuestion), so it can never re-fire on later
+    // turns and loop the hotel question. Laos pickup points are open-ended, so
+    // there is intentionally no location allow-list.
+    if (
+      journeyState.answeredQuestion === 'pickup' &&
+      journeyState.transportNeeded === true &&
+      journeyState.transportOrigin &&
+      journeyState.hotelNeeded === undefined
+    ) {
+      return buildAskHotelReply(customerLanguage, journeyState);
     }
 
     // Explicit reset commands are control messages, not new questions. Return
@@ -1142,7 +1148,12 @@ export async function runWosAI(
       /[0-9]+[.)].+(?:—|-|–).+/u.test(lastAssistantContent)
         ? { content: lastAssistantContent }
         : undefined;
-    if (isBareProgramAffirmative && lastConcreteProgramDetail) {
+    // ...unless Fern's last turn was actually a transport / pickup / hotel question:
+    // then the affirmative answers THAT question (handled by the concierge controller).
+    const lastTurnAskedAddon = journeyState.pendingQuestion === 'transport' ||
+      journeyState.pendingQuestion === 'pickup' ||
+      journeyState.pendingQuestion === 'hotel';
+    if (isBareProgramAffirmative && lastConcreteProgramDetail && !lastTurnAskedAddon) {
       const acceptedMatch = lastConcreteProgramDetail.content.match(/[0-9]+[.)] +(.+?) (?:—|-|–) /u);
       const acceptedTitle = acceptedMatch?.[1]?.trim();
       if (acceptedTitle) {
@@ -1286,85 +1297,21 @@ export async function runWosAI(
       return 'ต่อไปทีม WOS จะติดต่อกลับเพื่อยืนยันวันเวลาและรายละเอียดที่เหลือให้ค่ะ 😊';
     }
 
-    // Handle short hotel answers only after the immediately preceding hotel question.
-    // Keep hotel-information questions on the normal lookup path.
-    const lastAssistantForHotel = [...history].reverse().find((m) => m.role === "assistant")?.content ?? "";
-    const rawTurnAskedHotel = /(?:would\s+you\s+like|do\s+you\s+want|do\s+you\s+need)\s+(?:a\s+)?(?:hotel|room|accommodation)\??|(?:\u0E2A\u0E19\u0E43\u0E08|\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23|\u0EAA\u0EBB\u0E99\u0EC3\u0E88).*?(?:\u0E42\u0E23\u0E07\u0E41\u0E23\u0E21|\u0E17\u0E35\u0E48\u0E1E\u0E31\u0E01|hotel|room|\u0EC2\u0EAE\u0E87\u0EC1\u0EAE\u0E87)/iu.test(lastAssistantForHotel);
-    const bareHotelAffirmation = /^(?:\u0E2A\u0E19\u0E43\u0E08|\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23|\u0E40\u0E2D\u0E32|yes|yeah|sure|want it|interested|\u0EAA\u0EBB\u0E99\u0EC3\u0E88|\u0E95\u0EC9\u0EAD\u0E87\u0E81\u0EB2\u0E99|\u0EC0\u0EAD\u0EBB\u0EB2)[\s!?.]*(?:\u0E04\u0E23\u0E31\u0E1A|\u0E04\u0E48\u0E30|\u0E04\u0E30)?[\s!?.]*$/iu.test(userMessage.trim());
-    const bareHotelRejection = /^(?:\u0E44\u0E21\u0E48|\u0E44\u0E21\u0E48\u0E40\u0E2D\u0E32|\u0E44\u0E21\u0E48\u0E15\u0E49\u0E2D\u0E07\u0E01\u0E32\u0E23|\u0E44\u0E21\u0E48\u0E2A\u0E19\u0E43\u0E08|no|nope|not interested|\u0E9A\u0ECD\u0EC8|\u0E9A\u0ECD\u0EC8\u0EC0\u0EAD\u0EBB\u0EB2|\u0E9A\u0ECD\u0EC8\u0E95\u0EC9\u0EAD\u0E87\u0E81\u0EB2\u0E99)[\s!?.]*(?:\u0E04\u0E23\u0E31\u0E1A|\u0E04\u0E48\u0E30|\u0E04\u0E30)?[\s!?.]*$/iu.test(userMessage.trim());
-
-    if (journeyState.selectedProgram && journeyState.customerName && rawTurnAskedHotel && !isHotelAvailabilityIntent && !isExplicitProgramLookup && !isProvinceCatalogContinuation) {
-      if (bareHotelAffirmation) {
-        return buildConciergeHandoffSummary(customerLanguage, {
-          ...journeyState,
-          transportNeeded: journeyState.transportNeeded ?? false,
-          hotelNeeded: true,
-        });
-      }
-      if (bareHotelRejection) {
-        return buildConciergeHandoffSummary(customerLanguage, {
-          ...journeyState,
-          transportNeeded: journeyState.transportNeeded ?? false,
-          hotelNeeded: false,
-        });
-      }
-    }
-
-    // Transport affirmation is a turn-level transition and must not depend on
-    // customer-name inference (the public API has no Chatwoot sender metadata).
-    if (journeyState.selectedProgram && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation) {
-      const bareTransportAffirmation = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
-      const lastRawAssistantText = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-      const rawTurnAskedTransport = /(?:สนใจรถ|รถรับส่งด้วยไหม|transport|transfer|shuttle|ລົດຮັບສົ່ງ|ຮັບສົ່ງ)/iu.test(lastRawAssistantText);
-      if (bareTransportAffirmation && rawTurnAskedTransport) {
-        if (customerLanguage === 'lo') return 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ';
-        if (customerLanguage === 'en') return 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.';
-        return 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
-      }
+    // Transport -> pickup -> hotel -> handoff summary is ONE state-driven
+    // controller (concierge-flow.ts). Short replies ("สนใจ", "ไม่เอา") were already
+    // bound to the single question Fern just asked inside deriveWosJourneyState,
+    // so there are deliberately no per-turn yes/no regexes here. Do not re-add
+    // them: parallel copies of this logic are what let a transport "สนใจ" leak
+    // into the hotel state and made Fern loop or over-summarise.
+    if (journeyState.selectedProgram && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
+      const conciergeReply = decideConciergeReply(journeyState, customerLanguage);
+      if (conciergeReply) return conciergeReply;
     }
 
     if (journeyState.selectedProgram && !journeyState.customerName && !/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test([...history].reverse().find((m) => m.role === 'assistant')?.content ?? '') && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
       if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
       if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
       return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
-    }
-
-    // The selected-program concierge is state-driven. Once the program and
-    // customer name are known, never fall back to catalog/model selection:
-    // move through transport -> pickup -> hotel -> handoff exactly once.
-    if (journeyState.selectedProgram && journeyState.customerName && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
-      const bareTransportAffirmation = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
-      const lastRawAssistantText = [...history].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-      // Use the actual immediately preceding turn for this transition. State
-      // inference may lag one message, but the raw conversation turn is exact.
-      const rawTurnAskedTransport = /(?:สนใจรถ|รถรับส่งด้วยไหม|transport|transfer|shuttle|ລົດຮັບສົ່ງ|ຮັບສົ່ງ)/iu.test(lastRawAssistantText);
-      if (bareTransportAffirmation && rawTurnAskedTransport) {
-        if (customerLanguage === 'lo') return 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ';
-        if (customerLanguage === 'en') return 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.';
-        return 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
-      }
-      const conciergeStage = getWosConciergeStage(journeyState);
-      if (conciergeStage === 'ask_transport_interest') {
-        if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈລົດຮັບສົ່ງນຳບໍຄ່ະ?';
-        if (customerLanguage === 'en') return 'Got it 😊 Would you like transport as well?';
-        return 'รับทราบค่ะ 😊 สนใจรถรับส่งด้วยไหมคะ?';
-      }
-      if (conciergeStage === 'collecting_transport') {
-        if (customerLanguage === 'lo') return 'ໄດ້ຄ່ະ 😊 ຂໍຈຸດຮັບດ້ວຍນະຄະ ທີມ WOS ຈະປະສານລາຍລະອຽດລົດສ່ວນທີ່ເຫຼືອຕໍ່ໃຫ້ຄ່ະ';
-        if (customerLanguage === 'en') return 'Sure 😊 What is the pickup point? The WOS team will coordinate the remaining transport details with you.';
-        return 'ได้เลยค่ะ 😊 ขอจุดรับด้วยนะคะ เดี๋ยวทีม WOS จะประสานรายละเอียดรถส่วนที่เหลือต่อให้ค่ะ';
-      }
-      if (conciergeStage === 'ask_hotel_interest') {
-        if (customerLanguage === 'lo') return 'ຮັບຊາບແລ້ວ 😊 ໃບເຟີນມີຈຸດຮັບແລ້ວ. ສົນໃຈໂຮງແຮມນຳບໍຄ່ະ?';
-        if (customerLanguage === 'en') return 'Perfect 😊 I have the pickup point. Would you like a hotel too?';
-        return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นมีจุดรับแล้วนะคะ สนใจโรงแรมด้วยไหมคะ?';
-      }
-      if (conciergeStage === 'awaiting_confirmation' && journeyState.hotelNeeded === true) {
-        return buildConciergeHandoffSummary(customerLanguage, journeyState);
-      }
-      if (conciergeStage === 'awaiting_confirmation' && journeyState.hotelNeeded === false) {
-        return buildHandoffConfirmation(customerLanguage);
-      }
     }
 
     // An active concierge journey owns ambiguous short replies (for example

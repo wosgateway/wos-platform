@@ -31,7 +31,19 @@ export type WosJourneyState = {
   transportDestinationSource?: 'program_default' | 'customer_override';
   hotelTravelers?: number;
   hotelRooms?: number;
+  /**
+   * The single optional-service question Fern's immediately preceding turn was
+   * waiting on. Short replies ("สนใจ", "ไม่เอา") may only ever bind to this.
+   */
+  pendingQuestion?: WosAddonQuestion;
+  /**
+   * Which pending question the CURRENT customer message actually answered
+   * (undefined when it answered nothing, e.g. "ขอบคุณ").
+   */
+  answeredQuestion?: WosAddonQuestion;
 };
+
+export type WosAddonQuestion = 'name' | 'transport' | 'pickup' | 'hotel';
 
 export type WosConciergeStage =
   | 'collecting_booking'
@@ -197,14 +209,6 @@ function findHotelRoom(texts: string[]): WosJourneyState['roomType'] {
   return undefined;
 }
 
-function findPreference(texts: string[], positive: RegExp, negative: RegExp): boolean | undefined {
-  for (let i = texts.length - 1; i >= 0; i--) {
-    if (negative.test(texts[i])) return false;
-    if (positive.test(texts[i])) return true;
-  }
-  return undefined;
-}
-
 function findCustomerName(texts: string[]): string | undefined {
   return findLastMatch(texts, /(?:ชื่อนาย|ชื่อนางสาว|ชื่อนาง|ชื่อ|ผมชื่อ|ฉันชื่อ|ดิฉันชื่อ)\s*([ก-๙A-Za-z][ก-๙A-Za-z .'-]{1,60})/iu);
 }
@@ -294,7 +298,14 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   // ("สนใจครับ", "สนใจค่ะ", "ສົນໃຈ") means the customer accepted that
   // specific program. Treat it as an explicit selection, not a new catalog
   // discovery request.
-  const bareSelectionAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
+  // A bare "สนใจ" that answers a transport / pickup / hotel question is an answer
+  // to THAT question. It must never be re-read as "select the first program from
+  // an older catalog message".
+  const lastHistoryMessage = history[history.length - 1];
+  const pendingAddonQuestion = lastHistoryMessage?.role === 'assistant'
+    ? classifyAssistantQuestion(lastHistoryMessage.content)
+    : undefined;
+  const bareSelectionAffirmative = !pendingAddonQuestion && /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   if (bareSelectionAffirmative) {
     const latestConcreteProgram = [...optionMessages].reverse().find((message) =>
       /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(message.content) &&
@@ -323,6 +334,7 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
     const priorUser = history[i];
     const priorAssistant = history[i - 1];
     if (priorUser.role !== 'user' || priorAssistant.role !== 'assistant') continue;
+    if (classifyAssistantQuestion(priorAssistant.content)) continue;
     if (!/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(priorUser.content.trim())) continue;
     if (!/(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(priorAssistant.content)) continue;
     const match = priorAssistant.content.match(/[0-9]+[.)] +(.+?) (?:—|-|–) /u);
@@ -391,6 +403,272 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   return undefined;
 }
 
+// ---------------------------------------------------------------------------
+// Optional-service (transport / pickup / hotel) state machine
+//
+// Rule: a customer reply is interpreted against the ONE question Fern asked in
+// the immediately preceding turn. History is replayed turn by turn, so a short
+// answer can change exactly one slot, and unrelated turns ("ขอบคุณ") change
+// nothing. Nothing here scans the whole transcript for keywords.
+// ---------------------------------------------------------------------------
+
+type AddonSlots = {
+  transportNeeded?: boolean;
+  transportOrigin?: string;
+  hotelNeeded?: boolean;
+};
+
+const TRANSPORT_NOUN = '(?:รถรับส่ง|รถ|ລົດຮັບສົ່ງ|ລົດ|ຮັບສົ່ງ|transportation|transport|transfer|shuttle)';
+const HOTEL_NOUN = '(?:โรงแรม|ที่พัก|ห้องพัก|ໂຮງແຮມ|ທີ່ພັກ|ຫ້ອງພັກ|accommodation|hotel|room)';
+const ANY_SERVICE_NOUN = `(?:${TRANSPORT_NOUN}|${HOTEL_NOUN})`;
+const WANT_WORD = '(?:สนใจ|ต้องการ|อยากได้|เอา|ขอ|ຕ້ອງການ|ເອົາ|ຂໍ|ສົນໃຈ)';
+const WANT_GAP = '(?:จอง|ใช้|เช่า|บริการ|ให้ช่วยจัด|ให้จัด|จัด)?';
+const SERVICE_JOIN = '(?:และ|กับ|หรือ|พร้อม|ด้วย|,|/)?';
+
+function buildAskPattern(noun: string): RegExp {
+  return new RegExp(
+    `(?:สนใจ|ต้องการ|อยากได้|ຕ້ອງການ|ສົນໃຈ)\\s*(?:ให้\\s*)?(?:บริการ\\s*)?${noun}` +
+    `|${noun}[^\\s?？]{0,8}\\s*(?:ไหม|มั้ย|หรือเปล่า|หรือไม่|ບໍ)` +
+    `|(?:would\\s+you\\s+like|do\\s+you\\s+want|do\\s+you\\s+need|are\\s+you\\s+interested\\s+in)[^.?!\\n]{0,24}?${noun}`,
+    'iu',
+  );
+}
+
+const TRANSPORT_ASK = buildAskPattern(TRANSPORT_NOUN);
+const HOTEL_ASK = buildAskPattern(HOTEL_NOUN);
+const PICKUP_ASK = /(?:ขอ|ช่วยแจ้ง|รบกวนแจ้ง|รบกวนระบุ|ระบุ)\s*(?:ทราบ\s*)?(?:จุดรับ|สถานที่รับ)|จุดรับ\s*(?:อยู่)?(?:ที่ไหน|คือที่ไหน|คืออะไร)|(?:what|where)(?:\s+is|'s)?\s+(?:the\s+|your\s+)?pick-?up|ຂໍຈຸດຮັບ|ຈຸດຮັບ[^\n]{0,8}(?:ບ່ອນໃດ|ຢູ່ໃສ)/iu;
+const NAME_ASK = /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu;
+
+function lastMatchSpan(pattern: RegExp, text: string): { start: number; end: number } | undefined {
+  let span: { start: number; end: number } | undefined;
+  for (const match of text.matchAll(new RegExp(pattern.source, 'giu'))) {
+    const start = match.index ?? 0;
+    span = { start, end: start + match[0].length };
+  }
+  return span;
+}
+
+/**
+ * Which single question does this assistant message leave open?
+ *
+ * The question that comes LAST in the message is the one the customer is
+ * answering; earlier mentions ("ถ้าต้องการที่พักก็มีโรงแรมใกล้คลินิกค่ะ ...
+ * สนใจรถรับส่งด้วยไหมคะ?") are just context. A single sentence that asks about
+ * BOTH transport and hotel ("สนใจรถรับส่งหรือโรงแรมเพิ่มไหมคะ?") is ambiguous:
+ * one bare "สนใจ" cannot settle two questions, so it resolves to undefined and
+ * Fern asks one question at a time.
+ */
+export function classifyAssistantQuestion(text: string): WosAddonQuestion | undefined {
+  if (!text) return undefined;
+  const candidates = ([
+    ['transport', TRANSPORT_ASK],
+    ['hotel', HOTEL_ASK],
+    ['pickup', PICKUP_ASK],
+    ['name', NAME_ASK],
+  ] as const)
+    .map(([type, pattern]) => ({ type, span: lastMatchSpan(pattern, text) }))
+    .filter((c): c is { type: WosAddonQuestion; span: { start: number; end: number } } => Boolean(c.span))
+    .sort((a, b) => b.span.start - a.span.start);
+  if (candidates.length === 0) return undefined;
+
+  const [last, ...rest] = candidates;
+  if (last.type === 'transport' || last.type === 'hotel') {
+    const other = last.type === 'transport' ? 'hotel' : 'transport';
+    const sibling = rest.find((c) => c.type === other);
+    if (sibling) {
+      const between = text.slice(Math.min(sibling.span.end, last.span.start), last.span.start);
+      const sameQuestion = last.span.start - sibling.span.end <= 20 && !/[?？!\n。]/u.test(between);
+      if (sameQuestion) return undefined;
+    }
+  }
+  return last.type;
+}
+
+const POLITE_TAIL = '(?:\\s*(?:ครับผม|ครับ|คับ|ค่ะ|คะ|นะครับ|นะคะ|นะค่ะ|นะ|เลย|ด้วย|ແດ່|ຄ່ະ|ຄັບ|ເດີ|ເລີຍ))*';
+const AFFIRM_WORDS = '(?:สนใจ|ต้องการ|เอาด้วย|เอา|ขอ|ใช่|ได้เลย|ได้|โอเค|ตกลง|yes|yeah|yep|yup|sure|ok|okay|interested|please|y|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ|ໄດ້|ຕົກລົງ)';
+const NEGATIVE_WORDS = '(?:ไม่ต้องการ|ไม่สนใจ|ไม่เอา|ไม่ต้อง|ยังไม่ต้องการ|ยังไม่เอา|ยังไม่|ไม่(?:ล่ะ|ละ|หรอก|เป็นไร)?|not interested|no thanks|no thank you|nope|nah|none|no|n|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ|ບໍ່ເອົາ|ບໍ່)';
+const AFFIRM_RE = new RegExp(`^${AFFIRM_WORDS}${POLITE_TAIL}$`, 'iu');
+const NEGATIVE_RE = new RegExp(`^${NEGATIVE_WORDS}${POLITE_TAIL}(?:\\s*ขอบคุณ${POLITE_TAIL})?$`, 'iu');
+
+const PURE_ACK_RE = new RegExp(`^(?:อืม|อ๋อ|อ่อ|เออ|หืม|5{2,}|รับทราบ|เข้าใจแล้ว|เข้าใจ)?${POLITE_TAIL}$`, 'iu');
+
+function normalizeShortReply(text: string): string {
+  return text
+    .normalize('NFC')
+    .replace(/[\p{Extended_Pictographic}\u200d\ufe0f]/gu, ' ')
+    .replace(/[\s!?.,。~…]+/gu, ' ')
+    .trim();
+}
+
+export function isShortAffirmative(text: string): boolean {
+  return AFFIRM_RE.test(normalizeShortReply(text));
+}
+
+export function isShortNegative(text: string): boolean {
+  return NEGATIVE_RE.test(normalizeShortReply(text));
+}
+
+export function isThanksMessage(text: string): boolean {
+  return /^(?:thanks|thank you|thx|ขอบคุณ(?:มาก)?(?:ครับ|ค่ะ)?|ຂອບໃຈ(?:ຫຼາຍ)?)[\s!?.]*$/iu.test(text.trim());
+}
+
+/**
+ * An explicit statement that NAMES the service ("สนใจรถรับส่ง", "ไม่เอาโรงแรม").
+ * Unlike a bare "สนใจ", this is self-describing, so it is valid whichever
+ * question is pending. The noun must sit right next to the verb; a distant
+ * noun elsewhere in the sentence does not count.
+ */
+function explicitServicePreference(text: string, noun: string): boolean | undefined {
+  const reach = `\\s*${WANT_GAP}\\s*(?:${ANY_SERVICE_NOUN}\\s*${SERVICE_JOIN}\\s*)*?${noun}`;
+  const negative = new RegExp(
+    `(?:ไม่|ยังไม่|ບໍ່)\\s*(?:ต้องการ|เอา|ขอ|สนใจ|ใช้|ຕ້ອງການ|ເອົາ|ສົນໃຈ)${reach}` +
+    `|(?:don't|do not)\\s+(?:need|want)\\s+(?:a\\s+|any\\s+)?${noun}|\\bno\\s+(?:need\\s+for\\s+)?(?:a\\s+)?${noun}`,
+    'iu',
+  );
+  if (negative.test(text)) return false;
+  const positive = new RegExp(
+    `(?<!ไม่|ບໍ່)${WANT_WORD}${reach}|(?:need|want|interested\\s+in)\\s+(?:a\\s+)?${noun}`,
+    'iu',
+  );
+  return positive.test(text) ? true : undefined;
+}
+
+const PICKUP_PHRASE = /(?:รับที่|รับจาก|จุดรับ(?:คือ|อยู่ที่|ที่)?|สถานที่รับ(?:คือ)?|pick-?up(?:\s+point)?(?:\s+(?:is|at))?|ຈຸດຮັບ(?:ແມ່ນ|ຢູ່)?|ຮັບຢູ່|ຮັບຈາກ)\s*[:：]?\s*([^\n,]{1,80})/iu;
+
+/** Explicit "pickup at X" wording. Implies the customer wants transport. */
+function extractExplicitPickup(text: string): string | undefined {
+  const known = text.match(/(?:รับที่|รับจาก|จุดรับ|pickup)\s*(เวียงจัน(?:ทน์)?|เวียงจันทน์|อุดรธานี|หนองคาย|ขอนแก่น|กรุงเทพมหานคร|ວຽງຈັນ)/iu);
+  if (known?.[1]) return normalizeLocation(known[1]);
+  const captured = text.match(PICKUP_PHRASE)?.[1]?.trim();
+  if (!captured) return undefined;
+  const trimmed = captured.split(/\s+(?=\d|วันที่|เวลา|ไป\S|ถึง|พร้อม|และ|ครับ|ค่ะ|คะ)/u)[0]?.trim();
+  return trimmed ? normalizeLocation(trimmed) : undefined;
+}
+
+const NOT_A_PLACE = /(?:ไหม|มั้ย|หรือเปล่า|เท่าไร|เท่าไหร่|กี่|ราคา|อะไร|ยังไง|อย่างไร|ที่ไหน|ເທົ່າໃດ|ບໍ\s*$|\b(?:how|what|why|when|where|price|cost)\b)|^(?:ไม่ทราบ|ไม่รู้|ยังไม่แน่ใจ|ไม่แน่ใจ|ยังไม่ทราบ|ບໍ່ຮູ້|ບໍ່ແນ່ໃຈ|not sure|don't know)/iu;
+
+/**
+ * Laos pickup points are open-ended, so almost any short free text answers the
+ * pickup question. Acknowledgements, thanks, resets, refusals and questions do not.
+ */
+function looksLikePickupAnswer(text: string): boolean {
+  const t = text.trim();
+  if (t.length < 2 || t.length > 120) return false;
+  if (isShortAffirmative(t) || isShortNegative(t)) return false;
+  if (isThanksMessage(t) || isJourneyResetMessage(t)) return false;
+  if (PURE_ACK_RE.test(normalizeShortReply(t))) return false;
+  if (/[?？]\s*$/u.test(t) || NOT_A_PLACE.test(t)) return false;
+  if (isGenericProgramRequest(t)) return false;
+  return true;
+}
+
+// Fern's own booking summary is durable evidence, like name/program recovery.
+// It lets the state survive once the original turns fall out of the history window.
+function parseSummarySlots(text: string): AddonSlots | undefined {
+  const line = (labels: string) => text.match(new RegExp(`(?:^|\\n)\\s*[•*-]\\s*(?:${labels})\\s*:\\s*([^\\n]+)`, 'iu'))?.[1]?.trim();
+  const polarity = (value: string | undefined): boolean | undefined => {
+    if (!value) return undefined;
+    if (/^(?:ไม่|ບໍ່|not\s)/iu.test(value)) return false;
+    if (/^(?:ต้องการ|ຕ້ອງການ|needed)/iu.test(value)) return true;
+    return undefined;
+  };
+  const transport = polarity(line('รถรับส่ง|ລົດຮັບສົ່ງ|transport'));
+  const hotel = polarity(line('โรงแรม|ໂຮງແຮມ|hotel'));
+  const pickup = line('จุดรับ|ຈຸດຮັບ|pickup');
+  if (transport === undefined && hotel === undefined && !pickup) return undefined;
+  const slots: AddonSlots = {};
+  if (transport !== undefined) slots.transportNeeded = transport;
+  if (hotel !== undefined) slots.hotelNeeded = hotel;
+  if (pickup && transport !== false) slots.transportOrigin = pickup;
+  return slots;
+}
+
+function applyAddonTurn(
+  slots: AddonSlots,
+  question: WosAddonQuestion | undefined,
+  rawAnswer: string,
+): { slots: AddonSlots; answered?: WosAddonQuestion } {
+  const answer = rawAnswer.trim();
+  const next: AddonSlots = { ...slots };
+  let answered: WosAddonQuestion | undefined;
+
+  const declineTransport = () => {
+    next.transportNeeded = false;
+    next.transportOrigin = undefined;
+  };
+
+  // 1. Self-describing statements are valid at any time and touch only the service they name.
+  const transportExplicit = explicitServicePreference(answer, TRANSPORT_NOUN);
+  const hotelExplicit = explicitServicePreference(answer, HOTEL_NOUN);
+  if (transportExplicit === true) next.transportNeeded = true;
+  if (transportExplicit === false) declineTransport();
+  if (hotelExplicit !== undefined) next.hotelNeeded = hotelExplicit;
+  if (question === 'transport' && transportExplicit !== undefined) answered = 'transport';
+  if (question === 'hotel' && hotelExplicit !== undefined) answered = 'hotel';
+
+  // 2. A short or free-text reply binds ONLY to the question that was just asked.
+  if (question === 'transport' && transportExplicit === undefined) {
+    if (isShortAffirmative(answer)) { next.transportNeeded = true; answered = 'transport'; }
+    else if (isShortNegative(answer)) { declineTransport(); answered = 'transport'; }
+  } else if (question === 'hotel' && hotelExplicit === undefined) {
+    if (isShortAffirmative(answer)) { next.hotelNeeded = true; answered = 'hotel'; }
+    else if (isShortNegative(answer)) { next.hotelNeeded = false; answered = 'hotel'; }
+  } else if (question === 'pickup' && transportExplicit === undefined) {
+    if (isShortNegative(answer)) {
+      declineTransport();
+      answered = 'transport';
+    } else if (!extractExplicitPickup(answer) && looksLikePickupAnswer(answer)) {
+      next.transportNeeded = true;
+      next.transportOrigin = normalizeLocation(answer);
+      answered = 'pickup';
+    }
+  }
+
+  // 3. Explicit pickup wording ("รับที่…") implies transport unless the customer declined it.
+  const explicitPickup = extractExplicitPickup(answer);
+  if (explicitPickup && next.transportNeeded !== false) {
+    next.transportNeeded = true;
+    next.transportOrigin = explicitPickup;
+    if (question === 'pickup' || question === 'transport') answered = answered ?? 'pickup';
+  } else if (next.transportNeeded === true) {
+    // "จาก X" is only a pickup point once the customer has asked for transport.
+    const fromPlace = findOrigin([answer]);
+    if (fromPlace) {
+      next.transportOrigin = fromPlace;
+      if (question === 'pickup') answered = 'pickup';
+    }
+  }
+
+  return { slots: next, answered };
+}
+
+function deriveAddonState(history: WosAIHistoryMessage[], currentMessage: string): AddonSlots & {
+  pendingQuestion?: WosAddonQuestion;
+  answeredQuestion?: WosAddonQuestion;
+} {
+  const messages: WosAIHistoryMessage[] = [...history, { role: 'user', content: currentMessage }];
+  let slots: AddonSlots = {};
+  let answeredQuestion: WosAddonQuestion | undefined;
+
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    if (message.role === 'assistant') {
+      const seeded = parseSummarySlots(message.content);
+      if (seeded) slots = { ...slots, ...seeded };
+      continue;
+    }
+    const previous = messages[i - 1];
+    const question = previous?.role === 'assistant' ? classifyAssistantQuestion(previous.content) : undefined;
+    const result = applyAddonTurn(slots, question, message.content);
+    slots = result.slots;
+    if (i === messages.length - 1) answeredQuestion = result.answered;
+  }
+
+  const lastHistory = history[history.length - 1];
+  const pendingQuestion = lastHistory?.role === 'assistant' ? classifyAssistantQuestion(lastHistory.content) : undefined;
+  return { ...slots, pendingQuestion, answeredQuestion };
+}
+
 export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMessage: string): WosJourneyState {
   if (isJourneyResetMessage(currentMessage)) {
     return { needs: [], activeNeed: undefined, bookingIntent: false, budgetUnlimited: false };
@@ -446,7 +724,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
   for (let i = effectiveHistory.length - 1; i >= 0; i--) {
     const message = effectiveHistory[i];
     if (message.role !== 'assistant') continue;
-    const match = message.content.match(/(?:^|\\n)\\s*[•*-]\\s*(?:ชื่อผู้จอง|ຊື່ຜູ້ຈອງ|customer name|name)\\s*:\\s*([^\\n]+)/iu);
+    const match = message.content.match(/(?:^|\n)\s*[•*-]\s*(?:ชื่อผู้จอง|ຊື່ຜູ້ຈອງ|customer name|name)\s*:\s*([^\n]+)/iu);
     if (match?.[1]?.trim()) {
       summaryCustomerName = match[1].trim();
       break;
@@ -479,54 +757,6 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     'Vientiane', 'vientiane',
   ]);
   const lastUserMessageIsBareLocation = LOCATION_ALIASES[currentMessage.trim()] !== undefined || barePickupAliases.has(normalizedCurrent);
-  // Unambiguous pickup aliases are captured directly once the customer answers the pickup question.
-  const historicalBarePickup = (() => {
-    for (let i = effectiveHistory.length - 2; i >= 0; i--) {
-      const assistant = effectiveHistory[i];
-      const user = effectiveHistory[i + 1];
-      if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
-      if (!/(?:ขอจุดรับ|จุดรับด้วย|ขอ.*(?:รับที่|รับจาก)|รับที่|รับจาก|pickup point|pick-up point|what.*pickup|ຂໍຈຸດຮັບ|ຮັບຢູ່|ຮັບຈາກ)/iu.test(assistant.content)) continue;
-      const value = user.content.trim().normalize('NFC');
-      // A pickup answer does not need to match a location dictionary, but a
-      // bare yes/interest is NEVER a pickup point. This prevents a short
-      // transport affirmation ("สนใจครับ") from becoming transportOrigin.
-      if (
-        value.length >= 2 &&
-        !/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ|ไม่|ไม่ต้องการ|ไม่เอา|ไม่สนใจ|no|none|ບໍ່|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ)$/iu.test(value)
-      ) {
-        return normalizeLocation(value);
-      }
-    }
-    return undefined;
-  })();
-  // Laos pickup points are intentionally open-ended. WOS can arrange pickup
-  // throughout Laos, so a customer-provided place must be stored even when
-  // Fern does not know that place name or province. Only capture an arbitrary
-  // bare answer when the immediately preceding assistant turn was asking for
-  // the pickup point; never turn unrelated free text into a pickup location.
-  const lastAssistantAskedPickup = /(?:จุดรับ|รับที่|รับจาก|pickup|pick-up|ຈຸດຮັບ|ຮັບຢູ່|ຮັບຈາກ)/iu.test(lastAssistantMessage);
-  // Some chat transports trim or omit the immediately preceding assistant turn.
-  // Once the customer has already said they want transport, the next
-  // non-affirmative/non-negative free-text reply is the pickup point.
-  const transportAffirmedInHistory = (() => {
-    for (let i = effectiveHistory.length - 2; i >= 0; i--) {
-      const assistant = effectiveHistory[i];
-      const user = effectiveHistory[i + 1];
-      if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
-      if (!/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(user.content.trim())) continue;
-      if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test(assistant.content)) return true;
-    }
-    return false;
-  })();
-  const pickupCollectionActive = lastAssistantAskedPickup || transportAffirmedInHistory;
-  const arbitraryPickupAnswer = pickupCollectionActive
-    && currentMessage.trim().length >= 2
-    && !/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|ไม่|ไม่ต้องการ|ไม่เอา|ไม่สนใจ|yes|y|ok|okay|interested|no|none|ບໍ່|ບໍ່ຕ້ອງການ)$/iu.test(currentMessage.trim())
-    ? normalizeLocation(currentMessage)
-    : undefined;
-  const inferredBarePickup = lastUserMessageIsBareLocation
-    ? normalizeLocation(currentMessage)
-    : historicalBarePickup ?? arbitraryPickupAnswer;
   const activeNeed = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|รับส่ง|transport|transfer|shuttle)/iu.test(currentMessage)
     ? 'transport'
     : /(?:ปวดเข่า|ตรวจเข่า|เข่า|รักษา|หาหมอ|พบแพทย์|treatment|doctor|surgery)/iu.test(currentMessage)
@@ -538,47 +768,16 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
           : /(?:สุขภาพ|ตรวจสุขภาพ|wellness|health|นวด|สปา|spa|massage)/iu.test(currentMessage)
             ? 'health'
             : needs[needs.length - 1];
-  // Short affirmative/negative replies inherit the optional-service question Fern just asked.
-  const lastAssistantForAddon = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-  const shortAffirmative = /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
-  const shortNegative = /^(?:ไม่|ไม่เอา|ไม่ต้องการ|ไม่สนใจ|no|n|none|not interested|ບໍ່|ບໍ່ເອົາ|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
-  const assistantAskedTransport = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|ລົດຮັບສົ່ງ|ລົດສົ່ງ|ລົດຮັບ)/iu.test(lastAssistantForAddon);
-  const shortTransportAffirmation = shortAffirmative && assistantAskedTransport;
-  const assistantAskedHotel = /(?:(?:สนใจ|ສົນໃຈ|ຕ້ອງການ).*?(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)|(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ).*?(?:สนใจ|want|need|interested|ສົນໃຈ|ຕ້ອງການ))/iu.test(lastAssistantForAddon);
-  const assistantAskedHotelEnglish = /(?:would\s+you\s+like|do\s+you\s+want|do\s+you\s+need)\s+(?:a\s+)?(?:hotel|room|accommodation)\??/iu.test(lastAssistantForAddon);
 
-  // Do not apply a bare "ไม่ต้องการ" to both optional services. A short
-  // negative belongs only to the addon Fern just asked about; otherwise a
-  // hotel rejection can accidentally erase an already-captured transport request.
-  const derivedTransportNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ|ຕ້ອງການ|ເອົາ|ຂໍ|ສົນໃຈ).*?(?:รถ|รถรับส่ง|ລົດ|ຮັບສົ່ງ)|(?:need|want|interested).*?(?:transport|transfer)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ|ບໍ່ຕ້ອງການ|ບໍ່ເອົາ|ບໍ່ຂໍ).*?(?:รถ|รถรับส่ง|ລົດ|ຮັບສົ່ງ)|(?:don't|do not|no).*?(?:transport|transfer)/iu);
-  const derivedHotelNeeded = findPreference(allTexts, /(?:ต้องการ|เอา|ขอ|สนใจ|ຕ້ອງການ|ເອົາ|ຂໍ|ສົນໃຈ).*?(?:โรงแรม|ที่พัก|ห้องพัก|ໂຮງແຮມ|ທີ່ພັກ)|(?:need|want|interested).*?(?:hotel|room)/iu, /(?:ไม่ต้องการ|ไม่เอา|ไม่ขอ|ບໍ່ຕ້ອງການ|ບໍ່ເອົາ|ບໍ່ຂໍ).*?(?:โรงแรม|ที่พัก|ห้องพัก|ໂຮງແຮມ|ທີ່ພັກ)|(?:don't|do not|no).*?(?:hotel|room)/iu);
-
-  // Short affirmations are state transitions. Preserve the affirmative fact
-  // on the following turn (for example, the pickup-point message), because
-  // derivedTransportNeeded only sees user text and the word "สนใจ" alone does
-  // not contain the transport noun.
-  let historicalTransportNeeded: boolean | undefined;
-  for (let i = effectiveHistory.length - 2; i >= 0; i--) {
-    const assistant = effectiveHistory[i];
-    const user = effectiveHistory[i + 1];
-    if (assistant?.role !== 'assistant' || user?.role !== 'user') continue;
-    const userText = user.content.trim();
-    if (/^(?:สนใจ|ต้องการ|เอา|ขอ|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ຂໍ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userText)) {
-      if (/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|ລົດຮັບສົ່ງ)/iu.test(assistant.content)) {
-        historicalTransportNeeded = true;
-      }
-    }
-  }
-
-  const shortHotelAffirmation = shortAffirmative && (assistantAskedHotel || assistantAskedHotelEnglish);
-  const shortHotelRejection = shortNegative && (assistantAskedHotel || assistantAskedHotelEnglish);
-  const shortTransportRejection = shortNegative && assistantAskedTransport;
+  // Transport / pickup / hotel are decided turn by turn against the question
+  // Fern just asked. See the add-on state machine above.
+  const addon = deriveAddonState(effectiveHistory, currentMessage);
 
   return {
     destination,
     // A bare location is a valid pickup point when Fern just asked for it.
     // Keep it in the shared origin field too so every concierge guard sees the captured fact.
-    origin: findOrigin(allTexts) ?? inferredBarePickup,
+    origin: findOrigin(allTexts) ?? (lastUserMessageIsBareLocation ? normalizeLocation(currentMessage) : undefined) ?? addon.transportOrigin,
     budgetThb: findBudget(allTexts),
     travelers: findTravelers(allTexts),
     serviceDate: findDate(allTexts),
@@ -599,16 +798,17 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     transportDate: findDate(allTexts),
     transportTime: findServiceTime(allTexts),
     transportTravelers: findTravelers(allTexts),
-    // Transport pickup must come only from an explicit pickup-answer transition.
-    // Never reuse the generic journey origin here; that can make a bare
-    // transport affirmation look like a pickup point and skip the pickup question.
-    transportOrigin: shortTransportAffirmation ? undefined : findOrigin(allTexts) ?? inferredBarePickup,
+    // Pickup comes only from the pickup answer (or explicit pickup wording after
+    // transport was requested), never from a stray place name earlier in the chat.
+    transportOrigin: addon.transportOrigin,
     transportDestination: undefined,
     transportDestinationSource: undefined,
     hotelTravelers: findHotelTravelers(allTexts) ?? findTravelers(allTexts) ?? (/(?:โรงแรม|ที่พัก|ห้องพัก|hotel|room)/iu.test(currentMessage) ? findTravelers([currentMessage]) : undefined),
     hotelRooms: findRooms(allTexts),
-    transportNeeded: shortTransportAffirmation ? true : shortTransportRejection ? false : derivedTransportNeeded ?? historicalTransportNeeded,
-    hotelNeeded: shortHotelAffirmation ? true : shortHotelRejection ? false : derivedHotelNeeded,
+    transportNeeded: addon.transportNeeded,
+    hotelNeeded: addon.hotelNeeded,
+    pendingQuestion: addon.pendingQuestion,
+    answeredQuestion: addon.answeredQuestion,
   };
 }
 

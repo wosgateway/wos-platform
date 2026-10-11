@@ -71,7 +71,10 @@ async function processClaimedWebhook(args: {
     const contact = extractContact(sender, content);
     const journeyReady = isJourneyReady(journey);
     const conciergeStage = getWosConciergeStage(journey);
-    const confirmation = isHandoffConfirmation(content);
+    // The turn that answers the hotel question (yes OR no) completes the V1 intake.
+    // Journey State binds that answer to the hotel question itself, so a decline
+    // ("ไม่เอา") hands off exactly like an accept instead of silently stalling.
+    const confirmation = isHandoffConfirmation(content) || journey.answeredQuestion === 'hotel';
     const lastAssistant = [...history].reverse().find((message) => message.role === 'assistant');
 
     const asksNextStep = /(?:ทำไงต่อ|ทำอะไรต่อ|ต้องการอะไรอีก|ต้องทำอะไรต่อ|ต้องทำอะไรเพิ่ม|ผมแจ้งไปแล้ว|แจ้งไปแล้ว|แล้วไงต่อ|what(?:'s| is) next|next step|i already told you)/iu.test(content);
