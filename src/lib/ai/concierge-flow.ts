@@ -80,7 +80,7 @@ export function decideConciergeReply(state: WosJourneyState, language: WosLangua
     case 'awaiting_confirmation':
       // The turn that answered the hotel question (yes OR no) closes the intake
       // with the same summary; the summary lists every captured status.
-      if (state.answeredQuestion === 'hotel' || state.hotelNeeded === true) {
+      if (state.answeredQuestion === 'hotel') {
         return buildConciergeHandoffSummary(language, state);
       }
       return buildHandoffConfirmation(language);
