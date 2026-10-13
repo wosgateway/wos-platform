@@ -3,6 +3,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync, realpathSync } from "node:fs";
 import path from "node:path";
+import OpenAI from "openai";
 
 // Load local development env for agent notifications without printing secrets.
 if (!process.env.WOS_AI_AGENT_TELEGRAM_BOT_TOKEN || !process.env.WOS_AI_AGENT_TELEGRAM_CHAT_ID) {
@@ -114,6 +115,616 @@ function safePath(relativePath) {
 
 function containsSecretPattern(value) {
   return /TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID|SUPABASE_SERVICE_ROLE_KEY|SUPABASE_ACCESS_TOKEN|OPENAI_API_KEY|ANTHROPIC_API_KEY|GOOGLE_API_KEY|NOTION_TOKEN|NOTION_API_KEY/i.test(value);
+}
+
+function agentEnv(name) {
+  const value = process.env[name]?.trim();
+  if (!value) return undefined;
+  return value.replace(/^"([\s\S]*)"$/, "$1").replace(/^'([\s\S]*)'$/, "$1");
+}
+
+let agentLlmClient = null;
+
+function getAgentLlmClient() {
+  if (!agentLlmClient) {
+    const baseURL = agentEnv("LITELLM_BASE_URL");
+    const apiKey = agentEnv("LITELLM_API_KEY") || agentEnv("OPENAI_API_KEY");
+    if (!apiKey) fail("AI_PLAN blocked: LITELLM_API_KEY/OPENAI_API_KEY is not configured.");
+
+    agentLlmClient = new OpenAI({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      maxRetries: 0,
+    });
+  }
+  return agentLlmClient;
+}
+
+function parseAgentJson(content) {
+  const text = String(content || "").trim();
+  if (!text) fail("AI_PLAN stopped: LLM returned an empty response.");
+
+  try {
+    return JSON.parse(text);
+  } catch {
+    const fenced = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    if (fenced) {
+      try {
+        return JSON.parse(fenced[1]);
+      } catch {
+        // Continue to the final structured-response failure below.
+      }
+    }
+  }
+
+  fail("AI_PLAN stopped: LLM response was not valid JSON.");
+}
+
+function validateAiPlanQuality(task, plan, sourceContexts) {
+  const normalizedTask = String(task || "").toLowerCase();
+
+  const conciergeHotelHandoff =
+    /(concierge|hotel|handoff)/i.test(normalizedTask);
+
+  if (!conciergeHotelHandoff) return;
+
+  const requiredAnchors = [
+    "src/lib/ai/core.ts",
+    "src/lib/ai/concierge-flow.ts",
+    "src/app/api/chatwoot/webhook/route.ts",
+    "src/lib/handoff/concierge.ts",
+  ];
+
+  const inspected = new Set(
+    plan.filesToInspect.map((file) => String(file).replace(/\\/g, "/")),
+  );
+
+  const missingAnchors = requiredAnchors.filter(
+    (file) => !inspected.has(file),
+  );
+
+  if (missingAnchors.length) {
+    fail(
+      "AI_PLAN quality gate failed: concierge hotel handoff plan omitted required execution-path files.\n" +
+        missingAnchors.map((file) => `- ${file}`).join("\n"),
+    );
+  }
+
+  const contextFiles = new Set(
+    sourceContexts.map((item) => String(item.file).replace(/\\/g, "/")),
+  );
+
+  const missingContext = requiredAnchors.filter(
+    (file) => !contextFiles.has(file),
+  );
+
+  if (missingContext.length) {
+    fail(
+      "AI_PLAN quality gate failed: required execution-path source context was not supplied.\n" +
+        missingContext.map((file) => `- ${file}`).join("\n"),
+    );
+  }
+
+  const rootCause = String(plan.rootCause || "").trim().toLowerCase();
+
+  const evidenceSymbols = [
+    "pendingquestion",
+    "answeredquestion",
+    "hotelneeded",
+    "decideconciergereply",
+    "ishandoffconfirmation",
+    "submithandoff",
+    "ask_hotel_interest",
+    "buildhandoffconfirmation",
+    "buildconciergehandoff",
+  ];
+
+  const rootCauseHasEvidence = evidenceSymbols.some((symbol) =>
+    rootCause.includes(symbol),
+  );
+
+  if (!rootCauseHasEvidence) {
+    fail(
+      "AI_PLAN quality gate failed: rootCause must identify at least one concrete state, symbol, condition, or transition from the supplied execution-path evidence.",
+    );
+  }
+
+  const genericRootCausePatterns = [
+    "does not prevent repeated hotel prompts",
+    "doesn't prevent repeated hotel prompts",
+    "repeated hotel prompts after hotel handoff",
+    "does not handle repeated hotel prompts",
+    "doesn't handle repeated hotel prompts",
+    "is not handling the customer's response correctly",
+    "does not handle the customer's response correctly",
+    "doesn't handle the customer's response correctly",
+  ];
+
+  if (
+    rootCause.length < 80 ||
+    genericRootCausePatterns.some((pattern) => rootCause === pattern)
+  ) {
+    fail(
+      "AI_PLAN quality gate failed: rootCause is too generic and does not identify a supported mechanism/state/condition.",
+    );
+  }
+
+  const proposedChanges = plan.proposedChanges
+    .map((change) => String(change).trim())
+    .join(" ")
+    .toLowerCase();
+
+  const proposedChangesHasEvidence = evidenceSymbols.some((symbol) =>
+    proposedChanges.includes(symbol),
+  );
+
+  if (!proposedChangesHasEvidence) {
+    fail(
+      "AI_PLAN quality gate failed: proposedChanges must identify at least one concrete state, symbol, condition, or transition to change.",
+    );
+  }
+
+  if (
+    proposedChanges.length < 80 ||
+    /modify (the )?(ai core|concierge flow).*prevent repeated hotel prompts/i.test(
+      proposedChanges,
+    )
+  ) {
+    fail(
+      "AI_PLAN quality gate failed: proposedChanges are too generic; identify the concrete state/condition/transition to change.",
+    );
+  }
+
+  const validation = plan.validation
+    .map((command) => String(command).trim())
+    .filter(Boolean);
+
+  const commandLike = validation.some(
+    (item) =>
+      /^(npm|npx|node|pnpm|yarn|powershell|pwsh|git)\b/i.test(item) ||
+      /\.(?:mjs|js|ps1|ts|tsx)\b/i.test(item),
+  );
+
+  if (!commandLike) {
+    fail(
+      "AI_PLAN quality gate failed: validation must contain at least one executable repository validation command.",
+    );
+  }
+}
+
+function repoFileList() {
+  const result = run("git", ["ls-files"]);
+  if (!result.ok) {
+    fail(`AI_PLAN stopped: unable to read repository file list.\n${result.output}`);
+  }
+
+  return result.output
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .filter((file) => !/(^|[\\/])(?:\.git|node_modules)(?:[\\/]|$)/i.test(file))
+    .slice(0, 5000);
+}
+
+function repoRelevantFiles(task, limit = 30) {
+  const result = run("node", [
+    "scripts/wos-ai-agent-repo.mjs",
+    "--query",
+    task,
+    "--limit",
+    String(limit),
+    "--json",
+  ]);
+
+  if (!result.ok) {
+    fail(
+      `AI_PLAN stopped: repository intelligence failed.\n${result.output}`
+    );
+  }
+
+  let parsed;
+  try {
+    parsed = JSON.parse(result.output);
+  } catch {
+    fail("AI_PLAN stopped: repository intelligence returned invalid JSON.");
+  }
+
+  if (!Array.isArray(parsed.matches)) {
+    fail("AI_PLAN stopped: repository intelligence returned no matches array.");
+  }
+
+  const priorityFiles = new Map([
+    ["src/lib/ai/core.ts", 12],
+    ["src/lib/ai/concierge-flow.ts", 12],
+    ["src/lib/ai/concierge-flow.test.ts", 11],
+    ["src/app/api/chatwoot/webhook/route.ts", 11],
+    ["src/lib/handoff/concierge.ts", 10],
+    ["src/lib/handoff/concierge.test.ts", 10],
+    ["ai-transport-hotel-regression-test.mjs", 9],
+  ]);
+
+  return parsed.matches
+    .filter((item) => item && typeof item.file === "string")
+    .map((item) => {
+      const file = item.file.replace(/\\/g, "/");
+      const retrievalScore = Number(item.score) || 0;
+      const priorityBoost = priorityFiles.get(file) || 0;
+
+      return {
+        file,
+        score: retrievalScore + priorityBoost,
+        retrievalScore,
+        priorityBoost,
+      };
+    })
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        b.retrievalScore - a.retrievalScore ||
+        a.file.localeCompare(b.file),
+    );
+}
+
+function planningMatches(task, matches, limit = 15) {
+  const normalizedTask = String(task || "").toLowerCase();
+
+  const conciergeHotelHandoff =
+    /(concierge|hotel|handoff)/i.test(normalizedTask);
+
+  if (!conciergeHotelHandoff) {
+    return matches.slice(0, limit);
+  }
+
+  const anchorFiles = [
+    "src/lib/ai/core.ts",
+    "src/lib/ai/concierge-flow.ts",
+    "src/app/api/chatwoot/webhook/route.ts",
+    "src/lib/handoff/concierge.ts",
+  ];
+
+  const byFile = new Map(
+    matches.map((item) => [String(item.file).replace(/\\/g, "/"), item]),
+  );
+
+  const selected = [];
+
+  for (const file of anchorFiles) {
+    const existing = byFile.get(file);
+
+    if (existing) {
+      selected.push(existing);
+      continue;
+    }
+
+    const absolute = path.resolve(ROOT, file);
+
+    if (!existsSync(absolute)) {
+      fail(`AI_PLAN stopped: required planning anchor is missing: ${file}`);
+    }
+
+    selected.push({
+      file,
+      score: 0,
+      retrievalScore: 0,
+      priorityBoost: 0,
+      planningAnchor: true,
+    });
+  }
+
+  for (const match of matches) {
+    const normalized = String(match.file).replace(/\\/g, "/");
+
+    if (!anchorFiles.includes(normalized)) {
+      selected.push(match);
+    }
+
+    if (selected.length >= limit) break;
+  }
+
+  return selected.slice(0, limit);
+}
+
+function repoSourceContext(matches, maxFiles = 8, maxBytesPerFile = 24 * 1024) {
+  const contexts = [];
+
+  for (const match of matches.slice(0, maxFiles)) {
+    const normalized = path.normalize(String(match.file));
+    const absolute = path.resolve(ROOT, normalized);
+
+    if (
+      !absolute.startsWith(ROOT + path.sep) ||
+      /(^|[\\/])(?:\.git|node_modules)(?:[\\/]|$)/i.test(normalized) ||
+      /(^|[\\/])\.env(?:\.|$)/i.test(normalized)
+    ) {
+      continue;
+    }
+
+    if (!existsSync(absolute)) continue;
+
+    let source;
+    try {
+      source = readFileSync(absolute, "utf8");
+    } catch {
+      continue;
+    }
+
+    if (containsSecretPattern(source)) {
+      continue;
+    }
+
+    const bytes = Buffer.byteLength(source, "utf8");
+    const bounded =
+      bytes > maxBytesPerFile
+        ? `${source.slice(0, maxBytesPerFile)}\n[TRUNCATED: source context limit reached]`
+        : source;
+
+    contexts.push({
+      file: normalized,
+      score: Number(match.score) || 0,
+      source: bounded,
+    });
+  }
+
+  return contexts;
+}
+
+function buildExecutionPathEvidence(task) {
+  const normalizedTask = String(task || "").toLowerCase();
+
+  const conciergeHotelHandoff =
+    /(concierge|hotel|handoff)/i.test(normalizedTask);
+
+  if (!conciergeHotelHandoff) return "";
+
+  const executionPath = [
+    {
+      file: "src/app/api/chatwoot/webhook/route.ts",
+      symbols: ["isHandoffConfirmation", "submitHandoff"],
+    },
+    {
+      file: "src/lib/ai/core.ts",
+      symbols: [
+        "pendingQuestion",
+        "answeredQuestion",
+        "hotelNeeded",
+        "decideConciergeReply",
+        "buildConciergeHandoff",
+      ],
+    },
+    {
+      file: "src/lib/ai/concierge-flow.ts",
+      symbols: [
+        "decideConciergeReply",
+        "answeredQuestion",
+        "ask_hotel_interest",
+        "buildHandoffConfirmation",
+        "buildConciergeHandoff",
+      ],
+    },
+    {
+      file: "src/lib/handoff/concierge.ts",
+      symbols: [
+        "isHandoffConfirmation",
+        "hotelNeeded",
+        "buildConciergeHandoff",
+        "buildHandoffConfirmation",
+      ],
+    },
+  ];
+
+  const lines = ["EXECUTION-PATH EVIDENCE"];
+
+  for (const entry of executionPath) {
+    const absolute = safePath(entry.file);
+    let source = "";
+
+    try {
+      source = readFileSync(absolute, "utf8");
+    } catch {
+      lines.push(entry.file);
+      lines.push("  read: FAILED");
+      continue;
+    }
+
+    if (containsSecretPattern(source)) {
+      lines.push(entry.file);
+      lines.push("  read: BLOCKED_SECRET_PATTERN");
+      continue;
+    }
+
+    const found = entry.symbols.filter((symbol) => source.includes(symbol));
+
+    lines.push(entry.file);
+    lines.push(
+      found.length
+        ? "  symbols: " + found.join(", ")
+        : "  symbols: none found",
+    );
+  }
+
+  return lines.join("\n");
+}
+async function aiPlan() {
+  const task = arg("--task");
+  if (!task?.trim()) fail("AI_PLAN requires --task.");
+
+  if (containsSecretPattern(task)) {
+    fail("AI_PLAN blocked: task contains a protected secret pattern.");
+  }
+
+  const system = [
+    "You are the planning brain of the WOS AI Dev Agent.",
+    "You analyze software-development problems in a local Next.js repository.",
+    "You are READ-ONLY in this mode.",
+    "Do not propose git add, commit, push, deploy, rollback, or production changes.",
+    "Prefer the smallest safe DEV-only change.",
+    "Separate root cause from symptoms.",
+    "Trace the execution path across modules before selecting files to inspect.",
+    "For concierge, hotel, and handoff tasks, follow the state/transition from inbound message through core orchestration, concierge decision logic, and handoff confirmation/submission.",
+    "Do not select only the function that appears closest to the symptom when the behavior crosses module boundaries.",
+    "Every file that owns, mutates, consumes, or gates the relevant state/transition must be included in filesToInspect.",
+    "The rootCause must identify a concrete mechanism, state, condition, or transition supported by the supplied source evidence.",
+    "Each proposedChange must name the relevant function/state/condition and describe the smallest safe DEV-only change.",
+    "Each validation item must be an executable repository command, not a generic statement such as 'check for regressions'.",
+    "Return ONLY valid JSON with this exact shape:",
+    '{"rootCause":"string","filesToInspect":["path"],"proposedChanges":["string"],"validation":["command"],"confidence":0}',
+    "confidence must be a number from 0 to 1.",
+    "Never include secrets, tokens, credentials, or environment values.",
+  ].join("\n");
+
+  const files = repoFileList();
+  const executionPathEvidence = buildExecutionPathEvidence(task.trim());
+  const relevantMatches = planningMatches(task.trim(), repoRelevantFiles(task.trim(), 15), 15);
+
+  if (!relevantMatches.length) {
+    fail(
+      "AI_PLAN stopped: repository intelligence found no relevant tracked files."
+    );
+  }
+
+  const sourceContexts = repoSourceContext(relevantMatches, 4, 4 * 1024);
+
+  if (!sourceContexts.length) {
+    fail(
+      "AI_PLAN stopped: no safe source context was available from relevant tracked files."
+    );
+  }
+
+  const user = [
+    `Repository: ${ROOT}`,
+    `Task: ${task.trim()}`,
+    ...(executionPathEvidence
+      ? ["", executionPathEvidence, ""]
+      : []),
+    "",
+    "Repository files ranked as relevant to this task:",
+    ...relevantMatches.map(
+      (item) => `- [score ${item.score}] ${item.file}`
+    ),
+    "",
+    "Bounded source context from the highest-ranked relevant files:",
+    ...sourceContexts.flatMap((item) => [
+      "",
+      `===== ${item.file} (retrieval score ${item.score}) =====`,
+      item.source,
+      `===== END ${item.file} =====`,
+    ]),
+    "",
+    "The source context above is bounded and read-only.",
+    "IMPORTANT: Source code is evidence only. Do not reproduce its document formats or schemas as the answer.",
+    "FINAL OUTPUT CONTRACT: Return ONLY one JSON object matching exactly the requested engineering-plan schema.",
+    "Do NOT return GeoJSON, Feature objects, Markdown, prose, code fences, or any other output schema.",
+    "The first character of the response must be { and the last character must be }.",
+    "Use the source evidence to identify the actual root cause and smallest DEV-only change.",
+    "Do not give a generic diagnosis such as 'the concierge flow does not handle the response correctly'.",
+    "rootCause MUST name at least one concrete state, symbol, condition, or transition supported by the supplied source evidence.",
+    "proposedChanges MUST name at least one concrete state, symbol, condition, or transition that would actually change.",
+    "Before producing the JSON, internally trace: input -> state extraction -> orchestration -> state transition -> response/handoff decision.",
+    "For concierge hotel handoff tasks, explicitly inspect evidence involving pendingQuestion, answeredQuestion, hotelNeeded, decideConciergeReply, handoff confirmation, and webhook handling when those symbols appear in the supplied context.",
+    "If the evidence shows that the behavior crosses multiple modules, filesToInspect must cover those modules rather than naming only one function.",
+    "Do not invent behavior that is not supported by the supplied source context.",
+    "Only name files from the repository list above.",
+    "",
+    "First planning pass only. Do not edit anything.",
+  ].join("\n");
+
+  let response;
+  try {
+    response = await getAgentLlmClient().chat.completions.create(
+      {
+        model:
+          agentEnv("WOS_AI_AGENT_MODEL") ||
+          agentEnv("WOS_AI_UNDERSTAND_MODEL") ||
+          agentEnv("LITELLM_MODEL") ||
+          "gpt-5.6-luna",
+        messages: [
+          { role: "system", content: system },
+          { role: "user", content: user },
+        ],
+        temperature: 0,
+        response_format: { type: "json_object" },
+      },
+      { timeout: 30000 },
+    );
+  } catch (error) {
+    fail(`AI_PLAN LLM request failed: ${error.message}`);
+  }
+
+  const rawPlan = response.choices[0]?.message?.content;
+  console.log("\n=== AI_PLAN RAW RESPONSE ===");
+  console.log(rawPlan);
+
+  const plan = parseAgentJson(rawPlan);
+
+  if (
+    typeof plan.rootCause !== "string" ||
+    !Array.isArray(plan.filesToInspect) ||
+    !Array.isArray(plan.proposedChanges) ||
+    !Array.isArray(plan.validation) ||
+    typeof plan.confidence !== "number"
+  ) {
+    fail("AI_PLAN stopped: LLM returned an invalid plan schema.");
+  }
+
+  const conciergeHotelHandoff = /(concierge|hotel|handoff)/i.test(task.trim().toLowerCase());
+
+  if (conciergeHotelHandoff) {
+    const requiredExecutionPath = [
+      "src/lib/ai/core.ts",
+      "src/lib/ai/concierge-flow.ts",
+      "src/app/api/chatwoot/webhook/route.ts",
+      "src/lib/handoff/concierge.ts",
+    ];
+
+    const existing = new Set(
+      plan.filesToInspect.map((file) => String(file).replace(/\\/g, "/")),
+    );
+
+    for (const file of requiredExecutionPath) {
+      if (existsSync(safePath(file)) && !existing.has(file)) {
+        plan.filesToInspect.push(file);
+      }
+    }
+  }
+
+  if (plan.filesToInspect.some((file) => containsSecretPattern(String(file)))) {
+    fail("AI_PLAN blocked: plan contains protected secret patterns.");
+  }
+
+  const existingFiles = new Set(repoFileList().map((file) => path.normalize(file)));
+
+  validateAiPlanQuality(task.trim(), plan, sourceContexts);
+  const unknownFiles = plan.filesToInspect.filter(
+    (file) => !existingFiles.has(path.normalize(String(file)))
+  );
+
+  if (unknownFiles.length > 0) {
+    fail(
+      `AI_PLAN stopped: LLM proposed files that do not exist in the repository.\n- ${unknownFiles.join("\n- ")}`
+    );
+  }
+
+  console.log("\n=== WOS AI DEV AGENT / AI PLAN ===");
+  console.log(`TASK: ${task.trim()}`);
+  console.log(`\nROOT CAUSE:\n${plan.rootCause}`);
+
+  console.log("\nFILES TO INSPECT:");
+  for (const file of plan.filesToInspect) {
+    console.log(`- ${file}`);
+  }
+
+  console.log("\nPROPOSED CHANGES:");
+  for (const change of plan.proposedChanges) {
+    console.log(`- ${change}`);
+  }
+
+  console.log("\nVALIDATION:");
+  for (const command of plan.validation) {
+    console.log(`- ${command}`);
+  }
+
+  console.log(`\nCONFIDENCE: ${Math.round(plan.confidence * 100)}%`);
+  console.log("\nAI_PLAN STOP: read-only; no files changed; no git/production action.");
 }
 
 function editDev() {
@@ -637,7 +1248,8 @@ if (hasFlag("--help")) {
 
 if (mode === "commit") gitCommit();
 else if (mode === "push") gitPush();
-if (mode === "repo-intelligence") repoIntelligence();
+else if (mode === "ai-plan") await aiPlan();
+else if (mode === "repo-intelligence") repoIntelligence();
 else if (mode === "edit-dev") editDev();
 else if (mode === "operational-status") operationalStatus();
 else if (mode === "audit-history") auditHistory();

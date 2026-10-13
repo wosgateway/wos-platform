@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFileSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = process.cwd();
@@ -32,12 +32,63 @@ function trackedFiles() {
   return result.output.split(/\r?\n/).filter(Boolean);
 }
 
+function queryTerms(value) {
+  return String(value || "")
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}_-]+/u)
+    .map((term) => term.trim())
+    .filter((term) => term.length >= 2);
+}
+
+function isSearchableFile(file) {
+  if (/(^|[\\/])(?:\.git|node_modules)(?:[\\/]|$)/i.test(file)) return false;
+  if (/(^|[\\/])\.env(?:\.|$)/i.test(file)) return false;
+
+  return /\.(?:js|mjs|cjs|ts|tsx|json|md|ps1|yml|yaml|css|sql|toml)$/i.test(file);
+}
+
+function searchableContent(file) {
+  if (!isSearchableFile(file)) return "";
+
+  const absolute = path.resolve(ROOT, file);
+  if (!absolute.startsWith(ROOT + path.sep) && absolute !== ROOT) return "";
+  if (!existsSync(absolute)) return "";
+
+  try {
+    if (statSync(absolute).size > 256 * 1024) return "";
+    return readFileSync(absolute, "utf8").toLowerCase();
+  } catch {
+    return "";
+  }
+}
+
 function score(file, terms) {
-  const lower = file.toLowerCase();
+  const lowerPath = file.toLowerCase();
+  const content = searchableContent(file);
+
   return terms.reduce((total, term) => {
     const t = term.toLowerCase();
-    return total + (lower.includes(t) ? (lower === t ? 8 : 3) : 0);
+
+    let points = 0;
+
+    if (lowerPath === t) points += 8;
+    else if (lowerPath.includes(t)) points += 3;
+
+    if (content.includes(t)) points += 2;
+
+    return total + points;
   }, 0);
+}
+
+function rankedMatches(files, query, limit) {
+  const terms = queryTerms(query);
+  if (!terms.length) return [];
+
+  return files
+    .map((file) => ({ file, score: score(file, terms) }))
+    .filter((item) => item.score > 0)
+    .sort((a, b) => b.score - a.score || a.file.localeCompare(b.file))
+    .slice(0, limit);
 }
 
 function category(files, name, predicate) {
@@ -75,10 +126,8 @@ const inventory = {
 if (has("--json")) {
   const result = { generatedAt: new Date().toISOString(), inventory };
   if (query) {
-    const terms = query.split(/[^a-zA-Z0-9ก-๙]+/).filter((x) => x.length >= 2);
     result.query = query;
-    result.matches = files.map((file) => ({ file, score: score(file, terms) }))
-      .filter((item) => item.score > 0).sort((a, b) => b.score - a.score || a.file.localeCompare(b.file)).slice(0, limit);
+    result.matches = rankedMatches(files, query, limit);
   }
   console.log(JSON.stringify(result, null, 2));
   process.exit(0);
@@ -100,11 +149,7 @@ category(files, "Booking / Orders", (f) => /booking|order/i.test(f));
 category(files, "Agent / Automation", (f) => /wos-ai-agent|ai-dev-agent|preflight|regression/i.test(f));
 
 if (query) {
-  const terms = query.split(/[^a-zA-Z0-9ก-๙]+/).filter((x) => x.length >= 2);
-  const matches = files.map((file) => ({ file, score: score(file, terms) }))
-    .filter((item) => item.score > 0)
-    .sort((a, b) => b.score - a.score || a.file.localeCompare(b.file))
-    .slice(0, limit);
+  const matches = rankedMatches(files, query, limit);
   console.log(`Task relevance: ${query}`);
   console.log("");
   if (!matches.length) console.log("No path-level matches found; inspect architecture before editing.");

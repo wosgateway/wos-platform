@@ -69,6 +69,17 @@ async function processClaimedWebhook(args: {
     };
     const language = detectHandoffLanguage(content);
     const contact = extractContact(sender, content);
+    const previousContactMessage = [...history]
+      .reverse()
+      .find(
+        (message) =>
+          message.role === 'user' &&
+          extractContact(undefined, message.content)?.value
+      );
+    const previousContact = previousContactMessage
+      ? extractContact(sender, previousContactMessage.content)
+      : null;
+    const resolvedContact = contact?.value ? contact : previousContact;
     const journeyReady = isJourneyReady(journey);
     const conciergeStage = getWosConciergeStage(journey);
     // The turn that answers the hotel question (yes OR no) completes the V1 intake.
@@ -103,15 +114,15 @@ async function processClaimedWebhook(args: {
             : 'รับทราบค่ะ 😊 ใบเฟิร์นจะไม่ถามข้อมูลเดิมซ้ำ ตอนนี้เลือกโปรแกรมที่ต้องการก่อนนะคะ';
       }
     } else if (journeyReady && conciergeStage === 'awaiting_confirmation' && confirmation) {
-      if (!contact?.name || !contact.value) {
+      if (!resolvedContact?.name || !resolvedContact.value) {
         replyText = buildHandoffContactPrompt(language);
       } else {
         const handoff = await submitHandoff({
           conversationId: String(conversationId),
           language,
-          name: contact.name,
-          contactChannel: contact.channel,
-          contactValue: contact.value,
+          name: resolvedContact.name,
+          contactChannel: resolvedContact.channel,
+          contactValue: resolvedContact.value,
           journey,
           appUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wos.asia',
         });
