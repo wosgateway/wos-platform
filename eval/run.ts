@@ -34,7 +34,7 @@ const deps = { provinces: fx.provinces, coveredProvinceIds: new Set(fx.covered) 
       selectedProgramId: null,
       journeyProvinceId: x.journey_province ?? null,
     };
-    const { understanding: u, error } = await understand(llm, c.input, history, ctx.recentCatalog, 20000);
+    const { understanding: u, error } = await understand(llm, c.input, history, ctx.recentCatalog, deps.provinces, 20000);
     const a = u ? decide(u, c.input, ctx, deps) : ({ type: 'DEFER', reason: error ?? 'understand_failed' } as const);
     const e = c.expect;
     const provId = 'province' in a ? (a as { province: ProvinceRecord | null }).province?.id ?? null : null;

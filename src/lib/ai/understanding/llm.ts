@@ -9,10 +9,37 @@ function env(name: string): string | undefined {
   return v.replace(/^"([\s\S]*)"$/, '$1').replace(/^'([\s\S]*)'$/, '$1');
 }
 
+function logRuntimeDiagnostics(baseURL: string | undefined): void {
+  let protocol: string | null = null;
+  let hostname: string | null = null;
+  let parseError: string | null = null;
+
+  if (baseURL) {
+    try {
+      const parsed = new URL(baseURL);
+      protocol = parsed.protocol;
+      hostname = parsed.hostname;
+    } catch (error) {
+      parseError = error instanceof Error ? error.message : 'url_parse_failed';
+    }
+  }
+
+  console.log('[AI_UNDERSTANDING_LLM]', {
+    baseURLPresent: Boolean(baseURL),
+    baseURLLength: baseURL?.length ?? 0,
+    protocol,
+    hostname,
+    parseError,
+    apiKeyPresent: Boolean(env('LITELLM_API_KEY') || env('OPENAI_API_KEY')),
+    model: env('WOS_AI_UNDERSTAND_MODEL') || env('LITELLM_MODEL') || 'default',
+  });
+}
+
 let client: OpenAI | null = null;
 function getClient(): OpenAI {
   if (!client) {
     const baseURL = env('LITELLM_BASE_URL');
+    logRuntimeDiagnostics(baseURL);
     client = new OpenAI({
       apiKey: env('LITELLM_API_KEY') || env('OPENAI_API_KEY'),
       ...(baseURL ? { baseURL } : {}),

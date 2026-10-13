@@ -162,7 +162,7 @@ export async function runUnderstandingGate(args: {
       journeyProvinceId: state?.provinceId ?? null,
     };
 
-    const { understanding: u, error } = await understand(createUnderstandLlm(), message, args.history, ctx.recentCatalog);
+    const { understanding: u, error } = await understand(createUnderstandLlm(), message, args.history, ctx.recentCatalog, provinces);
     if (!u) { await log({ error, deferReason: 'understand_failed' }); return NOT_HANDLED; }
 
     const action = decide(u, message, ctx, { provinces, coveredProvinceIds: coveredProvinceIds(catalogNames, provinces) });

@@ -1,4 +1,5 @@
 import { extractJson, parseUnderstanding, type CatalogItem, type Understanding } from './types';
+import { detectProvinceInText, matchProvince, type ProvinceRecord } from './provinces';
 
 export type LlmJson = (args: { system: string; user: string; timeoutMs: number }) => Promise<string>;
 
@@ -427,11 +428,24 @@ function normalizeUnderstanding(
 
   return u;
 }
+/**
+ * Canonicalize entities.province against the provinces table: the model's value is mapped to the
+ * canonical Thai name via matchProvince; if the model gave none (or an unknown one), fall back to a
+ * province named in the raw text. Unknown values are left untouched so decide() can still ask.
+ */
+function withCanonicalProvince(u: Understanding, message: string, provinces: ProvinceRecord[]): Understanding {
+  if (provinces.length === 0) return u;
+  const hit = matchProvince(u.entities.province, provinces) ?? detectProvinceInText(message, provinces);
+  if (!hit || hit.name_th === u.entities.province) return u;
+  return { ...u, entities: { ...u.entities, province: hit.name_th } };
+}
+
 export async function understand(
   llm: LlmJson,
   message: string,
   history: { role: string; content: string }[],
   catalog: CatalogItem[],
+  provinces: ProvinceRecord[] = [],
   timeoutMs = 6000,
 ): Promise<{ understanding: Understanding | null; error?: string }> {
   const deterministic = deterministicFallback(message, catalog);
@@ -446,7 +460,7 @@ export async function understand(
       const parsed = parseUnderstanding(extractJson(text));
 
       if (parsed) {
-        const normalized = normalizeUnderstanding(parsed, message, catalog);
+        const normalized = normalizeUnderstanding(withCanonicalProvince(parsed, message, provinces), message, catalog);
         return { understanding: normalized };
       }
 
