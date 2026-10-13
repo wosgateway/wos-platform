@@ -79,6 +79,25 @@ function commit() {
   if (!files) fail("COMMIT requires --files with an explicit comma-separated allowlist.");
   const list = files.split(",").map((x) => x.trim()).filter(Boolean).map(safeRelative);
   if (!list.length) fail("COMMIT file allowlist is empty.");
+  const existingStaged = run("git", ["diff", "--cached", "--name-only"]);
+  if (!existingStaged.ok) {
+    fail(`Unable to inspect existing staged files: ${existingStaged.output}`);
+  }
+
+  const existingStagedNames = existingStaged.output
+    .split(/\r?\n/)
+    .filter(Boolean);
+
+  const unexpectedExistingStaged = existingStagedNames.filter(
+    (name) => !list.includes(name)
+  );
+
+  if (unexpectedExistingStaged.length) {
+    fail(
+      `COMMIT blocked: staged files outside explicit allowlist: ${unexpectedExistingStaged.join(", ")}`
+    );
+  }
+
   const add = run("git", ["add", "--", ...list]);
   if (!add.ok) fail(`git add failed: ${add.output}`);
   const staged = run("git", ["diff", "--cached", "--name-only"]);

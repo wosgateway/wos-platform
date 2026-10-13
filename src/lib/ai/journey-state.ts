@@ -485,7 +485,7 @@ export function classifyAssistantQuestion(text: string): WosAddonQuestion | unde
 }
 
 const POLITE_TAIL = '(?:\\s*(?:ครับผม|ครับ|คับ|ค่ะ|คะ|นะครับ|นะคะ|นะค่ะ|นะ|เลย|ด้วย|ແດ່|ຄ່ະ|ຄັບ|ເດີ|ເລີຍ))*';
-const AFFIRM_WORDS = '(?:สนใจ|ต้องการ|เอาด้วย|เอา|ขอ|ใช่|ได้เลย|ได้|โอเค|ตกลง|yes|yeah|yep|yup|sure|ok|okay|interested|please|y|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ|ໄດ້|ຕົກລົງ)';
+const AFFIRM_WORDS = '(?:สนใจ(?:มาก)?|ต้องการ|เอาด้วย|เอา|ขอ|ใช่|ได้เลย|ได้|โอเค|ตกลง|yes|yeah|yep|yup|sure|ok|okay|interested|y|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ|ໄດ້|ຕົກລົງ)';
 const NEGATIVE_WORDS = '(?:ไม่ต้องการ|ไม่สนใจ|ไม่เอา|ไม่ต้อง|ยังไม่ต้องการ|ยังไม่เอา|ยังไม่|ไม่(?:ล่ะ|ละ|หรอก|เป็นไร)?|not interested|no thanks|no thank you|nope|nah|none|no|n|ບໍ່ຕ້ອງການ|ບໍ່ສົນໃຈ|ບໍ່ເອົາ|ບໍ່)';
 const AFFIRM_RE = new RegExp(`^${AFFIRM_WORDS}${POLITE_TAIL}$`, 'iu');
 const NEGATIVE_RE = new RegExp(`^${NEGATIVE_WORDS}${POLITE_TAIL}(?:\\s*ขอบคุณ${POLITE_TAIL})?$`, 'iu');

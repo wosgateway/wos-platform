@@ -86,7 +86,7 @@ function notify(message) {
 
 function fail(message, notifyMessage = message) {
   console.error(message);
-  notify(`WOS AI Dev Agent\n\n❌ FAIL\n${notifyMessage}`);
+  notify(`WOS AI Dev Agent\n\nFAIL\n${notifyMessage}`);
   process.exit(1);
 }
 
@@ -139,7 +139,7 @@ function editDev() {
   writeFileSync(file, after, "utf8");
   console.log(`EDIT_DEV PASS: ${path.relative(ROOT, file)}`);
   console.log("No commit, push, or deploy performed.");
-  notify(`WOS AI Dev Agent\n\n🟢 EDIT_DEV PASS\nFile: ${path.relative(ROOT, file)}\nNo commit/push/deploy`);
+  notify(`WOS AI Dev Agent\n\nEDIT_DEV PASS\nFile: ${path.relative(ROOT, file)}\nNo commit/push/deploy`);
 }
 
 function plan() {
@@ -163,7 +163,7 @@ function plan() {
   console.log(`Working tree: ${statusResult.output || "clean"}`);
   console.log("Protected: .env, secrets, .git, node_modules, production paths");
   console.log("PLAN ONLY: no files changed; no commit/push/deploy performed.");
-  notify(`WOS AI Dev Agent\n\nℹ️ PLAN\nTask: ${task}\nNo files changed`);
+  notify(`WOS AI Dev Agent\n\nPLAN\nTask: ${task}\nNo files changed`);
 }
 
 function verifyChange() {
@@ -186,11 +186,11 @@ function verifyChange() {
     return;
   }
   console.log("VERIFY_CHANGE PASS: change set is within repository safety boundaries.");
-  notify(`WOS AI Dev Agent\n\n🟢 VERIFY_CHANGE PASS\nChanged files: ${names.split(/\\r?\\n/).filter(Boolean).length}\nNo commit/push/deploy`);
+  notify(`WOS AI Dev Agent\n\nVERIFY_CHANGE PASS\nChanged files: ${names.split(/\\r?\n/).filter(Boolean).length}\nNo commit/push/deploy`);
 }
 
 function runTests() {
-  notify("WOS AI Dev Agent\n\n🔵 RUN_TESTS started\nRunning preflight + AI regression");
+  notify("WOS AI Dev Agent\n\nRUN_TESTS started\nRunning preflight + AI regression");
   const preflight = run("powershell.exe", [
     "-NoProfile",
     "-ExecutionPolicy",
@@ -213,7 +213,7 @@ function runTests() {
 
   console.log("RUN_TESTS PASS");
   console.log("Preflight and AI regression completed.");
-  notify("WOS AI Dev Agent\n\n✅ RUN_TESTS PASS\nPreflight + AI regression completed\nHuman approval still required for commit/push/deploy");
+  notify("WOS AI Dev Agent\n\nRUN_TESTS PASS\nPreflight + AI regression completed\nHuman approval still required for commit/push/deploy");
 }
 
 function repoIntelligence() {
@@ -272,11 +272,11 @@ function auditHistory() {
 }
 function productionGate() {
   const skipBuild = hasFlag("--skip-build");
-  notify(`WOS AI Dev Agent\\n\\n🔵 PRODUCTION_GATE started\\nRunning production deployment gate${skipBuild ? " (build skipped)" : ""}`);
+  notify(`WOS AI Dev Agent\n\nPRODUCTION_GATE started\nRunning production deployment gate${skipBuild ? " (build skipped)" : ""}`);
   const gate = run("npm.cmd", ["run", "production:gate", ...(skipBuild ? ["--", "--skip-build"] : [])]);
   if (!gate.ok) {
     fail(
-      `Production Deployment Gate failed.\\n${gate.output}`,
+      `Production Deployment Gate failed.\n${gate.output}`,
       "Production Deployment Gate failed. Deployment remains blocked."
     );
   }
@@ -284,11 +284,114 @@ function productionGate() {
   console.log("PRODUCTION_GATE PASS");
   console.log("Deployment has NOT been performed.");
   console.log("Separate human approval is still required before deployment.");
-  notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_GATE PASS\\nPreflight + AI regression + production target guard completed\\nDeployment NOT performed\\nHuman approval still required before deploy");
+  notify("WOS AI Dev Agent\n\nPRODUCTION_GATE PASS\nPreflight + AI regression + production target guard completed\nDeployment NOT performed\nHuman approval still required before deploy");
+}
+
+function requireTelegramApproval(action, details = "") {
+  const approvalScript = path.join(
+    ROOT,
+    "scripts",
+    "wos-ai-agent-telegram-approval.mjs"
+  );
+
+  const approval = run("node", [
+    approvalScript,
+    action,
+    details || `WOS AI Dev Agent protected action: ${action}`,
+  ]);
+
+  if (!approval.ok) {
+    fail(
+      `Telegram approval was not granted for ${action}.`,
+      `Telegram approval was not granted for ${action}. No protected action was performed.`
+    );
+  }
+
+  console.log(`TELEGRAM_APPROVAL PASS: ${action}`);
+  return approval;
+}
+
+function gitCommit() {
+  const files = arg("--files");
+  const message = arg("--message");
+
+  if (!files) {
+    fail(
+      'GIT_COMMIT blocked: explicit --files "file1,file2" is required.'
+    );
+  }
+
+  if (!message) {
+    fail("GIT_COMMIT blocked: explicit --message is required.");
+  }
+
+  const explicitFiles = files
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+  if (
+    explicitFiles.length === 0 ||
+    explicitFiles.some((item) => item === "." || item === "..")
+  ) {
+    fail("GIT_COMMIT blocked: invalid explicit file allowlist.");
+  }
+
+  const details = [
+    `files=${explicitFiles.join(",")}`,
+    `message=${message}`,
+  ].join(" | ");
+
+  requireTelegramApproval("COMMIT", details);
+
+  const result = run("node", [
+    path.join(ROOT, "scripts", "wos-ai-agent-git-gate.mjs"),
+    "--mode",
+    "commit",
+    "--files",
+    explicitFiles.join(","),
+    "--message",
+    message,
+    "--approve-commit",
+  ]);
+
+  if (!result.ok) {
+    fail(
+      `Git commit failed or was blocked.\n${result.output}`,
+      "Git commit failed or was blocked. No automatic retry performed."
+    );
+  }
+
+  console.log(result.output);
+  console.log("GIT_COMMIT PASS");
+}
+
+function gitPush() {
+  requireTelegramApproval(
+    "PUSH",
+    "Push current branch through the existing WOS Git Gate."
+  );
+
+  const result = run("node", [
+    path.join(ROOT, "scripts", "wos-ai-agent-git-gate.mjs"),
+    "--mode",
+    "push",
+    "--approve-push",
+  ]);
+
+  if (!result.ok) {
+    fail(
+      `Git push failed or was blocked.\n${result.output}`,
+      "Git push failed or was blocked. No automatic retry performed."
+    );
+  }
+
+  console.log(result.output);
+  console.log("GIT_PUSH PASS");
 }
 
 function productionRecoveryCheck() {
-  notify("WOS AI Dev Agent\n\n🟡 PRODUCTION_RECOVERY_CHECK started\nRead-only rollback safety inspection");
+  notify("WOS AI Dev Agent\n\nPRODUCTION_RECOVERY_CHECK started\nRead-only rollback safety inspection");
   const check = run("npm.cmd", ["run", "production:rollback:check"]);
   if (!check.ok) {
     fail(
@@ -300,15 +403,15 @@ function productionRecoveryCheck() {
   console.log(check.output);
   console.log("PRODUCTION_RECOVERY_CHECK PASS");
   console.log("Read-only: no rollback performed.");
-  notify("WOS AI Dev Agent\n\n✅ PRODUCTION_RECOVERY_CHECK PASS\nOlder READY deployment candidate identified\nNo rollback performed");
+  notify("WOS AI Dev Agent\n\nPRODUCTION_RECOVERY_CHECK PASS\nOlder READY deployment candidate identified\nNo rollback performed");
 }
 
 function productionSmokeCheck() {
-  notify("WOS AI Dev Agent\\n\\n🟡 PRODUCTION_SMOKE_CHECK started\\nRead-only production post-deploy verification");
+  notify("WOS AI Dev Agent\n\nPRODUCTION_SMOKE_CHECK started\nRead-only production post-deploy verification");
   const check = run("npm.cmd", ["run", "production:smoke:check"]);
   if (!check.ok) {
     fail(
-      "Production smoke check failed.\\n" + check.output,
+      "Production smoke check failed.\n" + check.output,
       "Production post-deploy smoke check failed. No deployment or rollback was performed."
     );
   }
@@ -316,20 +419,27 @@ function productionSmokeCheck() {
   console.log(check.output);
   console.log("PRODUCTION_SMOKE_CHECK PASS");
   console.log("Read-only: no deployment or rollback performed.");
-  notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_SMOKE_CHECK PASS\\nProduction alias, READY state, HTTP 200, and HTML response verified\\nNo deployment/rollback performed");
+  notify("WOS AI Dev Agent\n\nPRODUCTION_SMOKE_CHECK PASS\nProduction alias, READY state, HTTP 200, and HTML response verified\nNo deployment/rollback performed");
 }
 
 function productionRollback() {
-  if (!hasFlag("--approve-rollback")) {
-    fail("PRODUCTION_ROLLBACK blocked: explicit --approve-rollback approval is required.");
-  }
-
   const target = arg("--deployment");
+
   if (!target) {
-    fail("PRODUCTION_ROLLBACK blocked: explicit --deployment <deployment-id-or-url> is required.");
+    fail(
+      "PRODUCTION_ROLLBACK blocked: explicit --deployment <deployment-id-or-url> is required."
+    );
   }
 
-  notify("WOS AI Dev Agent\\n\\n🔴 PRODUCTION_ROLLBACK started\\nExplicit human approval supplied");
+  requireTelegramApproval(
+    "ROLLBACK",
+    `deployment=${target}`
+  );
+
+  notify(
+    "WOS AI Dev Agent\n\nPRODUCTION_ROLLBACK started\nTelegram approval accepted"
+  );
+
   const rollback = run("npm.cmd", [
     "run",
     "production:rollback",
@@ -338,9 +448,10 @@ function productionRollback() {
     "--deployment",
     target,
   ]);
+
   if (!rollback.ok) {
     fail(
-      "Production rollback failed or was blocked.\\n" + rollback.output,
+      "Production rollback failed or was blocked.\n" + rollback.output,
       "Production rollback failed or was blocked. No automatic retry performed."
     );
   }
@@ -349,38 +460,82 @@ function productionRollback() {
   console.log("PRODUCTION_ROLLBACK PASS");
   console.log("Rollback completed and target verification passed.");
   console.log("Run production-smoke-check before declaring recovery complete.");
-  notify("WOS AI Dev Agent\\n\\n✅ PRODUCTION_ROLLBACK PASS\\nExplicit rollback target verified\\nFollow-up smoke check required");
+
+  notify(
+    "WOS AI Dev Agent\n\nPRODUCTION_ROLLBACK PASS\nExplicit Telegram approval accepted\nFollow-up smoke check required"
+  );
 }
 
 function productionRecover() {
-  if (!hasFlag("--approve-recovery")) {
-    fail("PRODUCTION_RECOVERY blocked: explicit --approve-recovery approval is required.");
-  }
   const target = arg("--deployment");
+
   if (!target) {
-    fail("PRODUCTION_RECOVERY blocked: explicit --deployment <deployment-id-or-url> is required.");
+    fail(
+      "PRODUCTION_RECOVERY blocked: explicit --deployment <deployment-id-or-url> is required."
+    );
   }
-  notify("WOS AI Dev Agent\n\nPRODUCTION_RECOVERY started\nExplicit human approval supplied");
-  const recovery = run("npm.cmd", ["run", "production:recover", "--", "--approve-recovery", "--deployment", target]);
+
+  requireTelegramApproval(
+    "RECOVERY",
+    `deployment=${target}`
+  );
+
+  notify(
+    "WOS AI Dev Agent\n\nPRODUCTION_RECOVERY started\nTelegram approval accepted"
+  );
+
+  const recovery = run("npm.cmd", [
+    "run",
+    "production:recover",
+    "--",
+    "--approve-recovery",
+    "--deployment",
+    target,
+  ]);
+
   if (!recovery.ok) {
     fail(
       "Production recovery failed or was blocked.\n" + recovery.output,
-      "Production recovery failed or was blocked. No automatic retry or alternate target selection performed."
+      "Production recovery failed or was blocked. No automatic retry performed."
     );
   }
+
   console.log(recovery.output);
   console.log("PRODUCTION_RECOVERY PASS");
   console.log("Rollback completed and post-recovery smoke check passed.");
-  notify("WOS AI Dev Agent\n\nPRODUCTION_RECOVERY PASS\nRollback target verified\nPost-recovery smoke check passed");
+
+  notify(
+    "WOS AI Dev Agent\n\nPRODUCTION_RECOVERY PASS\nTelegram approval accepted\nPost-recovery smoke check passed"
+  );
 }
 
-function productionDeploy() {
-  if (!hasFlag("--approve-deploy")) {
-    fail("PRODUCTION_DEPLOY blocked: explicit --approve-deploy approval is required.");
-  }
+function approvalTest() {
+  requireTelegramApproval(
+    "APPROVAL_TEST",
+    "Safe Telegram approval test. No Git, Vercel, database, or production action will be performed."
+  );
 
-  notify("WOS AI Dev Agent\n\n🔴 PRODUCTION_DEPLOY started\nExplicit human approval supplied");
-  const deploy = run("npm.cmd", ["run", "production:deploy", "--", "--approve-deploy"]);
+  console.log("APPROVAL_TEST PASS");
+  console.log("Telegram approval accepted.");
+  console.log("No protected action was performed.");
+}
+function productionDeploy() {
+  requireTelegramApproval(
+    "DEPLOY",
+    "Production deployment to the protected WOS production target."
+  );
+
+  notify(
+    "WOS AI Dev Agent\n\nPRODUCTION_DEPLOY started\nTelegram approval accepted"
+  );
+
+  const deploy = run("npm.cmd", [
+    "run",
+    "production:deploy",
+    "--",
+    "--approve-deploy",
+  ]);
+
   if (!deploy.ok) {
     fail(
       "Production deploy failed.\n" + deploy.output,
@@ -391,7 +546,10 @@ function productionDeploy() {
   console.log(deploy.output);
   console.log("PRODUCTION_DEPLOY PASS");
   console.log("Production deployment completed and verified.");
-  notify("WOS AI Dev Agent\n\n✅ PRODUCTION_DEPLOY PASS\nProduction deployment completed and verified\nAlias: www.wos.asia");
+
+  notify(
+    "WOS AI Dev Agent\n\nPRODUCTION_DEPLOY PASS\nProduction deployment completed and verified\nAlias: www.wos.asia"
+  );
 }
 
 function readOnly() {
@@ -450,14 +608,14 @@ function readOnly() {
     "Deploy: NOT YET",
   ].filter(Boolean).join("\n");
   console.log(report);
-  notify(`WOS AI Dev Agent\n\n${passed ? "🟢 PASS" : "❌ FAIL"}\nMode: READ_ONLY\nBranch: ${branch}\nCommit: ${commit}`);
+  notify(`WOS AI Dev Agent\n\n${passed ? "PASS" : "FAIL"}\nMode: READ_ONLY\nBranch: ${branch}\nCommit: ${commit}`);
   process.exit(passed ? 0 : 1);
 }
 
 const mode = arg("--mode") || "read-only";
 
 if (hasFlag("--help")) {
-  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | operational-status | production-gate | production-deploy | production-rollback | production-recovery-check | production-smoke-check | production-recover");
+  console.log("Modes: read-only | plan | edit-dev | verify-change | run-tests | operational-status | repo-intelligence | audit-history | commit | push | production-gate | production-deploy | production-rollback | production-recovery-check | production-smoke-check | production-recover");
   console.log("PLAN: --mode plan --task <description>");
   console.log("EDIT_DEV: --mode edit-dev --file <path> --old <text> --new <text>");
   console.log("VERIFY_CHANGE: --mode verify-change");
@@ -466,14 +624,19 @@ if (hasFlag("--help")) {
   console.log("REPOSITORY_INTELLIGENCE: --mode repo-intelligence [--query <task>] [--limit <n>] [--json]");
   console.log("AUDIT_HISTORY: --mode audit-history [--limit <n>] [--since <date>] [--json]");
   console.log("PRODUCTION_GATE: --mode production-gate [--skip-build]");
-  console.log("PRODUCTION_DEPLOY: --mode production-deploy --approve-deploy");
-  console.log("PRODUCTION_ROLLBACK: --mode production-rollback --approve-rollback --deployment <id-or-url>");
+  console.log("GIT_COMMIT: --mode commit --files <file1,file2> --message <msg>");
+  console.log("GIT_PUSH: --mode push");
+  console.log("APPROVAL_TEST: --mode approval-test (Telegram approval required; no protected action)");
+  console.log("PRODUCTION_DEPLOY: --mode production-deploy (Telegram approval required)");
+  console.log("PRODUCTION_ROLLBACK: --mode production-rollback --deployment <id-or-url> (Telegram approval required)");
   console.log("PRODUCTION_RECOVERY_CHECK: --mode production-recovery-check");
   console.log("PRODUCTION_SMOKE_CHECK: --mode production-smoke-check");
-  console.log("PRODUCTION_RECOVER: --mode production-recover --approve-recovery --deployment <id-or-url>");
+  console.log("PRODUCTION_RECOVER: --mode production-recover --deployment <id-or-url> (Telegram approval required)");
   process.exit(0);
 }
 
+if (mode === "commit") gitCommit();
+else if (mode === "push") gitPush();
 if (mode === "repo-intelligence") repoIntelligence();
 else if (mode === "edit-dev") editDev();
 else if (mode === "operational-status") operationalStatus();
@@ -482,6 +645,7 @@ else if (mode === "plan") plan();
 else if (mode === "verify-change") verifyChange();
 else if (mode === "run-tests") runTests();
 else if (mode === "production-gate") productionGate();
+else if (mode === "approval-test") approvalTest();
 else if (mode === "production-deploy") productionDeploy();
 else if (mode === "production-rollback") productionRollback();
 else if (mode === "production-recover") productionRecover();

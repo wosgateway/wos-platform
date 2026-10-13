@@ -66,7 +66,7 @@ export async function searchHotelAvailability(
 
   if (packageError) {
     console.error('[WOS_AI_HOTEL] package search failed:', packageError);
-    return [];
+    throw new Error('Hotel package lookup failed');
   }
 
   const packageIds = (packages ?? []).map((pkg) => pkg.id);
@@ -82,7 +82,7 @@ export async function searchHotelAvailability(
 
   if (error) {
     console.error('[WOS_AI_HOTEL] availability lookup failed:', error);
-    return [];
+    throw new Error('Hotel availability lookup failed');
   }
 
   const byPackage = new Map<string, typeof rows>();
@@ -124,11 +124,16 @@ export async function searchHotelAvailability(
           ? Number(pkg.original_price)
           : null;
 
-    const firstOverride = days.find((day) => day.price_per_night != null)?.price_per_night ?? null;
-    const pricePerNight = firstOverride ?? basePrice;
-    const allSamePrice = days.every(
-      (day) => (day.price_per_night ?? basePrice) === pricePerNight
+    const allNightsHaveVerifiedPrice = days.every(
+      (day) => day.price_per_night != null && Number.isFinite(day.price_per_night)
     );
+    const firstOverride = allNightsHaveVerifiedPrice
+      ? days[0]?.price_per_night ?? null
+      : null;
+    const allSamePrice = allNightsHaveVerifiedPrice && days.every(
+      (day) => day.price_per_night === firstOverride
+    );
+    const pricePerNight = allSamePrice ? firstOverride : null;
 
     results.push({
       id: String(pkg.id),

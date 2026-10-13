@@ -495,7 +495,7 @@ async function executeTool(
     const province = rawDetectedProvince || modelProvince;
     const checkin = String(args.checkin ?? '').trim();
     const checkout = String(args.checkout ?? '').trim();
-    const rawRoomMatch = rawUserMessage.match(/(?:^|\\s)(\\d{1,2})\\s*(?:ห้อง|room|rooms)\\b/i);
+    const rawRoomMatch = rawUserMessage.match(/(?:^|\s)(\d{1,2})\s*(?:ห้อง|room|rooms)\b/i);
     const rawRooms = rawRoomMatch ? Number(rawRoomMatch[1]) : null;
     const modelRooms = Number(args.rooms ?? 1);
     const rooms = Math.min(Math.max(rawRooms && Number.isFinite(rawRooms) ? rawRooms : modelRooms, 1), 10);
@@ -515,7 +515,7 @@ async function executeTool(
       count: items.length,
       items,
       instruction:
-        'Answer naturally. This is verified READ-ONLY hotel availability for the requested dates. Never say a room is available unless it appears in these results. Mention hotel/partner name, room type when available, dates, rooms, price per night and estimated total when provided. If a single nightly price cannot be established, say the nightly rate varies and do not invent a total. Do not create a booking or claim that a booking was made.',
+        'Answer naturally. This is verified READ-ONLY hotel availability for the requested dates. Never say a room is available unless it appears in these results. Mention hotel/partner name, room type when available, dates, rooms, price per night and estimated total when provided. If a verified nightly price is unavailable for every requested night or the nightly rates differ, say the nightly price must be confirmed and do not invent a total. Do not create a booking or claim that a booking was made.',
     };
   }
 
@@ -1574,8 +1574,12 @@ export async function runWosAI(
           return 'ตอนนี้ยังไม่พบห้องที่ว่างตามข้อมูลยืนยันสำหรับวันที่และจำนวนห้องที่ระบุค่ะ';
         }
       } catch (hotelError) {
-        console.warn('[WOS_AI_HOTEL_DIRECT_LOOKUP_FAILED]', hotelError instanceof Error ? hotelError.message : String(hotelError));
-      }
+          console.warn(
+            '[WOS_AI_HOTEL_DIRECT_LOOKUP_FAILED]',
+            hotelError instanceof Error ? hotelError.message : String(hotelError)
+          );
+          return '\u0e02\u0e2d\u0e2d\u0e20\u0e31\u0e22\u0e04\u0e48\u0e30 \u0e15\u0e2d\u0e19\u0e19\u0e35\u0e49\u0e23\u0e30\u0e1a\u0e1a\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a\u0e2b\u0e49\u0e2d\u0e07\u0e1e\u0e31\u0e01\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49\u0e0a\u0e31\u0e48\u0e27\u0e04\u0e23\u0e32\u0e27 \u0e17\u0e35\u0e21 WOS \u0e15\u0e49\u0e2d\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e01\u0e48\u0e2d\u0e19\u0e41\u0e08\u0e49\u0e07\u0e2b\u0e49\u0e2d\u0e07\u0e27\u0e48\u0e32\u0e07\u0e41\u0e25\u0e30\u0e23\u0e32\u0e04\u0e32\u0e43\u0e2b\u0e49\u0e19\u0e30\u0e04\u0e30';
+        }
     }
 
     // Trip-planning is intentionally a concierge handoff, not an invented
@@ -1997,7 +2001,11 @@ CONTACT INFO RULE:
           }
           return 'ตอนนี้ยังไม่พบห้องที่ว่างตามข้อมูลยืนยันสำหรับวันที่และจำนวนห้องที่ระบุค่ะ';
         } catch (hotelError) {
-          console.warn('[WOS_AI_HOTEL_DIRECT_LOOKUP_FAILED]', hotelError instanceof Error ? hotelError.message : String(hotelError));
+          console.warn(
+            '[WOS_AI_HOTEL_DIRECT_LOOKUP_FAILED]',
+            hotelError instanceof Error ? hotelError.message : String(hotelError)
+          );
+          return '\u0e02\u0e2d\u0e2d\u0e20\u0e31\u0e22\u0e04\u0e48\u0e30 \u0e15\u0e2d\u0e19\u0e19\u0e35\u0e49\u0e23\u0e30\u0e1a\u0e1a\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e2d\u0e1a\u0e2b\u0e49\u0e2d\u0e07\u0e1e\u0e31\u0e01\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49\u0e0a\u0e31\u0e48\u0e27\u0e04\u0e23\u0e32\u0e27 \u0e17\u0e35\u0e21 WOS \u0e15\u0e49\u0e2d\u0e07\u0e22\u0e37\u0e19\u0e22\u0e31\u0e19\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e01\u0e48\u0e2d\u0e19\u0e41\u0e08\u0e49\u0e07\u0e2b\u0e49\u0e2d\u0e07\u0e27\u0e48\u0e32\u0e07\u0e41\u0e25\u0e30\u0e23\u0e32\u0e04\u0e32\u0e43\u0e2b\u0e49\u0e19\u0e30\u0e04\u0e30';
         }
       }
     }

@@ -19,3 +19,6 @@ test-payload.json
 deployment.json
 wos-webhook-test.env
 wos-webhook-prod.env
+
+# Local WOS AI Dev Agent approval state
+.wos-ai-agent/
