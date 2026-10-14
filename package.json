@@ -23,7 +23,11 @@
     "security:order-links": "node scripts/order-link-security-check.mjs",
     "ai:dev-agent:repo": "node scripts/wos-ai-agent-repo.mjs",
     "test:handoff": "vitest run src/lib/handoff",
-    "eval": "tsx eval/run.ts"
+    "eval": "tsx eval/run.ts",
+    "ai:overnight": "node scripts/wos-ai-overnight.mjs",
+    "ai:overnight:selftest": "node --test scripts/overnight/overnight.selftest.mjs",
+    "ai:agent": "node scripts/wos-ai-agent-run.mjs",
+    "ai:agent:commit": "node scripts/wos-ai-agent-approve.mjs"
   },
   "dependencies": {
     "@notionhq/client": "^5.26.0",
