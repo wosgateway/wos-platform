@@ -954,8 +954,8 @@ export async function runWosAI(
       const postResetHistory = boundary >= 0 ? history.slice(boundary + 1) : history;
       const hasProgramContext = postResetHistory.some((message) =>
         message.role === 'assistant' && (
-          /^\\s*\\d+[.)]/m.test(message.content) ||
-          /(?:โปรแกรม|ໂປຣແກຣມ|selected program)\\s*:/iu.test(message.content) ||
+          /^\s*\d+[.)]/m.test(message.content) ||
+          /(?:โปรแกรม|ໂປຣແກຣມ|selected program)\s*:/iu.test(message.content) ||
           /(?:รับทราบ|เลือก|selected|ເລືອກ).*?(?:โปรแกรม|ໂປຣແກຣມ)/iu.test(message.content)
         )
       );
@@ -1108,7 +1108,7 @@ export async function runWosAI(
     if (isBareInterestAfterReset) {
       try {
         const items = await searchHealthProgramOverview(5);
-        const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
+        const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
         if (answer) return answer;
       } catch (bareInterestAfterResetError) {
         console.warn('[WOS_AI_BARE_INTEREST_AFTER_RESET_LOOKUP_FAILED]', bareInterestAfterResetError instanceof Error ? bareInterestAfterResetError.message : String(bareInterestAfterResetError));
@@ -1366,7 +1366,7 @@ export async function runWosAI(
         }
         const items = await searchHealthProgramOverview(5, province);
         if (items.length > 0) {
-          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
+          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
           if (answer) return answer;
         }
       } catch (programOverviewError) {
@@ -1385,7 +1385,7 @@ export async function runWosAI(
     if (requestedProvince && previousAssistantAskedProvince) {
       try {
         const items = await searchHealthProgramOverview(5, requestedProvince);
-        const answer = buildProgramAnswer(items, requestedProvince, languageHistory.join('\\n'), customerLanguage);
+        const answer = buildProgramAnswer(items, requestedProvince, languageHistory.join('\n'), customerLanguage);
         if (answer) return answer;
         if (customerLanguage === 'lo') return `ຕອນນີ້ຍັງບໍ່ພົບໂປຣແກຣມສຸຂະພາບທີ່ຢືນຢັນແລ້ວໃນ ${requestedProvince} ຄ່ະ`;
         if (customerLanguage === 'en') return `I couldn't find a verified WOS health program in ${requestedProvince} right now.`;
@@ -1430,7 +1430,7 @@ export async function runWosAI(
     if (isBareInterest && !journeyState.selectedProgram && !assistantAskedOptionalService && recentOptions.length === 0) {
       try {
         const items = await searchHealthProgramOverview(5);
-        const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
+        const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
         if (answer) return answer;
       } catch (bareInterestLookupError) {
         console.warn('[WOS_AI_BARE_INTEREST_LOOKUP_FAILED]', bareInterestLookupError instanceof Error ? bareInterestLookupError.message : String(bareInterestLookupError));
@@ -1544,7 +1544,7 @@ export async function runWosAI(
         const province = detectLocationFromRawText(userMessage)[0] ?? '';
         const items = await searchHealthProgramOverview(5, province || undefined);
         if (items.length > 0) {
-          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\\n'), customerLanguage);
+          const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
           if (answer) return answer;
         }
       } catch (healthLookupError) {
@@ -2029,7 +2029,7 @@ CONTACT INFO RULE:
         const directCatalogAnswer = buildProgramAnswer(
           directCatalogPrograms,
           userMessage,
-          languageHistory.join('\\n'),
+          languageHistory.join('\n'),
           customerLanguage
         );
 

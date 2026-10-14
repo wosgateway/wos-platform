@@ -375,6 +375,24 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
     }
   }
 
+  // A bare affirmative ("สนใจ", "เอา", "ใช่") carries no program name, so it
+  // must keep the program the customer already chose by name earlier
+  // ("เลือกตรวจเข่า"). Walk back to the latest explicit "เลือก/เอา/ต้องการ X"
+  // user turn, stop at a journey reset, and never re-read the affirmative as
+  // a new catalog discovery request.
+  if (/^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim())) {
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].role !== 'user') continue;
+      if (isJourneyResetMessage(history[i].content)) break;
+      const prior = history[i].content.trim().match(/^(?:เลือก|เอา|ต้องการ)\s*["“]?([^"”\n]+?)["”]?$/iu);
+      const title = prior?.[1]?.trim();
+      if (title && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(title) && !/^\d{1,2}[.)]?$/.test(title) &&
+        !/(?:รถ|โรงแรม|ที่พัก|ห้องพัก|hotel|transport|transfer|shuttle|ລົດ|ໂຮງແຮມ)/iu.test(title)) {
+        return { title };
+      }
+    }
+  }
+
   // Broad catalog requests are discovery, not program selection. This guard
   // prevents phrases like "ผมสนใจมีโปรแกรมอะไรแนะนำมั้ย" from becoming
   // selectedProgram = the entire question.

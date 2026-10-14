@@ -22,3 +22,5 @@ wos-webhook-prod.env
 
 # Local WOS AI Dev Agent approval state
 .wos-ai-agent/
+
+.overnight/
