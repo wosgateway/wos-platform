@@ -10,6 +10,7 @@ const provinces = [P('tak', 'ตาก', 'Tak'), P('loei', 'เลย', 'Loei'),
 describe('province abbreviation marker without a dot', () => {
   it('"จ ตาก" and "จ เลย" resolve like "จ.ตาก"', () => {
     expect(detectProvinceInText('ไปเที่ยว จ ตาก', provinces)?.id).toBe('tak');
+    expect(detectProvinceInText('\u0e08\u0e15\u0e32\u0e01', provinces)).toBeNull();
     expect(detectProvinceInText('อยากไป จ เลย', provinces)?.id).toBe('loei');
     expect(detectProvinceInText('จ.ตาก', provinces)?.id).toBe('tak');
   });

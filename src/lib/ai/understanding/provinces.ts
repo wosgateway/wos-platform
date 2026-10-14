@@ -55,7 +55,15 @@ export function detectProvinceInText(text: string, provinces: ProvinceRecord[]):
       if ([...n].length >= 4) hit = normText.includes(n) || flat.includes(n);
       else {
         const nameFlat = name.normalize('NFC').toLowerCase().replace(/\s+/g, '');
-        hit = MARKER_PREFIXES.some((m) => flat.includes(m + nameFlat));
+        const escapedName = nameFlat.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const undottedThaiMarker = new RegExp(
+          `(?:^|\\s)\\u0e08\\s+${escapedName}(?=$|\\s|[.,!?\\u0e2f])`,
+          'u',
+        );
+        const rawText = text.normalize('NFC').toLowerCase();
+        hit =
+          MARKER_PREFIXES.some((m) => flat.includes(m + nameFlat)) ||
+          undottedThaiMarker.test(rawText);
       }
       if (hit && (!best || n.length > best.len)) best = { p, len: n.length };
     }
