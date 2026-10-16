@@ -50,6 +50,7 @@ function getArg(name, fallback) {
 const BASE_URL = resolveAiTestBaseUrlFromArgs(args);
 const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "60000"));
 const VERBOSE = args.includes("--verbose");
+const ONLY = getArg("only", "");
 // Use a dedicated test IP so repeated regression runs do not consume the real client rate-limit bucket.
 const TEST_IP = process.env.WOS_AI_REGRESSION_IP || "198.18.0.42";
 let requestIndex = 0;
@@ -64,6 +65,34 @@ const UNRELATED_CATALOG_MARKERS = ["โรงแรม", "รีสอร์ท"
 
 function containsAny(text, markers) {
   return markers.some((m) => text.includes(m));
+}
+
+// ---- infrastructure vs behavioral failures ---------------------------------
+const RETRIES = Math.max(0, Number(getArg("retries", "1")));
+const INFRA_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527]);
+const isInfraStatus = (s) => INFRA_STATUSES.has(s);
+let infraFailures = 0;
+const infraIds = [];
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// Returns a normal response, or { infra: true, ... } after RETRIES extra attempts.
+async function askAIWithRetry(message, history = []) {
+  let last;
+  for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    try {
+      const r = await askAI(message, history);
+      if (!isInfraStatus(r.status)) return r;
+      last = r;
+    } catch (err) {
+      const timedOut = err && err.name === "AbortError";
+      last = { status: 0, replyText: "", raw: null, netError: timedOut ? `timeout after ${REQUEST_TIMEOUT_MS}ms` : String(err && err.message) };
+    }
+    if (attempt < RETRIES) {
+      console.log(`  (infrastructure problem: ${last.netError || "HTTP " + last.status}; retry ${attempt + 1}/${RETRIES} in 5s)`);
+      await sleep(5000);
+    }
+  }
+  return { ...last, infra: true };
 }
 
 async function askAI(message, history = []) {
@@ -367,17 +396,23 @@ const cases = [
     label: "Bare interest after explicit program selection must keep the selected program and continue booking",
     query: "\u0e2a\u0e19\u0e43\u0e08",
     history: [
-      { role: "user", content: "\u0e40\u0e25\u0e37\u0e2d\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32" },
+      { role: "user", content: "\u0e40\u0e25\u0e37\u0e2d\u0e01\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32" },
       { role: "assistant", content: "\u0e44\u0e14\u0e49\u0e40\u0e25\u0e22\u0e04\u0e48\u0e30 \ud83d\ude0a \u0e23\u0e31\u0e1a\u0e17\u0e23\u0e32\u0e1a\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32\u0e41\u0e25\u0e49\u0e27\u0e19\u0e30\u0e04\u0e30" },
     ],
     kind: "hard",
     check: (r) => {
       if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
-      if (/\u0e15\u0e2d\u0e19\u0e19\u0e35\u0e49 WOS \u0e21\u0e35\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e\u0e43\u0e19|\u0e2a\u0e19\u0e43\u0e08\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e17\u0e35\u0e48\u0e08\u0e31\u0e07\u0e2b\u0e27\u0e31\u0e14\u0e44\u0e2b\u0e19|\u0e21\u0e35\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e2d\u0e30\u0e44\u0e23\u0e1a\u0e49\u0e32\u0e07/iu.test(r.replyText)) {
+      if (/\u0e15\u0e2d\u0e19\u0e19\u0e35\u0e49 WOS \u0e21\u0e35\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e\u0e43\u0e19|\u0e2a\u0e19\u0e43\u0e08\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e17\u0e35\u0e48\u0e08\u0e31\u0e07\u0e2b\u0e27\u0e31\u0e14\u0e44\u0e2b\u0e19|\u0e21\u0e35\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e2d\u0e30\u0e44\u0e23\u0e1a\u0e49\u0e32\u0e07|\u0e2b\u0e25\u0e32\u0e22\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e17\u0e35\u0e48\u0e15\u0e23\u0e07\u0e01\u0e31\u0e1a\u0e17\u0e35\u0e48\u0e16\u0e32\u0e21/iu.test(r.replyText)) {
         return { pass: false, reason: "bare interest after explicit selection incorrectly restarted catalog discovery" };
       }
-      if (!/\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32|WOS|\u0e08\u0e2d\u0e07|\u0e1b\u0e23\u0e30\u0e2a\u0e32\u0e19\u0e07\u0e32\u0e19|\u0e0a\u0e37\u0e48\u0e2d/iu.test(r.replyText)) {
-        return { pass: false, reason: "bare interest did not preserve the selected program or continue the booking flow" };
+      const continuedBookingFlow =
+        /WOS|\u0e08\u0e2d\u0e07|\u0e1b\u0e23\u0e30\u0e2a\u0e32\u0e19\u0e07\u0e32\u0e19|\u0e0a\u0e37\u0e48\u0e2d/iu.test(r.replyText);
+      const reopenedCatalog =
+        /\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e/iu.test(r.replyText) ||
+        /\u0e16\u0e49\u0e32\u0e2a\u0e19\u0e43\u0e08\u0e15\u0e31\u0e27\u0e44\u0e2b\u0e19/iu.test(r.replyText);
+
+      if (!continuedBookingFlow || reopenedCatalog) {
+        return { pass: false, reason: "bare interest after explicit selection did not continue the booking flow" };
       }
       return { pass: true };
     },
@@ -539,17 +574,24 @@ function printHeader() {
 }
 
 async function main() {
+  const selectedCases = ONLY ? cases.filter((c) => c.id.startsWith(ONLY)) : cases;
+  if (ONLY && selectedCases.length === 0) {
+    throw new Error(`No regression cases matched --only ${ONLY}`);
+  }
+
   printHeader();
   let hardFailures = 0;
   let executionFailures = 0;
   const reviewItems = [];
 
-  for (const c of cases) {
+  for (const c of selectedCases) {
     process.stdout.write(`[${c.id}] ${c.label} ... `);
     let result;
     try {
-      const r = await askAI(c.query, c.history ?? []);
-      if (!r.replyText.trim()) {
+      const r = await askAIWithRetry(c.query, c.history ?? []);
+      if (r.infra) {
+        result = { pass: false, infra: true, reason: `infrastructure failure, case NOT evaluated: ${r.netError || "HTTP " + r.status}` };
+      } else if (!r.replyText.trim()) {
         result = { pass: false, reason: "empty AI response" };
       } else {
         result = c.check(r);
@@ -572,7 +614,8 @@ async function main() {
 
       // Hard assertion failures and execution/infrastructure failures both gate the suite.
       // Review cases remain non-gated only when they return pass:null.
-      if (c.kind === "hard") hardFailures++;
+      if (result.infra) { infraFailures++; infraIds.push(c.id); }
+      else if (c.kind === "hard") hardFailures++;
       else executionFailures++;
     } else {
       console.log(`REVIEW - ${result.reason}`);
@@ -598,14 +641,23 @@ async function main() {
 
   console.log("");
   console.log("=== Result ===");
-  console.log(`Hard checks: ${cases.filter((c) => c.kind === "hard").length - hardFailures}/${cases.filter((c) => c.kind === "hard").length} passed`);
+  const hardCases = selectedCases.filter((c) => c.kind === "hard");
+  const infraHard = hardCases.filter((c) => infraIds.includes(c.id)).length;
+  console.log(`Hard checks: ${hardCases.length - infraHard - hardFailures}/${hardCases.length - infraHard} passed` + (infraHard ? ` (${infraHard} not evaluated)` : ""));
   console.log(`Review items: ${reviewItems.length} (see above, not auto-graded)`);
   console.log(`Execution failures: ${executionFailures}`);
+  console.log(`Infrastructure failures (not evaluated): ${infraFailures}${infraIds.length ? " [" + infraIds.join(", ") + "]" : ""}`);
 
   if (hardFailures > 0 || executionFailures > 0) {
     console.log("");
     console.log("REGRESSION DETECTED -> do not promote/deploy this build");
     process.exit(1);
+  }
+
+  if (infraFailures > 0) {
+    console.log("");
+    console.log("INCONCLUSIVE: some cases were not evaluated (infrastructure). This is NOT a pass. Re-run those cases with --only before promoting.");
+    process.exit(2);
   }
 
   console.log("");
