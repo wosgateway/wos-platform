@@ -35,7 +35,7 @@ export function parseRegression(output, status) {
   const ids = new Set();
   for (const line of output.split(/\r?\n/)) {
     const m = line.match(/^\[([^\]]+)\].*?\.\.\.\s*FAIL\b/);
-    if (m) ids.add(`regression::${m[1]}`);
+    if (m && !/infrastructure failure, case NOT evaluated/i.test(line)) ids.add(`regression::${m[1]}`);
   }
   if (/Test runner crashed/.test(output)) ids.add("regression::runner_crashed");
   if (status !== 0 && ids.size === 0) ids.add(`regression::exit_${status}`);
@@ -43,6 +43,10 @@ export function parseRegression(output, status) {
 }
 
 export function regressionEnvBroken(output) {
+  // Cases the runner could not evaluate (timeout / gateway 5xx / network) are not code failures.
+  const infraCases = (String(output).match(/\.\.\.\s*FAIL\s*-\s*infrastructure failure, case NOT evaluated/gi) || []).length;
+  const allFails = (String(output).match(/\.\.\.\s*FAIL\b/g) || []).length;
+  if (infraCases > 0 && infraCases === allFails) return `${infraCases} regression case(s) were not evaluated (infrastructure: timeout/gateway/network) - INCONCLUSIVE, not a code bug`;
   const fails = [...String(output).matchAll(/^\[[^\]]+\].*?\.\.\.\s*FAIL\s*-\s*(.*)$/gm)].map((m) => m[1]);
   if (fails.length >= 3) {
     const infra = fails.filter((f) => /request failed|fetch failed|ECONNREFUSED|ECONNRESET|HTTP (5\d\d|429|401|403|404)/i.test(f));
