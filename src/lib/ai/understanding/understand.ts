@@ -1,5 +1,6 @@
 import { extractJson, parseUnderstanding, type CatalogItem, type Understanding } from './types';
 import { detectProvinceInText, matchProvince, type ProvinceRecord } from './provinces';
+import { getSymptomSearchAliases } from '../symptom-intent';
 
 export type LlmJson = (args: { system: string; user: string; timeoutMs: number }) => Promise<string>;
 
@@ -116,6 +117,19 @@ function deterministicFallback(
   // ------------------------------------------------------------
   if (/^(?:\u0e2a\u0e27\u0e31\u0e2a\u0e14\u0e35|\u0e02\u0e2d\u0e1a\u0e04\u0e38\u0e13)[\s!?.]*$/i.test(m)) {
     return makeUnderstanding(m, 'SMALLTALK');
+  }
+
+  // ------------------------------------------------------------
+  // Explicit symptom -> specific catalog search.
+  // Keep the symptom-to-catalog mapping in symptom-intent.ts so the
+  // understanding gate and legacy catalog path share one source of truth.
+  // A specific symptom is searchable even when no province is provided.
+  // ------------------------------------------------------------
+  const symptomAlias = getSymptomSearchAliases(m)[0];
+  if (symptomAlias) {
+    return makeUnderstanding(m, 'PROGRAM_SEARCH', 0.99, {
+      program_query: symptomAlias,
+    });
   }
 
   // ------------------------------------------------------------
