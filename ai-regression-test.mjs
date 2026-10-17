@@ -1,0 +1,682 @@
+#!/usr/bin/env node
+/**
+ * WOS.os AI Regression Test Suite (TASK 02)
+ *
+ * Hits /api/ai/chat with fixed real-world queries and checks the response
+ * against known-correct behavior, so a future change to AI Core / search
+ * relevance can't silently regress the 4 behaviors below:
+ *
+ *   1. A real, on-catalog Thai query should return a matched program.
+ *   2. An absurd/off-catalog query must NOT return an unrelated package
+ *      (the "man on Mars" false-positive class of bug).
+ *   3. A province-scoped query should filter by that province.
+ *   4. A generic/small-talk question should NOT force a catalog search.
+ *
+ * This is deliberately plain Node (built-in fetch, Node >=18) run directly
+ * with `node`, not PowerShell — sidesteps console code-page / encoding
+ * issues entirely for the Thai-language test strings. Save this file as
+ * UTF-8 (no BOM needed) and it will just work.
+ *
+ * USAGE
+ *   node ai-regression-test.mjs
+ *   node ai-regression-test.mjs --base-url http://localhost:3025
+ *   node ai-regression-test.mjs --base-url http://127.0.0.1:3016 --verbose
+ *   node ai-regression-test.mjs   # auto-detects the running WOS webhook container
+ *
+ * EXIT CODE
+ *   0 = all hard-checks passed (some cases may still be flagged REVIEW)
+ *   1 = at least one hard-check failed
+ *
+ * NOTE ON ASSERTIONS
+ *   The AI's exact wording isn't fixed, so assertions are keyword/shape
+ *   based rather than exact-match. Two kinds of result:
+ *     PASS / FAIL  - a hard, automatable check (safe to gate CI/deploy on)
+ *     REVIEW       - printed in full for a human to eyeball; not currently
+ *                    safe to assert automatically without more signal
+ *                    (e.g. a debug trace of which tools were called)
+ *   If WOS ever exposes a debug header/field showing which tools fired
+ *   (e.g. { toolsCalled: ["searchPrograms"] }), wire that into
+ *   checkToolCalled() below to turn REVIEW cases into real PASS/FAIL.
+ */
+
+import { resolveAiTestBaseUrlFromArgs } from "./scripts/resolve-ai-test-url.mjs";
+
+const args = process.argv.slice(2);
+function getArg(name, fallback) {
+  const idx = args.indexOf(`--${name}`);
+  if (idx !== -1 && args[idx + 1]) return args[idx + 1];
+  return fallback;
+}
+const BASE_URL = resolveAiTestBaseUrlFromArgs(args);
+const REQUEST_TIMEOUT_MS = Number(getArg("timeout-ms", process.env.WOS_TEST_TIMEOUT_MS || "60000"));
+const VERBOSE = args.includes("--verbose");
+const ONLY = getArg("only", "");
+// Use a dedicated test IP so repeated regression runs do not consume the real client rate-limit bucket.
+const TEST_IP = process.env.WOS_AI_REGRESSION_IP || "198.18.0.42";
+let requestIndex = 0;
+const ENDPOINT = `${BASE_URL.replace(/\/$/, "")}/api/ai/chat`;
+
+// Phrases that indicate "found nothing relevant" in Thai responses.
+const NOT_FOUND_MARKERS = ["ไม่พบ", "ไม่มีโปรแกรม", "ไม่มีข้อมูล", "ขออภัย", "ไม่พบข้อมูล"];
+
+// Phrases that would indicate an unrelated catalog item leaked into an
+// answer that should have returned nothing (the Mars/hotel false-positive).
+const UNRELATED_CATALOG_MARKERS = ["โรงแรม", "รีสอร์ท", "onsen", "Onsen", "บ้านเจ้าคุณ"];
+
+function containsAny(text, markers) {
+  return markers.some((m) => text.includes(m));
+}
+
+// ---- infrastructure vs behavioral failures ---------------------------------
+const RETRIES = Math.max(0, Number(getArg("retries", "1")));
+const INFRA_STATUSES = new Set([502, 503, 504, 520, 521, 522, 523, 524, 525, 526, 527]);
+const isInfraStatus = (s) => INFRA_STATUSES.has(s);
+let infraFailures = 0;
+const infraIds = [];
+const sleep = (ms) => new Promise((res) => setTimeout(res, ms));
+
+// Returns a normal response, or { infra: true, ... } after RETRIES extra attempts.
+async function askAIWithRetry(message, history = []) {
+  let last;
+  for (let attempt = 0; attempt <= RETRIES; attempt++) {
+    try {
+      const r = await askAI(message, history);
+      if ((r.status === 401 || r.status === 403) && /Vercel Authentication|Protected deployment/i.test(String(r.replyText) + JSON.stringify(r.raw ?? ""))) {
+        console.log("");
+        console.log("INCONCLUSIVE: the target is behind Vercel Deployment Protection (HTTP " + r.status + "). No case can be evaluated.");
+        console.log(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+          ? "VERCEL_AUTOMATION_BYPASS_SECRET is set but was rejected: check that it belongs to THIS project and the bypass is enabled."
+          : "Set VERCEL_AUTOMATION_BYPASS_SECRET (Project > Settings > Deployment Protection > Protection Bypass for Automation) and re-run.");
+        process.exit(2);
+      }
+      if (!isInfraStatus(r.status)) return r;
+      last = r;
+    } catch (err) {
+      const timedOut = err && err.name === "AbortError";
+      last = { status: 0, replyText: "", raw: null, netError: timedOut ? `timeout after ${REQUEST_TIMEOUT_MS}ms` : String(err && err.message) };
+    }
+    if (attempt < RETRIES) {
+      console.log(`  (infrastructure problem: ${last.netError || "HTTP " + last.status}; retry ${attempt + 1}/${RETRIES} in 5s)`);
+      await sleep(5000);
+    }
+  }
+  return { ...last, infra: true };
+}
+
+async function askAI(message, history = []) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(ENDPOINT, {
+      signal: controller.signal,
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-forwarded-for": TEST_IP.replace(/\d+$/, String(142 + (requestIndex++ % 100))),
+        ...(process.env.WOS_AI_REGRESSION_TOKEN
+          ? { "x-wos-ai-regression-token": process.env.WOS_AI_REGRESSION_TOKEN }
+          : {}),
+        ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+          ? { "x-vercel-protection-bypass": process.env.VERCEL_AUTOMATION_BYPASS_SECRET }
+          : {}),
+      },
+      body: JSON.stringify({ message, history }),
+    });
+  } finally {
+    clearTimeout(timeout);
+  }
+  const status = res.status;
+  let bodyText = "";
+  let bodyJson = null;
+  try {
+    bodyText = await res.text();
+    bodyJson = JSON.parse(bodyText);
+  } catch {
+    // non-JSON response, keep bodyText for inspection
+  }
+  const replyText =
+    bodyJson?.answer ??
+    bodyJson?.reply ??
+    bodyJson?.message ??
+    bodyJson?.content ??
+    bodyText ??
+    "";
+  return { status, replyText: String(replyText), raw: bodyJson ?? bodyText };
+}
+
+const cases = [
+  {
+    id: "T1a_strong_catalog_query",
+    label: "Strong query (exact catalog term + province): must match",
+    query: "มีโปรแกรมตรวจสุขภาพในจังหวัดอุดรธานีไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "response says not-found for a query expected to match" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1b_semantic_synonym_query",
+    label: "Semantic synonym query (category word, no exact catalog term): known relevance gap, not gated",
+    query: "มีโปรแกรมสุขภาพในอุดรธานีไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "health-category query returned not-found instead of the verified health catalog" };
+      }
+      if (!containsAny(r.replyText, ["ตรวจสุขภาพ", "DNA Wellness Center"])) {
+        return { pass: false, reason: "health-category query did not return the verified Udon health-check program" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1c_symptom_catalog_query",
+    label: "Symptom query: knee pain should reach the verified knee-check catalog service",
+    query: "ช่วงนี้ปวดเข่าเวลาเดินขึ้นบันได มีโปรแกรมอะไรที่เกี่ยวข้องไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "symptom query returned not-found instead of a relevant catalog result" };
+      }
+      if (!containsAny(r.replyText, ["ตรวจเข่า", "INDY CLINICS"])) {
+        return { pass: false, reason: "symptom query did not expose the verified knee-check catalog result" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1d_symptom_province_scope",
+    label: "Symptom + province: knee pain in Udon should stay province-scoped",
+    query: "ปวดเข่าในอุดรธานี มีโปรแกรมอะไรที่เกี่ยวข้องไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return { pass: false, reason: "symptom + province query returned not-found" };
+      }
+      if (!containsAny(r.replyText, ["ตรวจเข่า", "INDY CLINICS"])) {
+        return { pass: false, reason: "symptom + province query did not return the verified Udon knee-check catalog result" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1e_selected_program_booking",
+    label: "Selected program booking: must not produce the old generic 'cannot book' refusal",
+    query: "จองโปรแกรมตรวจเข่าให้หน่อย",
+    history: [
+      {
+        role: "assistant",
+        content: "1. ตรวจเข่า — INDY CLINICS / อุดรธานี\n\n2. ตรวจสุขภาพ — DNA Wellness Center / อุดรธานี",
+      },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      const refusal = /ไม่สามารถจอง|cannot book|unable to book|ติดต่อทีมงาน WOS เพื่อขอข้อมูลเพิ่มเติมเกี่ยวกับโปรแกรม/iu;
+      if (refusal.test(r.replyText)) return { pass: false, reason: "selected-program booking still falls into the old generic refusal response" };
+      if (!containsAny(r.replyText, ["WOS", "จอง"])) return { pass: false, reason: "booking response did not explain the WOS booking path" };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1f_repeat_reset",
+    label: "Repeated-answer complaint: must reset instead of echoing the previous refusal",
+    query: "ทำไมคุณตอบซ้ำๆ",
+    history: [
+      {
+        role: "assistant",
+        content: "ขออภัยค่ะ ใบเฟิร์นไม่สามารถจองโปรแกรม “ตรวจเข่า” ให้คุณได้โดยตรง เนื่องจากต้องปฏิบัติตามกฎของ WOS",
+      },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ไม่สามารถจอง|cannot book|unable to book/iu.test(r.replyText)) return { pass: false, reason: "repeat complaint echoed the stale booking refusal" };
+      if (!/ซ้ำ|เริ่มใหม่|reset|repeat/i.test(r.replyText)) return { pass: false, reason: "repeat complaint did not acknowledge/reset the repeated answer" };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1g_transport_query",
+    label: "Transport question: must not be converted into a generic booking refusal",
+    query: "มีรถรับส่งบ่",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ไม่สามารถจอง|cannot book|unable to book/iu.test(r.replyText)) return { pass: false, reason: "transport question produced a generic booking refusal" };
+      if (!/รถรับส่ง|จุดรับ|จุดส่ง|วัน|เวลา|ລົດຮັບສົ່ງ|ຈຸດຮັບ|ຈຸດສົ່ງ|ວັນ|ເວລາ/iu.test(r.replyText)) return { pass: false, reason: "transport response did not explain the WOS transport flow or collect required trip details" };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1h_unknown_question_escalation",
+    label: "Unsupported question: must escalate to WOS instead of guessing or looping",
+    query: "WOS มีนโยบายพิเศษสำหรับกรณีที่ไม่มีอยู่ในข้อมูลระบบตอนนี้ไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ไม่สามารถจอง|cannot book|unable to book|กฎของ WOS|policy says/iu.test(r.replyText)) {
+        return { pass: false, reason: "unsupported question fell into a generic refusal/policy hallucination" };
+      }
+      if (!/WOS|ตรวจสอบ|ดำเนินการต่อ|ยืนยัน|ข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "unsupported question did not provide a WOS verification/escalation path" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1i_bare_lao_interest_after_reset",
+    label: "Bare Lao interest after reset must re-enter catalog discovery, never ask for name without a selected program",
+    query: "ສົນໃຈ",
+    history: [
+      { role: "user", content: "ເລີ່ມໃໝ່" },
+      { role: "assistant", content: "ໄດ້ເລີຍຄ່ະ 😊 ໃບເຟີນລ້າງຂໍ້ມູນການຈອງເກົ່າໃຫ້ແລ້ວ. ເລີ່ມຂໍ້ມູນໃໝ່ໄດ້ເລີຍຄ່ະ" },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ຂໍຊື່|ຊື່ສຳລັບ|ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "bare Lao interest after reset incorrectly entered name/booking flow" };
+      }
+      if (!/ໂປຣແກຣມ|ສຸຂະພາບ|ກວດ|program|ตรวจสุขภาพ|ตรวจเข่า/iu.test(r.replyText)) {
+        return { pass: false, reason: "bare Lao interest did not return to verified catalog discovery" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1j_province_continuation_priority",
+    label: "Province answer after province prompt must override stale selected-program state",
+    query: "อุดร",
+    history: [
+      { role: "user", content: "เลือกตรวจเข่า" },
+      { role: "assistant", content: "ได้เลยค่ะ 😊 รับทราบโปรแกรมตรวจเข่าแล้วนะคะ" },
+      { role: "user", content: "มีโปรแกรมอะไรบ้าง" },
+      { role: "assistant", content: "ตอนนี้ WOS มีโปรแกรมสุขภาพใน หนองคาย, อุดรธานี ค่ะ สนใจโปรแกรมที่จังหวัดไหนคะ?" },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล|ประสานงานต่อ/iu.test(r.replyText)) {
+        return { pass: false, reason: "province continuation incorrectly jumped into stale booking/name flow" };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|INDY CLINICS|DNA Wellness Center/iu.test(r.replyText)) {
+        return { pass: false, reason: "province continuation did not return the verified Udon catalog" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1i_generic_program_discovery",
+    label: "Generic program discovery must not become a selected-program booking/name flow",
+    query: "ผมสนใจมีโปรแกรมอะไรแนะนำมั้ย",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ขอชื่อสำหรับ|what name should I use|ชื่อสำหรับลงข้อมูล|booking form|generic booking/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic program discovery was incorrectly treated as a selected program" };
+      }
+      if (!/โปรแกรม|จังหวัด|WOS/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic program discovery did not continue into catalog discovery" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1l_program_discovery_exact_phrases",
+    label: "Exact natural Thai catalog discovery phrases must never auto-select the first program",
+    query: "สนใจโปรแกรมในอุดร",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล|จอง|รับเรื่องโรงแรม|ตรวจเข่า.*บันทึก|บันทึก.*ตรวจเข่า/iu.test(r.replyText)) {
+        return { pass: false, reason: "discovery phrase was incorrectly treated as a selected program" };
+      }
+      if (!/ตรวจเข่า.*1,?500|ตรวจสุขภาพ.*1,?900|ตรวจเข่า|ตรวจสุขภาพ/iu.test(r.replyText)) {
+        return { pass: false, reason: "province discovery did not return the verified Udon catalog" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1m_program_discovery_view_phrase",
+    label: "Viewing the Udon catalog must return options, not a fallback/unknown response",
+    query: "ขอดูโปรแกรมในอุดร",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ยังไม่พบ|ไม่พบโปรแกรม|ไม่พบข้อมูล|ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog viewing phrase fell through to unknown or booking flow" };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|1,?500|1,?900/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog viewing phrase did not return verified Udon options" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1n_program_discovery_without_province",
+    label: "Generic program discovery without a province must ask for the province, not select a program",
+    query: "สนใจโปรแกรม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/ตรวจเข่า.*บันทึก|บันทึก.*ตรวจเข่า|ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic discovery incorrectly selected a program or entered booking flow" };
+      }
+      if (!/หนองคาย|อุดรธานี|จังหวัด/iu.test(r.replyText)) {
+        return { pass: false, reason: "generic discovery did not ask for or identify available provinces" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1k_catalog_choice_followup",
+    label: "Catalog choice follow-up must stay in catalog mode instead of stale booking/hotel flow",
+    query: "คุณมีให้เลือกมั้ย",
+    history: [
+      { role: "user", content: "เลือกตรวจเข่า" },
+      { role: "assistant", content: "ได้เลยค่ะ 😊 รับทราบโปรแกรมตรวจเข่าแล้วนะคะ" },
+      { role: "user", content: "มีโปรแกรมอะไรบ้าง" },
+      { role: "assistant", content: "ตอนนี้ WOS มีโปรแกรมสุขภาพใน หนองคาย, อุดรธานี ค่ะ สนใจโปรแกรมที่จังหวัดไหนคะ?" },
+      { role: "user", content: "อุดร" },
+      { role: "assistant", content: "ได้เลยค่ะ 😊 ตอนนี้มีโปรแกรมสุขภาพในอุดรธานีให้เลือกค่ะ" },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล|รับเรื่องโรงแรม|ประสานงานต่อ/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog choice follow-up incorrectly jumped into booking/hotel flow: " + r.replyText };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|INDY CLINICS|DNA Wellness Center|โปรแกรม/iu.test(r.replyText)) {
+        return { pass: false, reason: "catalog choice follow-up did not return catalog options" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T1o_interest_after_selected_program",
+    label: "Bare interest after explicit program selection must keep the selected program and continue booking",
+    query: "\u0e2a\u0e19\u0e43\u0e08",
+    history: [
+      { role: "user", content: "\u0e40\u0e25\u0e37\u0e2d\u0e01\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32" },
+      { role: "assistant", content: "\u0e44\u0e14\u0e49\u0e40\u0e25\u0e22\u0e04\u0e48\u0e30 \ud83d\ude0a \u0e23\u0e31\u0e1a\u0e17\u0e23\u0e32\u0e1a\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e15\u0e23\u0e27\u0e08\u0e40\u0e02\u0e48\u0e32\u0e41\u0e25\u0e49\u0e27\u0e19\u0e30\u0e04\u0e30" },
+    ],
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (/\u0e15\u0e2d\u0e19\u0e19\u0e35\u0e49 WOS \u0e21\u0e35\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e\u0e43\u0e19|\u0e2a\u0e19\u0e43\u0e08\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e17\u0e35\u0e48\u0e08\u0e31\u0e07\u0e2b\u0e27\u0e31\u0e14\u0e44\u0e2b\u0e19|\u0e21\u0e35\u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21\u0e2d\u0e30\u0e44\u0e23\u0e1a\u0e49\u0e32\u0e07|\u0e2b\u0e25\u0e32\u0e22\u0e23\u0e32\u0e22\u0e01\u0e32\u0e23\u0e17\u0e35\u0e48\u0e15\u0e23\u0e07\u0e01\u0e31\u0e1a\u0e17\u0e35\u0e48\u0e16\u0e32\u0e21/iu.test(r.replyText)) {
+        return { pass: false, reason: "bare interest after explicit selection incorrectly restarted catalog discovery" };
+      }
+      const continuedBookingFlow =
+        /WOS|\u0e08\u0e2d\u0e07|\u0e1b\u0e23\u0e30\u0e2a\u0e32\u0e19\u0e07\u0e32\u0e19|\u0e0a\u0e37\u0e48\u0e2d/iu.test(r.replyText);
+      const reopenedCatalog =
+        /\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e/iu.test(r.replyText) ||
+        /\u0e16\u0e49\u0e32\u0e2a\u0e19\u0e43\u0e08\u0e15\u0e31\u0e27\u0e44\u0e2b\u0e19/iu.test(r.replyText);
+
+      if (!continuedBookingFlow || reopenedCatalog) {
+        return { pass: false, reason: "bare interest after explicit selection did not continue the booking flow" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T2_hotel_availability_read",
+    label: "Hotel availability: exact dates + Udon must return only verified available hotel data",
+    query: "\u0e21\u0e35\u0e42\u0e23\u0e07\u0e41\u0e23\u0e21\u0e43\u0e19\u0e2d\u0e38\u0e14\u0e23\u0e18\u0e32\u0e19\u0e35\u0e27\u0e48\u0e32\u0e07\u0e44\u0e2b\u0e21 \u0e40\u0e0a\u0e47\u0e04\u0e2d\u0e34\u0e19 2099-01-01 \u0e40\u0e0a\u0e47\u0e04\u0e40\u0e2d\u0e32\u0e15\u0e4c 2099-01-03 1 \u0e2b\u0e49\u0e2d\u0e07",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      const exposesKnownHotelRate =
+        r.replyText.includes("Udon Hotel") &&
+        /(?:1,300|1300)/i.test(r.replyText);
+      if (exposesKnownHotelRate) {
+        return {
+          pass: false,
+          reason: "future-date query exposed the known Udon Hotel / 1,300 THB result without date-verified inventory",
+        };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T2b_hotel_oversell_guard",
+    label: "Hotel availability: request above inventory must not claim rooms are available",
+    query: "\u0e21\u0e35\u0e42\u0e23\u0e07\u0e41\u0e23\u0e21\u0e43\u0e19\u0e2d\u0e38\u0e14\u0e23\u0e18\u0e32\u0e19\u0e35\u0e44\u0e2b\u0e21 \u0e40\u0e0a\u0e47\u0e04\u0e2d\u0e34\u0e19 2026-09-29 \u0e40\u0e0a\u0e47\u0e04\u0e40\u0e2d\u0e32\u0e15\u0e4c 2026-10-01 6 \u0e2b\u0e49\u0e2d\u0e07",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, ["1,300", "1300", "2,600", "2600", "Udon Hotel"])) {
+        return { pass: false, reason: "oversized room request exposed the verified hotel as available despite only 5 rooms being configured" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T2_mars_no_false_positive",
+    label: "Absurd query: 'program for humans on Mars' must not return an unrelated package",
+    query: "มีโปรแกรมสำหรับมนุษย์บนดาวอังคารไหม",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (containsAny(r.replyText, UNRELATED_CATALOG_MARKERS)) {
+        return {
+          pass: false,
+          reason: "response leaked an unrelated catalog item (hotel/onsen) for a nonsense query",
+        };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T5_hotel_affirmative_handoff",
+    label: "Hotel affirmative after Fern's hotel question should immediately produce the handoff summary",
+    query: "ສົນໃຈ",
+    kind: "hard",
+    history: [
+      { role: "assistant", content: "1. Knee Check — 1,500 THB\n2. Health Check — 1,900 THB" },
+      { role: "user", content: "Knee Check" },
+      { role: "assistant", content: "Sure 😊 What name should I use for the WOS team to coordinate with you?" },
+      { role: "user", content: "Wos Admin" },
+      { role: "assistant", content: "Would you like transport?" },
+      { role: "user", content: "No" },
+      { role: "assistant", content: "Would you like a hotel?" },
+    ],
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (!/Knee Check/iu.test(r.replyText) || !/WOS/iu.test(r.replyText)) return { pass: false, reason: 'hotel affirmative did not produce a handoff summary' };
+      if (!/(needed|ໂຮງແຮມ: ຕ້ອງການ)/iu.test(r.replyText)) return { pass: false, reason: 'handoff summary did not record hotel as needed' };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T5b_hotel_question_not_handoff",
+    label: "Hotel information question after hotel prompt must not be swallowed by the handoff summary",
+    query: "What hotels are available?",
+    kind: "hard",
+    history: [
+      { role: "assistant", content: "1. Knee Check — 1,500 THB\n2. Health Check — 1,900 THB" },
+      { role: "user", content: "Knee Check" },
+      { role: "assistant", content: "Sure 😊 What name should I use for the WOS team to coordinate with you?" },
+      { role: "user", content: "Wos Admin" },
+      { role: "assistant", content: "Would you like transport?" },
+      { role: "user", content: "No" },
+      { role: "assistant", content: "Would you like a hotel?" },
+    ],
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/(here(?:'s| is) a quick summary|summary for the WOS team)/iu.test(r.replyText)) return { pass: false, reason: "hotel information question was incorrectly converted into a handoff summary" };
+      return { pass: true };
+    },
+  },
+  {
+    id: "T5c_thanks_after_hotel_handoff",
+    label: "Thank-you after hotel handoff must not repeat the acknowledgement or summary",
+    query: "\u0e02\u0e2d\u0e1a\u0e04\u0e38\u0e13\u0e04\u0e23\u0e31\u0e1a",
+    kind: "hard",
+    history: [
+      { role: "assistant", content: "1. Knee Check - 1,500 THB\n2. Health Check - 1,900 THB" },
+      { role: "user", content: "Knee Check" },
+      { role: "assistant", content: "What name should I use for the WOS team to coordinate with you?" },
+      { role: "user", content: "Wos Admin" },
+      { role: "assistant", content: "Would you like transport?" },
+      { role: "user", content: "No" },
+      { role: "assistant", content: "Would you like a hotel?" },
+      { role: "user", content: "\u0e2a\u0e19\u0e43\u0e08" },
+      { role: "assistant", content: "\u0e2a\u0e23\u0e38\u0e1b\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25\u0e43\u0e2b\u0e49\u0e17\u0e35\u0e21 WOS\n\u2022 \u0e42\u0e1b\u0e23\u0e41\u0e01\u0e23\u0e21: Knee Check\n\u2022 \u0e0a\u0e37\u0e48\u0e2d\u0e1c\u0e39\u0e49\u0e08\u0e2d\u0e07: Wos Admin\n\u2022 \u0e23\u0e16\u0e23\u0e31\u0e1a\u0e2a\u0e48\u0e07: \u0e44\u0e21\u0e48\u0e15\u0e49\u0e2d\u0e07\u0e01\u0e32\u0e23\n\u2022 \u0e42\u0e23\u0e07\u0e41\u0e23\u0e21: \u0e15\u0e49\u0e2d\u0e07\u0e01\u0e32\u0e23\n\u0e17\u0e35\u0e21 WOS \u0e08\u0e30\u0e1b\u0e23\u0e30\u0e2a\u0e32\u0e19\u0e07\u0e32\u0e19\u0e15\u0e48\u0e2d\u0e43\u0e2b\u0e49\u0e04\u0e48\u0e30" }
+    ],
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: "HTTP " + r.status + ", expected 200" };
+      if (/Knee Check|Wos Admin|\u0e23\u0e31\u0e1a\u0e40\u0e23\u0e37\u0e48\u0e2d\u0e07\u0e42\u0e23\u0e07\u0e41\u0e23\u0e21|\u0e2a\u0e23\u0e38\u0e1b\u0e02\u0e49\u0e2d\u0e21\u0e39\u0e25/iu.test(r.replyText)) {
+        return { pass: false, reason: "thank-you reply repeated hotel acknowledgement or handoff summary" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T3_province_scoped_query",
+    label: "Province-scoped query: results should be filtered to that province",
+    query: "มีโปรแกรมอะไรในอุดรธานีบ้าง",
+    kind: "hard",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      if (UNRELATED_CATALOG_MARKERS.some((m) => r.replyText.includes(m))) {
+        return { pass: false, reason: "province-scoped program query leaked unrelated hotel/other inventory" };
+      }
+      if (!/ตรวจเข่า|ตรวจสุขภาพ|INDY CLINICS|DNA Wellness Center/iu.test(r.replyText)) {
+        return { pass: false, reason: "province-scoped response did not return a verified Udon health program" };
+      }
+      return { pass: true };
+    },
+  },
+  {
+    id: "T4_generic_question_no_forced_search",
+    label: "Generic small-talk question should not force a catalog search",
+    query: "สวัสดีครับ วันนี้เป็นยังไงบ้าง",
+    kind: "review",
+    check: (r) => {
+      if (r.status !== 200) return { pass: false, reason: `HTTP ${r.status}, expected 200` };
+      // Heuristic hard-check: a generic greeting shouldn't come back with a
+      // catalog "not found" apology either -- that shape implies a forced
+      // search ran and failed, which is itself a signal something's off.
+      if (containsAny(r.replyText, NOT_FOUND_MARKERS)) {
+        return {
+          pass: false,
+          reason: "greeting triggered a catalog not-found response -- looks like search was force-run",
+        };
+      }
+      return { pass: null, reason: "eyeball: does the reply look like normal conversation, not a catalog search?" };
+    },
+  },
+];
+
+function printHeader() {
+  console.log("=== WOS.os AI Regression Suite ===");
+  console.log(`Endpoint: ${ENDPOINT}`);
+  console.log("");
+}
+
+async function main() {
+  const selectedCases = ONLY ? cases.filter((c) => c.id.startsWith(ONLY)) : cases;
+  if (ONLY && selectedCases.length === 0) {
+    throw new Error(`No regression cases matched --only ${ONLY}`);
+  }
+
+  printHeader();
+  let hardFailures = 0;
+  let executionFailures = 0;
+  const reviewItems = [];
+
+  for (const c of selectedCases) {
+    process.stdout.write(`[${c.id}] ${c.label} ... `);
+    let result;
+    try {
+      const r = await askAIWithRetry(c.query, c.history ?? []);
+      if (r.infra) {
+        result = { pass: false, infra: true, reason: `infrastructure failure, case NOT evaluated: ${r.netError || "HTTP " + r.status}` };
+      } else if (!r.replyText.trim()) {
+        result = { pass: false, reason: "empty AI response" };
+      } else {
+        result = c.check(r);
+      }
+      result.response = r.replyText;
+      result.httpStatus = r.status;
+      if (r.status !== 200) result.httpBody = JSON.stringify(r.raw);
+    } catch (err) {
+      result = { pass: false, reason: `request failed: ${err.message}` };
+    }
+
+    if (result.pass === true) {
+      console.log("PASS");
+    } else if (result.pass === false) {
+      console.log(`FAIL - ${result.reason}`);
+      if (result.httpStatus && result.httpStatus !== 200) {
+        console.log(`  HTTP status: ${result.httpStatus}`);
+        if (result.httpBody) console.log(`  HTTP body: ${result.httpBody.slice(0, 1000)}`);
+      }
+
+      // Hard assertion failures and execution/infrastructure failures both gate the suite.
+      // Review cases remain non-gated only when they return pass:null.
+      if (result.infra) { infraFailures++; infraIds.push(c.id); }
+      else if (c.kind === "hard") hardFailures++;
+      else executionFailures++;
+    } else {
+      console.log(`REVIEW - ${result.reason}`);
+      reviewItems.push({ id: c.id, query: c.query, response: result.response });
+    }
+
+    if (VERBOSE && result.response) {
+      console.log(`  query: ${c.query}`);
+      console.log(`  reply: ${result.response.slice(0, 400)}${result.response.length > 400 ? "..." : ""}`);
+      console.log("");
+    }
+  }
+
+  if (reviewItems.length > 0) {
+    console.log("");
+    console.log("=== Items needing human review ===");
+    for (const item of reviewItems) {
+      console.log(`\n[${item.id}]`);
+      console.log(`  query : ${item.query}`);
+      console.log(`  reply : ${item.response}`);
+    }
+  }
+
+  console.log("");
+  console.log("=== Result ===");
+  const hardCases = selectedCases.filter((c) => c.kind === "hard");
+  const infraHard = hardCases.filter((c) => infraIds.includes(c.id)).length;
+  console.log(`Hard checks: ${hardCases.length - infraHard - hardFailures}/${hardCases.length - infraHard} passed` + (infraHard ? ` (${infraHard} not evaluated)` : ""));
+  console.log(`Review items: ${reviewItems.length} (see above, not auto-graded)`);
+  console.log(`Execution failures: ${executionFailures}`);
+  console.log(`Infrastructure failures (not evaluated): ${infraFailures}${infraIds.length ? " [" + infraIds.join(", ") + "]" : ""}`);
+
+  if (hardFailures > 0 || executionFailures > 0) {
+    console.log("");
+    console.log("REGRESSION DETECTED -> do not promote/deploy this build");
+    process.exit(1);
+  }
+
+  if (infraFailures > 0) {
+    console.log("");
+    console.log("INCONCLUSIVE: some cases were not evaluated (infrastructure). This is NOT a pass. Re-run those cases with --only before promoting.");
+    process.exit(2);
+  }
+
+  console.log("");
+  console.log("No hard regressions detected.");
+  process.exit(0);
+}
+
+main().catch((err) => {
+  console.error("Test runner crashed:", err);
+  process.exit(1);
+});

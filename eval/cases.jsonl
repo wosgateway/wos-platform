@@ -1,0 +1,46 @@
+{"id": "D-01", "input": "สนใจโปรแกรมอุดร", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-02", "input": "อยากดูโปรแกรมอุดร", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-03", "input": "ขอดูบริการที่อุดร", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-04", "input": "อุดรมีอะไรบ้าง", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-05", "input": "มีอะไรให้เลือกในอุดร", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-06", "input": "อยากดูของอุดรหน่อย", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-07", "input": "สนใจโปรแกรมจ.อุดรธานีค่ะ", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-08", "input": "udon มี program อะไรบ้าง", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-09", "input": "โปรแกรมอุดรมีไร", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "D-10", "input": "สนใจโปรแกรมเชียงใหม่", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "chiang-mai"}}
+{"id": "D-11", "input": "สนใจโปรแกรม", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "ASK_PROVINCE"}}
+{"id": "D-12", "input": "อยากดูบริการหน่อยค่ะ", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "ASK_PROVINCE"}}
+{"id": "S-01", "input": "มีตรวจเข่าไหม", "expect": {"intent": "PROGRAM_SEARCH", "action": "SEARCH", "province": null}}
+{"id": "S-02", "input": "อุดรมีตรวจเข่าหรือเปล่า", "expect": {"intent": "PROGRAM_SEARCH", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "S-03", "input": "สนใจบริการตรวจเข่าที่อุดร", "expect": {"intent": "PROGRAM_SEARCH", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "S-04", "input": "อยากตรวจเข่า อุดร", "expect": {"intent": "PROGRAM_SEARCH", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "S-05", "input": "มีตรวจเข่ามั้ยที่หนองคาย", "expect": {"intent": "PROGRAM_SEARCH", "action": "SEARCH", "province": "nong-khai"}}
+{"id": "S-06", "input": "ปวดเข่ามาก มีอะไรช่วยได้ไหม", "expect": {"intent": "PROGRAM_SEARCH", "action": "SEARCH", "province": null}}
+{"id": "C-01", "input": "เอาอันแรก", "expect": {"intent": "PROGRAM_SELECTION", "action": "SELECT", "selection_index": 0}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "C-02", "input": "ขอตัวที่สอง", "expect": {"intent": "PROGRAM_SELECTION", "action": "SELECT", "selection_index": 1}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "C-03", "input": "อันหลังครับ", "expect": {"intent": "PROGRAM_SELECTION", "action": "SELECT", "selection_index": 1}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "C-04", "input": "มีอีกไหม", "expect": {"intent": "PROGRAM_MORE", "action": "SEARCH", "province": "udon-thani"}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "C-05", "input": "มีอะไรอีก", "expect": {"intent": "PROGRAM_MORE", "action": "SEARCH", "province": "udon-thani"}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "C-06", "input": "ตัวนี้ราคาเท่าไหร่", "expect": {"intent": "PROGRAM_DETAIL", "action": "ASK_SELECTION"}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "C-07", "input": "เอาอันที่สามค่ะ", "expect": {"intent": "PROGRAM_SELECTION", "action": "ASK_SELECTION"}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "C-08", "input": "เอาอันแรก", "expect": {"intent": "PROGRAM_SELECTION", "action": "DEFER"}}
+{"id": "C-09", "input": "มีอีกไหม", "expect": {"intent": "PROGRAM_MORE", "action": "DEFER"}}
+{"id": "C-10", "input": "ตัวแรกราคาเท่าไหร่", "expect": {"intent": "PROGRAM_DETAIL", "action": "DETAIL", "selection_index": 0}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "O-01", "input": "ขอคุยกับเจ้าหน้าที่", "expect": {"intent": "HANDOFF", "action": "DEFER"}}
+{"id": "O-02", "input": "ขอคุยกับคนหน่อย", "expect": {"intent": "HANDOFF", "action": "DEFER"}}
+{"id": "O-03", "input": "เริ่มใหม่", "expect": {"intent": "RESET", "action": "RESET"}}
+{"id": "O-04", "input": "ขอเริ่มต้นใหม่ทั้งหมด", "expect": {"intent": "RESET", "action": "RESET"}}
+{"id": "O-05", "input": "สวัสดีค่ะ", "expect": {"intent": "SMALLTALK", "action": "DEFER"}}
+{"id": "O-06", "input": "ขอบคุณค่ะ", "expect": {"intent": "SMALLTALK", "action": "DEFER"}}
+{"id": "O-07", "input": "แล้วที่พักล่ะ", "expect": {"intent": "HOTEL", "action": "DEFER"}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "O-08", "input": "จะเดินทางไปยังไง", "expect": {"intent": "TRANSPORT", "action": "DEFER"}, "context": {"recent_catalog": [{"id": "p1", "title": "โปรแกรมตรวจเข่า"}, {"id": "p2", "title": "โปรแกรมตรวจสุขภาพ"}], "journey_province": "udon-thani", "catalog_offset": 2, "catalog_query": {"provinceId": "udon-thani", "query": null}, "history": [{"role": "assistant", "content": "1. โปรแกรมตรวจเข่า\n2. โปรแกรมตรวจสุขภาพ"}]}}
+{"id": "O-09", "input": "WOS คืออะไร", "expect": {"intent": "GENERAL_QUESTION", "action": "DEFER"}}
+{"id": "R-01", "input": "สนใจโปรแกรมอุดรรร", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "R-02", "input": "มีตรวจเข่ามัยคะ อุดร", "expect": {"intent": "PROGRAM_SEARCH", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "R-03", "input": "อยากดูโปรแกรมที่ອຸດອນ", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "R-04", "input": "I want to see programs in Udon Thani", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "SEARCH", "province": "udon-thani"}}
+{"id": "R-05", "input": "asdfgh", "expect": {"intent": "UNKNOWN", "action": "DEFER"}}
+{"id": "H-01", "input": "สนใจโปรแกรมภูเก็ต", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "NO_COVERAGE"}}
+{"id": "H-02", "input": "มีโปรแกรมที่ขอนแก่นไหม", "expect": {"intent": "PROGRAM_SEARCH", "action": "NO_COVERAGE"}}
+{"id": "H-03", "input": "โรงแรมมีห้องว่างวันที่ 5 ไหม", "expect": {"intent": "HOTEL", "action": "DEFER"}}
+{"id": "H-04", "input": "สนใจโปรแกรมดาวอังคาร", "expect": {"intent": "PROGRAM_DISCOVERY", "action": "ASK_PROVINCE"}}
