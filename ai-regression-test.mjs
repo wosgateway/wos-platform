@@ -81,6 +81,14 @@ async function askAIWithRetry(message, history = []) {
   for (let attempt = 0; attempt <= RETRIES; attempt++) {
     try {
       const r = await askAI(message, history);
+      if ((r.status === 401 || r.status === 403) && /Vercel Authentication|Protected deployment/i.test(String(r.replyText) + JSON.stringify(r.raw ?? ""))) {
+        console.log("");
+        console.log("INCONCLUSIVE: the target is behind Vercel Deployment Protection (HTTP " + r.status + "). No case can be evaluated.");
+        console.log(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+          ? "VERCEL_AUTOMATION_BYPASS_SECRET is set but was rejected: check that it belongs to THIS project and the bypass is enabled."
+          : "Set VERCEL_AUTOMATION_BYPASS_SECRET (Project > Settings > Deployment Protection > Protection Bypass for Automation) and re-run.");
+        process.exit(2);
+      }
       if (!isInfraStatus(r.status)) return r;
       last = r;
     } catch (err) {
@@ -108,6 +116,9 @@ async function askAI(message, history = []) {
         "x-forwarded-for": TEST_IP.replace(/\d+$/, String(142 + (requestIndex++ % 100))),
         ...(process.env.WOS_AI_REGRESSION_TOKEN
           ? { "x-wos-ai-regression-token": process.env.WOS_AI_REGRESSION_TOKEN }
+          : {}),
+        ...(process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+          ? { "x-vercel-protection-bypass": process.env.VERCEL_AUTOMATION_BYPASS_SECRET }
           : {}),
       },
       body: JSON.stringify({ message, history }),
