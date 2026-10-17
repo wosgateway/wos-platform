@@ -54,6 +54,22 @@ export function decide(
   if (!catalogFamily.includes(u.intent)) return { type: 'DEFER', reason: `intent_${u.intent.toLowerCase()}` };
   if (level === 'low') return { type: 'DEFER', reason: 'low_confidence' };
 
+  // An already-selected program belongs to the active concierge journey.
+  // Only an explicit catalog operation may take the turn back from legacy.
+  // Do not special-case words such as "สนใจ"; rely on intent + extracted entities.
+  const hasActiveSelection = Boolean(ctx.selectedProgramId);
+  const explicitCatalogOperation =
+    (u.intent === 'PROGRAM_SELECTION' && e.selection_index != null) ||
+    (u.intent === 'PROGRAM_DETAIL' &&
+      (e.selection_index != null || e.detail_field != null)) ||
+    u.intent === 'PROGRAM_MORE' ||
+    ((u.intent === 'PROGRAM_DISCOVERY' || u.intent === 'PROGRAM_SEARCH') &&
+      Boolean(e.province || e.program_query));
+
+  if (hasActiveSelection && !explicitCatalogOperation) {
+    return { type: 'DEFER', reason: 'active_selected_program' };
+  }
+
   // Province: the model's value must exist in canonical data; text match is a deterministic backup.
   const fromModel = matchProvince(e.province, deps.provinces);
   const fromText = detectProvinceInText(message, deps.provinces);

@@ -158,7 +158,7 @@ export async function runUnderstandingGate(args: {
       recentCatalog: trusted ? state!.lastCatalog : [],
       catalogOffset: trusted ? state!.catalogOffset : 0,
       catalogQuery: trusted ? state!.catalogQuery : null,
-      selectedProgramId: trusted ? state!.selectedProgramId : null,
+      selectedProgramId: state?.selectedProgramId ?? null,
       journeyProvinceId: state?.provinceId ?? null,
     };
 
