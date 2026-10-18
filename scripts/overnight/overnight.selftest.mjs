@@ -346,3 +346,322 @@ test("llm: a plan that names 3+ layers is rejected as 'not a diagnosis'", async 
   const llm = makeLlm({ guard, contract: true, ask: async () => ({ text: JSON.stringify(everything), json: structuredClone(everything) }) });
   await assert.rejects(llm.planner({ task: "t", baseline: { failures: [] }, timeLeft: 60000 }), /not a diagnosis/);
 });
+
+// ======================================================================================================
+// claude-exec adapter (Phase 1). No Claude model and no network: the "claude" in these tests is a tiny node
+// script that reads stdin and prints a canned Claude-CLI-shaped JSON envelope.
+// ======================================================================================================
+import { askClaudeOnce, buildChildEnv, buildClaudeArgs, ClaudeExecError, compareSemver, discoverClaudeExecutable, makeClaudeAsk } from "./claude-exec.mjs";
+
+const THAI = "สนใจตรวจสุขภาพ";
+const LAO = "ກວດສຸຂະພາບ";
+const THAI_ESC = "\u0e2a\u0e19\u0e43\u0e08\u0e15\u0e23\u0e27\u0e08\u0e2a\u0e38\u0e02\u0e20\u0e32\u0e1e";
+const LAO_ESC = "\u0e81\u0ea7\u0e94\u0eaa\u0eb8\u0e82\u0eb0\u0e9e\u0eb2\u0e9a";
+
+const FAKE_CLAUDE = `
+const mode = process.argv[2];
+const chunks = [];
+for await (const c of process.stdin) chunks.push(c);
+const input = Buffer.concat(chunks).toString("utf8");
+const BT = String.fromCharCode(96), NL = String.fromCharCode(10);
+const envelope = (result) => JSON.stringify({ type: "result", subtype: "success", is_error: false, result: typeof result === "string" ? result : JSON.stringify(result), total_cost_usd: 0.01, duration_ms: 5 });
+const reply = (result) => process.stdout.write(envelope(result));
+if (mode === "ok") reply({ ok: true, n: 1 });
+else if (mode === "echo") reply({ echo: input, argv: process.argv.slice(3), leaked: Object.keys(process.env).filter((k) => /LITELLM|OPENAI|SUPABASE|TELEGRAM|^WOS_/i.test(k)), anthropic: Object.keys(process.env).filter((k) => /^ANTHROPIC_/i.test(k)) });
+else if (mode === "fenced") reply(BT + BT + BT + "json" + NL + '{"a":1}' + NL + BT + BT + BT);
+else if (mode === "bom") process.stdout.write(String.fromCharCode(0xfeff) + envelope({ ok: true }));
+else if (mode === "badjson") process.stdout.write("this is not json");
+else if (mode === "badresult") reply("definitely not json");
+else if (mode === "array") reply("[1,2,3]");
+else if (mode === "iserror") process.stdout.write(JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, result: "stopped" }));
+else if (mode === "empty") { /* no output at all */ }
+else if (mode === "nonzero") { process.stderr.write("boom API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789 failed"); process.exit(3); }
+else if (mode === "sleep") setTimeout(() => {}, 60000);
+else if (mode === "fffd") reply({ text: "bad " + String.fromCharCode(0xfffd) });
+else if (mode === "badutf8") process.stdout.write(Buffer.from([0x7b, 0xff, 0x7d]));
+`;
+
+function fakeClaude(mode) {
+  const dir = mkdtempSync(path.join(tmpdir(), "claude-fake-"));
+  const script = path.join(dir, "fake-claude.mjs");
+  writeFileSync(script, FAKE_CLAUDE, "utf8");
+  return { executable: process.execPath, prefixArgs: [script, mode] };
+}
+const MSG = (text = "hello") => [{ role: "system", content: "sys" }, { role: "user", content: text }];
+const failsWith = (promise, code) => assert.rejects(promise, (e) => e instanceof ClaudeExecError && e.code === code, `expected ${code}`);
+const throwsCode = (fn, code) => assert.throws(fn, (e) => e instanceof ClaudeExecError && e.code === code, `expected ${code}`);
+
+const APPDATA = "C:\\Users\\t\\AppData\\Roaming";
+const BUNDLED_ROOT = path.win32.join(APPDATA, "Claude", "claude-code");
+const bundledExe = (v) => path.win32.join(BUNDLED_ROOT, v, "claude.exe");
+const fakeFs = (files = [], dirs = {}) => ({ existsSync: (p) => files.includes(p), readdirSync: (p) => { if (!(p in dirs)) throw new Error("ENOENT"); return dirs[p]; } });
+const versionOk = (v = "2.1.170") => () => ({ status: 0, stdout: `${v} (Claude Code)\n`, stderr: "" });
+const discoverWin = (o = {}) => discoverClaudeExecutable({ platform: "win32", env: { APPDATA, PATH: "", ...(o.env ?? {}) }, fsImpl: o.fsImpl ?? fakeFs(), spawnSyncImpl: o.spawnSyncImpl ?? versionOk() });
+
+test("claude-exec: the test strings really are Thai and Lao (the test file itself is not corrupted)", () => {
+  assert.equal(THAI, THAI_ESC);
+  assert.equal(LAO, LAO_ESC);
+  assert.ok(!THAI.includes("\uFFFD") && !LAO.includes("\uFFFD"));
+});
+
+test("claude-exec: WOS_CLAUDE_EXE override wins over PATH and bundled, and never falls back silently", () => {
+  const env = { WOS_CLAUDE_EXE: "D:\\tools\\claude-custom.exe", PATH: "C:\\bin" };
+  const fsImpl = fakeFs(["D:\\tools\\claude-custom.exe", "C:\\bin\\claude.exe", bundledExe("2.1.170")], { [BUNDLED_ROOT]: ["2.1.170"] });
+  const hit = discoverWin({ env, fsImpl, spawnSyncImpl: versionOk("9.9.9") });
+  assert.equal(hit.path, "D:\\tools\\claude-custom.exe"); assert.equal(hit.source, "env"); assert.equal(hit.version, "9.9.9");
+  throwsCode(() => discoverWin({ env: { WOS_CLAUDE_EXE: "D:\\nope\\claude.exe", PATH: "C:\\bin" }, fsImpl: fakeFs(["C:\\bin\\claude.exe"]) }), "CLAUDE_NOT_FOUND");
+});
+
+test("claude-exec: PATH discovery finds claude.exe (and ignores .cmd shims that cannot be spawned without a shell)", () => {
+  const env = { PATH: "C:\\Windows;C:\\tools\\bin" };
+  const hit = discoverWin({ env, fsImpl: fakeFs(["C:\\tools\\bin\\claude.exe", bundledExe("2.1.170")], { [BUNDLED_ROOT]: ["2.1.170"] }) });
+  assert.equal(hit.path, "C:\\tools\\bin\\claude.exe"); assert.equal(hit.source, "path");
+  throwsCode(() => discoverWin({ env, fsImpl: fakeFs(["C:\\tools\\bin\\claude.cmd"]) }), "CLAUDE_NOT_FOUND");
+});
+
+test("claude-exec: bundled discovery picks the highest NUMERIC version (2.1.9 < 2.1.10), no hard-coded version", () => {
+  assert.equal(compareSemver("2.1.9", "2.1.10"), -1); assert.equal(compareSemver("2.1.10", "2.1.9"), 1); assert.equal(compareSemver("2.1.10-beta.1", "2.1.10"), -1);
+  assert.ok(["2.1.9", "2.1.10"].sort().at(-1) === "2.1.9", "a plain string sort would pick 2.1.9: that is the bug this test guards");
+  const names = ["2.1.9", "2.1.10", "2.0.99", "notes", "2.1.10-beta.1", "2.1.100x"];
+  const fsImpl = fakeFs(["2.1.9", "2.1.10", "2.0.99", "2.1.10-beta.1"].map(bundledExe), { [BUNDLED_ROOT]: names });
+  const seen = [];
+  const hit = discoverWin({ fsImpl, spawnSyncImpl: (exe) => { seen.push(exe); return { status: 0, stdout: "2.1.10 (Claude Code)", stderr: "" }; } });
+  assert.equal(hit.path, bundledExe("2.1.10")); assert.equal(hit.source, "bundled"); assert.deepEqual(seen, [bundledExe("2.1.10")]);
+  const hit2 = discoverWin({ fsImpl, spawnSyncImpl: (exe) => (exe.includes("2.1.10") ? { status: 1, stdout: "", stderr: "broken" } : { status: 0, stdout: "2.1.9 (Claude Code)", stderr: "" }) });
+  assert.equal(hit2.path, bundledExe("2.1.9"), "a broken newest bundle falls back to the next one");
+});
+
+test("claude-exec: missing executable is reported as CLAUDE_NOT_FOUND", () => {
+  throwsCode(() => discoverWin(), "CLAUDE_NOT_FOUND");
+  throwsCode(() => discoverClaudeExecutable({ platform: "win32", env: { PATH: "" }, fsImpl: fakeFs(), spawnSyncImpl: versionOk() }), "CLAUDE_NOT_FOUND");
+});
+
+test("claude-exec: --version validation failures (exit code, no version, timeout) are CLAUDE_VERSION_INVALID", () => {
+  const fsImpl = fakeFs(["C:\\bin\\claude.exe"]); const env = { PATH: "C:\\bin" };
+  throwsCode(() => discoverWin({ env, fsImpl, spawnSyncImpl: () => ({ status: 1, stdout: "", stderr: "nope" }) }), "CLAUDE_VERSION_INVALID");
+  throwsCode(() => discoverWin({ env, fsImpl, spawnSyncImpl: () => ({ status: 0, stdout: "hello world", stderr: "" }) }), "CLAUDE_VERSION_INVALID");
+  throwsCode(() => discoverWin({ env, fsImpl, spawnSyncImpl: () => ({ error: Object.assign(new Error("spawnSync ETIMEDOUT"), { code: "ETIMEDOUT" }) }) }), "CLAUDE_VERSION_INVALID");
+  throwsCode(() => discoverWin({ env: { WOS_CLAUDE_EXE: "C:\\bin\\claude.exe", PATH: "" }, fsImpl, spawnSyncImpl: () => ({ status: 2, stdout: "", stderr: "" }) }), "CLAUDE_VERSION_INVALID");
+});
+
+test("claude-exec: a valid reply becomes { text, json } (also fenced JSON and a BOM before the output)", async () => {
+  const r = await askClaudeOnce(MSG(), 30_000, "sonnet", fakeClaude("ok"));
+  assert.deepEqual(r.json, { ok: true, n: 1 }); assert.equal(r.text, '{"ok":true,"n":1}'); assert.equal(r.meta.costUsd, 0.01);
+  assert.deepEqual((await askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("fenced"))).json, { a: 1 });
+  assert.deepEqual((await askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("bom"))).json, { ok: true });
+});
+
+test("claude-exec: it satisfies the makeLlm contract (askValidated accepts it as `ask`)", async () => {
+  const { askValidated } = await import("./llm.mjs");
+  let discovered = 0;
+  const ask = makeClaudeAsk({ ...fakeClaude("ok"), executable: undefined, discover: () => { discovered++; return { path: process.execPath }; } });
+  const j1 = await askValidated({ system: "s", user: "u", timeLeft: 30_000, ask, validate: (x) => (x.ok === true ? "" : "bad") });
+  await askValidated({ system: "s", user: "u", timeLeft: 30_000, ask, validate: () => "" });
+  assert.deepEqual(j1, { ok: true, n: 1 }); assert.equal(discovered, 1, "discovery happens once, lazily");
+});
+
+test("claude-exec: malformed output is rejected (not JSON, result not JSON, not an object, CLI error, empty)", async () => {
+  await failsWith(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("badjson")), "CLAUDE_BAD_JSON");
+  await failsWith(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("badresult")), "CLAUDE_BAD_JSON");
+  await failsWith(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("array")), "CLAUDE_BAD_SCHEMA");
+  await failsWith(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("iserror")), "CLAUDE_ERROR_RESULT");
+  await failsWith(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("empty")), "CLAUDE_EMPTY");
+});
+
+test("claude-exec: non-zero exit is an error and stderr secrets are scrubbed before they reach the message", async () => {
+  await assert.rejects(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("nonzero")), (e) => {
+    assert.ok(e instanceof ClaudeExecError && e.code === "CLAUDE_EXIT");
+    assert.match(e.message, /exited with 3/); assert.match(e.message, /REDACTED/);
+    assert.ok(!e.message.includes("sk-abcdefghij") && !e.message.includes("0123456789"), e.message);
+    return true;
+  });
+});
+
+test("claude-exec: timeout kills the process and is capped by timeLeft; no time left never spawns", async () => {
+  const t0 = Date.now();
+  await failsWith(askClaudeOnce(MSG(), 1500, undefined, fakeClaude("sleep")), "CLAUDE_TIMEOUT");
+  assert.ok(Date.now() - t0 < 20_000, "the 60s sleeper must have been killed");
+  let spawned = 0;
+  await failsWith(askClaudeOnce(MSG(), 500, undefined, { ...fakeClaude("ok"), spawnImpl: () => { spawned++; throw new Error("must not spawn"); } }), "CLAUDE_TIMEOUT");
+  assert.equal(spawned, 0);
+});
+
+test("claude-exec: Thai and Lao survive stdin -> process -> stdout byte for byte; a leading BOM is stripped", async () => {
+  const prompt = `\uFEFF${THAI} / ${LAO}`;
+  const r = await askClaudeOnce([{ role: "system", content: prompt }, { role: "user", content: `${LAO} ${THAI}` }], 30_000, undefined, fakeClaude("echo"));
+  assert.ok(r.json.echo.includes(THAI) && r.json.echo.includes(LAO), "Thai and Lao reached the child intact");
+  assert.ok(r.json.echo.includes(`${LAO} ${THAI}`)); assert.ok(!r.json.echo.includes("\uFEFF")); assert.ok(!r.json.echo.includes("\uFFFD"));
+  assert.ok(!r.json.argv.join(" ").includes(THAI), "the prompt travels over stdin, never on the command line");
+});
+
+test("claude-exec: U+FFFD / lone surrogates in the input are refused before spawning; bad bytes or U+FFFD in the output are rejected", async () => {
+  let spawned = 0; const spy = { ...fakeClaude("ok"), spawnImpl: () => { spawned++; throw new Error("must not spawn"); } };
+  await failsWith(askClaudeOnce(MSG(`corrupted ${"\uFFFD"}${"\uFFFD"} text`), 30_000, undefined, spy), "CLAUDE_ENCODING");
+  await failsWith(askClaudeOnce(MSG("lone \ud800 surrogate"), 30_000, undefined, spy), "CLAUDE_ENCODING");
+  assert.equal(spawned, 0);
+  await failsWith(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("fffd")), "CLAUDE_ENCODING");
+  await failsWith(askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("badutf8")), "CLAUDE_ENCODING");
+});
+
+test("claude-exec: no permission bypass, tools disabled, prompt not on the command line (checked on the real child argv)", async () => {
+  const r = await askClaudeOnce(MSG("hello"), 30_000, "sonnet", { ...fakeClaude("echo"), maxBudgetUsd: 0.5 });
+  const argv = r.json.argv;
+  assert.ok(!argv.some((a) => /dangerously|bypass/i.test(a)), argv.join(" ")); assert.ok(!argv.includes("--permission-mode"));
+  const i = argv.indexOf("--tools"); assert.ok(i >= 0 && argv[i + 1] === "", "--tools is followed by an empty string = all tools disabled");
+  for (const [flag, value] of [["--input-format", "text"], ["--output-format", "json"]]) assert.equal(argv[argv.indexOf(flag) + 1], value);
+  for (const flag of ["--print", "--safe-mode", "--no-session-persistence"]) assert.ok(argv.includes(flag), flag);
+  assert.equal(argv[argv.indexOf("--model") + 1], "sonnet"); assert.equal(argv[argv.indexOf("--max-budget-usd") + 1], "0.5");
+  assert.ok(!argv.includes("hello") && !argv.join(" ").includes("hello"), "prompt text is not an argument");
+  const direct = buildClaudeArgs();
+  assert.ok(!direct.some((a) => /dangerously|bypass/i.test(a)) && direct[direct.indexOf("--tools") + 1] === "");
+  throwsCode(() => buildClaudeArgs({ model: "--dangerously-skip-permissions" }), "CLAUDE_BAD_ARGS");
+  throwsCode(() => buildClaudeArgs({ model: "bypassPermissions" }), "CLAUDE_BAD_ARGS");
+  throwsCode(() => buildClaudeArgs({ maxBudgetUsd: -1 }), "CLAUDE_BAD_ARGS");
+});
+
+test("claude-exec: the child never receives the WOS app secrets (env allowlist), only PATH/profile/Claude auth variables", async () => {
+  const keep = {}; const set = { LITELLM_API_KEY: "x-not-real", OPENAI_API_KEY: "x-not-real", TELEGRAM_BOT_TOKEN: "x-not-real", WOS_AI_AGENT_MODEL: "x", ANTHROPIC_TEST_FORWARD: "1" };
+  for (const k of Object.keys(set)) { keep[k] = process.env[k]; process.env[k] = set[k]; }
+  try {
+    const r = await askClaudeOnce(MSG(), 30_000, undefined, fakeClaude("echo"));
+    assert.deepEqual(r.json.leaked, []); assert.deepEqual(r.json.anthropic, ["ANTHROPIC_TEST_FORWARD"]);
+    const env = buildChildEnv({ PATH: "p", LITELLM_API_KEY: "k", SUPABASE_SERVICE_ROLE_KEY: "k", CLAUDE_CODE_X: "1" });
+    assert.deepEqual(Object.keys(env).sort(), ["CLAUDE_CODE_X", "NO_COLOR", "PATH"]);
+  } finally { for (const k of Object.keys(set)) { if (keep[k] === undefined) delete process.env[k]; else process.env[k] = keep[k]; } }
+});
+
+
+// ======================================================================================================
+// claude-exec: Windows npm shim. claude.cmd is parsed as DATA only; the native claude.exe is spawned directly
+// (no shell, argv array). Fixtures are fake file systems with explicit win32 paths, so results do not depend on the host.
+// ======================================================================================================
+import { resolveNpmShim, listClaudeOnPath, validateClaudeExecutable, CLAUDE_VERSION_RE } from "./claude-exec.mjs";
+import { EventEmitter as ShimEmitter } from "node:events";
+import { mkdirSync as shimMkdirSync, symlinkSync as shimSymlinkSync, rmSync as shimRmSync } from "node:fs";
+
+const SHIM_LAUNCH_LINE = '"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"   %*';
+const SHIM_LINES = ["@ECHO off", "GOTO start", ":find_dp0", "SET dp0=%~dp0", "EXIT /b", ":start", "SETLOCAL", "CALL :find_dp0", SHIM_LAUNCH_LINE];
+const shimText = (lines = SHIM_LINES, eol = "\r\n") => lines.join(eol) + eol;
+const NPM_DIR = "C:\\Users\\John Doe\\AppData\\Roaming\\npm";
+const NPM_CMD = `${NPM_DIR}\\claude.cmd`;
+const PKG_DIR = `${NPM_DIR}\\node_modules\\@anthropic-ai\\claude-code`;
+const NPM_EXE = `${PKG_DIR}\\bin\\claude.exe`;
+
+function shimFs({ cmds = { [NPM_CMD]: shimText() }, files = [NPM_EXE], real = {} } = {}) {
+  const byLower = new Map(Object.entries(cmds).map(([k, v]) => [k.toLowerCase(), v]));
+  const have = new Set([...byLower.keys(), ...files.map((f) => f.toLowerCase())]);
+  const text = (p) => { const t = byLower.get(String(p).toLowerCase()); if (t === undefined) throw new Error("ENOENT"); return t; };
+  return {
+    existsSync: (p) => have.has(String(p).toLowerCase()),
+    readFileSync: (p) => text(p),
+    statSync: (p) => ({ size: Buffer.byteLength(text(p), "utf8") }),
+    realpathSync: (p) => real[p] ?? String(p),
+    readdirSync: () => { throw new Error("ENOENT"); },
+  };
+}
+
+function spyClaudeSpawn(calls, reply = { ok: true }) {
+  return (command, args, options) => {
+    const rec = { command, args, options, stdin: "" }; calls.push(rec);
+    const child = new ShimEmitter(); child.stdout = new ShimEmitter(); child.stderr = new ShimEmitter(); child.kill = () => {};
+    child.stdin = {
+      on() {},
+      end(buf) {
+        rec.stdin = Buffer.from(buf).toString("utf8");
+        setImmediate(() => {
+          child.stdout.emit("data", Buffer.from(JSON.stringify({ type: "result", subtype: "success", is_error: false, result: JSON.stringify(reply) })));
+          child.emit("close", 0, null);
+        });
+      },
+    };
+    return child;
+  };
+}
+
+test("claude-exec: a valid official npm shim resolves to the native claude.exe (paths with spaces, CRLF/LF/BOM/blank lines)", () => {
+  for (const text of [shimText(), shimText(SHIM_LINES, "\n"), "\uFEFF" + shimText(), shimText(SHIM_LINES.map((l) => `  ${l}  `)), `\r\n${shimText()}\r\n\r\n`]) {
+    const d = resolveNpmShim(NPM_CMD, { fsImpl: shimFs({ cmds: { [NPM_CMD]: text } }) });
+    assert.ok(d, "official shim must resolve");
+    assert.equal(d.command, NPM_EXE); assert.equal(d.path, NPM_EXE); assert.deepEqual(d.prefixArgs, []); assert.equal(d.via, "npm-shim"); assert.equal(d.shim, NPM_CMD);
+    assert.ok(!/\.cmd$/i.test(d.command), "the resolved command is native, never the .cmd");
+  }
+});
+
+test("claude-exec: malformed or hostile shims are rejected (chaining, traversal, other targets, %COMSPEC%, extra commands, missing %*, empty, NUL, oversize)", () => {
+  const L = SHIM_LAUNCH_LINE, head = SHIM_LINES.slice(0, -1);
+  const variants = {
+    amp: [...head, `${L} & calc`], andand: [...head, `${L} && calc`], oror: [...head, `${L} || calc`], pipe: [...head, `${L} | more`], redirect: [...head, `${L} > out.txt`],
+    traversal: [...head, '"%dp0%\\..\\..\\evil.exe"   %*'],
+    traversal2: [...head, '"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\..\\..\\..\\..\\evil.exe"   %*'],
+    arbitrary: [...head, '"C:\\Windows\\System32\\calc.exe"   %*'], otherPkg: [...head, '"%dp0%\\node_modules\\other\\bin\\tool.exe"   %*'],
+    comspec: [...head, "%COMSPEC% /c calc"], comspecLaunch: [...head, '"%COMSPEC%"   %*'], envExpansion: [...head, '"%dp0%\\node_modules\\@anthropic-ai\\%PKG%\\bin\\claude.exe"   %*'],
+    otherCall: [...head, "CALL C:\\evil.bat", L], extraCommandBefore: [...head, "calc.exe", L], extraCommandAfter: [...SHIM_LINES, "ECHO done"],
+    extraLaunch: [...SHIM_LINES, L], noForward: [...head, '"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"'],
+    wrongForward: [...head, '"%dp0%\\node_modules\\@anthropic-ai\\claude-code\\bin\\claude.exe"   %1'], echoChain: ["@ECHO off & calc", ...SHIM_LINES.slice(1)],
+    noDp0: SHIM_LINES.filter((l) => !/^SET dp0/.test(l)), noLaunch: head, empty: [""], oversize: [...SHIM_LINES, "x".repeat(5000)],
+  };
+  for (const [name, lines] of Object.entries(variants)) assert.equal(resolveNpmShim(NPM_CMD, { fsImpl: shimFs({ cmds: { [NPM_CMD]: shimText(lines) } }) }), null, `variant ${name} must be rejected`);
+  assert.equal(resolveNpmShim(NPM_CMD, { fsImpl: shimFs({ cmds: { [NPM_CMD]: shimText() + "\0" } }) }), null, "NUL byte");
+  assert.equal(resolveNpmShim(NPM_CMD, { fsImpl: shimFs({ cmds: { [NPM_CMD]: "" } }) }), null, "empty file");
+  for (const p of ["claude.cmd", `${NPM_DIR}\\claude.ps1`, `${NPM_DIR}\\claude.bat`, `${NPM_DIR}\\claude`, "\\\\server\\share\\claude.cmd", undefined, 42]) assert.equal(resolveNpmShim(p, { fsImpl: shimFs() }), null, String(p));
+});
+
+test("claude-exec: missing target and realpath escapes are rejected (junction out of the package, out of node_modules, lookalike folder, wrong basename)", () => {
+  assert.equal(resolveNpmShim(NPM_CMD, { fsImpl: shimFs({ files: [] }) }), null, "missing target");
+  const escapes = {
+    exeOutside: { [NPM_EXE]: "D:\\evil\\claude.exe" },
+    pkgJunction: { [PKG_DIR]: "D:\\evil\\pkg", [NPM_EXE]: "D:\\evil\\pkg\\bin\\claude.exe" },
+    dirElsewhere: { [NPM_DIR]: "E:\\other" },
+    lookalike: { [NPM_EXE]: `${NPM_DIR}\\node_modules\\@anthropic-ai\\claude-code-evil\\bin\\claude.exe` },
+    wrongName: { [NPM_EXE]: `${PKG_DIR}\\bin\\evil.exe` },
+    pkgOutsideNodeModules: { [PKG_DIR]: `${NPM_DIR}\\somewhere\\claude-code`, [NPM_EXE]: `${NPM_DIR}\\somewhere\\claude-code\\bin\\claude.exe` },
+  };
+  for (const [name, real] of Object.entries(escapes)) assert.equal(resolveNpmShim(NPM_CMD, { fsImpl: shimFs({ real }) }), null, `escape ${name}`);
+  const caseOnly = resolveNpmShim(NPM_CMD, { fsImpl: shimFs({ real: { [NPM_EXE]: NPM_EXE.toUpperCase() } }) });
+  assert.ok(caseOnly && caseOnly.command === NPM_EXE.toUpperCase(), "Windows paths are case-insensitive: a case-only difference is still inside the package");
+});
+
+test("claude-exec: PATH discovery with claude.cmd (npm shim), claude.exe priority, and malformed shim skipped for the next candidate", () => {
+  const env = { PATH: NPM_DIR };
+  const hit = discoverWin({ env, fsImpl: shimFs(), spawnSyncImpl: versionOk("2.1.302") });
+  assert.equal(hit.via, "npm-shim"); assert.equal(hit.source, "path"); assert.equal(hit.command, NPM_EXE); assert.equal(hit.path, NPM_EXE); assert.deepEqual(hit.prefixArgs, []); assert.equal(hit.version, "2.1.302");
+  const both = shimFs({ files: [NPM_EXE, `${NPM_DIR}\\claude.exe`] });
+  const pick = discoverWin({ env, fsImpl: both, spawnSyncImpl: versionOk("2.1.302") });
+  assert.equal(pick.command, `${NPM_DIR}\\claude.exe`); assert.equal(pick.via, "exe");
+  assert.deepEqual(listClaudeOnPath({ env, platform: "win32", fsImpl: both }).map((d) => d.via), ["exe"]);
+  const bad = "C:\\bad dir", good = "C:\\good dir";
+  const mixed = shimFs({ cmds: { [`${bad}\\claude.cmd`]: shimText([...SHIM_LINES, "calc"]), [NPM_CMD]: shimText() }, files: [NPM_EXE, `${good}\\claude.exe`] });
+  const next = discoverWin({ env: { PATH: `${bad};${good};${NPM_DIR}` }, fsImpl: mixed, spawnSyncImpl: versionOk() });
+  assert.equal(next.command, `${good}\\claude.exe`, "the malformed shim is skipped and the next candidate wins");
+  const onlyBad = shimFs({ cmds: { [`${bad}\\claude.cmd`]: shimText([...SHIM_LINES, "calc"]) }, files: [] });
+  throwsCode(() => discoverWin({ env: { PATH: bad }, fsImpl: onlyBad }), "CLAUDE_NOT_FOUND");
+  const seen = [];
+  discoverWin({ env, fsImpl: shimFs(), spawnSyncImpl: (cmd, args, opts) => { seen.push({ cmd, args, opts }); return { status: 0, stdout: "2.1.302 (Claude Code)\r\n", stderr: "" }; } });
+  assert.equal(seen.length, 1); assert.equal(seen[0].cmd, NPM_EXE); assert.deepEqual(seen[0].args, ["--version"]); assert.ok(seen[0].opts.shell !== true);
+});
+
+test("claude-exec: WOS_CLAUDE_EXE=.cmd resolves an official shim; a malformed .cmd, .ps1 or .bat override fails closed without falling back", () => {
+  const exeOnPath = `C:\\bin\\claude.exe`;
+  const hit = discoverWin({ env: { WOS_CLAUDE_EXE: NPM_CMD, PATH: "" }, fsImpl: shimFs(), spawnSyncImpl: versionOk("2.1.302") });
+  assert.equal(hit.source, "env"); assert.equal(hit.via, "npm-shim"); assert.equal(hit.command, NPM_EXE);
+  const hit2 = discoverWin({ env: { WOS_CLAUDE_EXE: `"${NPM_CMD}"`, PATH: "" }, fsImpl: shimFs(), spawnSyncImpl: versionOk("2.1.302") });
+  assert.equal(hit2.command, NPM_EXE, "surrounding quotes are tolerated");
+  const evil = shimFs({ cmds: { [NPM_CMD]: shimText([...SHIM_LINES.slice(0, -1), `${SHIM_LAUNCH_LINE} & calc`]) }, files: [NPM_EXE, exeOnPath] });
+  throwsCode(() => discoverWin({ env: { WOS_CLAUDE_EXE: NPM_CMD, PATH: "C:\\bin" }, fsImpl: evil }), "CLAUDE_UNSUPPORTED_SHIM");
+  for (const ext of ["ps1", "bat", "js"]) {
+    const f = `${NPM_DIR}\\claude.${ext}`;
+    throwsCode(() => discoverWin({ env: { WOS_CLAUDE_EXE: f, PATH: "C:\\bin" }, fsImpl: shimFs({ files: [NPM_EXE, f, exeOnPath] }) }), "CLAUDE_UNSUPPORTED_SHIM");
+  }
+  throwsCode(() => discoverWin({ env: { WOS_CLAUDE_EXE: `${NPM_DIR}\\missing.cmd`, PATH: "" }, fsImpl: shimFs() }), "CLAUDE_NOT_FOUND");
+});
+
+test("claude-exec: strict Claude Code identity: '2.1.302 (Claude Code)' passes; bare versions and other products fail", () => {
+  const run = (stdout) => validateClaudeExecutable({ command: NPM_EXE, prefixArgs: [] }, { spawnSyncImpl: () => ({ status: 0, stdout, stderr: "" }) });
+  assert.equal(run("2.1.302 (Claude Code)").version, "2.1.302"); assert.equal(run("2.1.302 (Claude Code)\r\n").version, "2.1.302");
+  assert.equal(run("\uFEFF2.1.302-beta.1 (Claude Code)").version, "2.1.302-beta.1"); assert.equal(run("2.1.302 (Claude Code)\nextra line").version, "2.1.302");
+  for (const bad of ["2.1.302", "1.0.0 (Something Else)", "hello 2.1.302 (Claude Code)", "(Claude Code)", "Claude Code 2.1.302", "", "2.1 (Claude Code)"]) throwsCode(() => run(bad), "CLAUDE_VERSION_INVALID");
+  assert.ok(CLAUDE_VERSION_RE.test("2.1.302 (Claude Code)") && !CLAUDE_VERSION_RE.test("2.1.302"));
+  const calls = [];
+  validateClaudeExecutable({ command: "x.exe", prefixArgs: ["a.js"] }, { spawnSyncImpl: (c, a, o) => { calls.push({ c, a, o }); return { status: 0, stdout: "1.0.0 (Claude Code)", stderr: "" }; } });
+  assert.deepEqual(calls[0].a, ["a.js", "--version"]); assert.equal(calls[0].o.shell, false);
+});

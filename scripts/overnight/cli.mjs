@@ -5,7 +5,7 @@ import { createGuard, DEFAULT_WRITE_SCOPE, parseDuration } from "./guard.mjs";
 import { runGate } from "./gate.mjs";
 import { supervise, formatReport, DEFAULTS } from "./supervisor.mjs";
 
-const VALUE_FLAGS = new Set(["--task", "--task-file", "--max-iterations", "--timeout", "--failure-limit", "--no-improve-limit", "--scope", "--file", "--base-url", "--model", "--max-context-kb", "--max-files", "--max-lines"]);
+const VALUE_FLAGS = new Set(["--task", "--task-file", "--max-iterations", "--timeout", "--failure-limit", "--no-improve-limit", "--scope", "--file", "--base-url", "--model", "--provider", "--max-context-kb", "--max-files", "--max-lines"]);
 const PROFILES = {
   agent: { name: "ai:agent", maxIterations: 4, timeout: "45m", maxContextKb: 24 },
   overnight: { name: "ai:overnight", maxIterations: DEFAULTS.maxIterations, timeout: "6h", maxContextKb: 60 },
@@ -32,6 +32,7 @@ export async function main(argv, profileName = "agent") {
   --focus                show the model ONLY --file files + files named in failing tests (small prompt for slow/local models)
   --max-context-kb <n>   cap on source sent per model call (default ${P.maxContextKb})
   --model <name>         LiteLLM model (default: WOS_AI_AGENT_MODEL / LITELLM_MODEL)
+  --provider <name>      LLM provider: litellm or claude (default: WOS_AI_AGENT_PROVIDER / litellm)
   --base-url <url>       dev server for ai-regression-test.mjs
   --build                also require 'npm run build' to pass
   --skip-regression      do not require ai-regression-test.mjs (reported as skipped, never as passed)
@@ -54,7 +55,15 @@ export async function main(argv, profileName = "agent") {
 
   const contract = !flag("--no-contract");
   const { makeLlm } = await import("./llm.mjs");
-  const llm = makeLlm({ guard, extraFiles: all("--file"), model: val("--model"), focus: flag("--focus"), maxContextKb: Number(val("--max-context-kb", P.maxContextKb)), contract });
+  const provider = val("--provider", process.env.WOS_AI_AGENT_PROVIDER || "litellm").toLowerCase();
+  if (!["litellm", "claude"].includes(provider)) {
+    console.error(`Unsupported AI agent provider: ${provider}. Use "litellm" or "claude".`);
+    return 1;
+  }
+  const ask = provider === "claude"
+    ? (await import("./claude-exec.mjs")).makeClaudeAsk()
+    : undefined;
+  const llm = makeLlm({ guard, extraFiles: all("--file"), model: val("--model"), ask, focus: flag("--focus"), maxContextKb: Number(val("--max-context-kb", P.maxContextKb)), contract });
   const artifactsDir = path.resolve(".overnight", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(artifactsDir, { recursive: true });
 
