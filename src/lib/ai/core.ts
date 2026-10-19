@@ -941,6 +941,8 @@ export async function runWosAI(
     // program selection must enter catalog discovery, not booking/name
     // collection. Keep this before every model/knowledge path so a small
     // model cannot reinterpret "ສົນໃຈ" as confirmation of a stale journey.
+    const earlyJourneyState = deriveWosJourneyState(history, userMessage);
+
     const bareInterestMessage = /^(?:สนใจ|ต้องการ|เอา|yes|yeah|yep|sure|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(userMessage.trim());
     if (bareInterestMessage) {
       const resetPattern = /^(?:เริ่มข้อมูลใหม่|เริ่มใหม่|เริ่มคุยใหม่|จองใหม่(?:เลย)?|ล้างข้อมูล(?:เดิม)?|เริ่มการจองใหม่|start over|start new|new booking|new journey|reset|clear previous|clear data|ລ້າງຂໍ້ມູນເກົ່າ|ລ້າງຂໍ້ມູນ|ເລີ່ມໃໝ່|ຈອງໃໝ່)$/iu;
@@ -965,7 +967,7 @@ export async function runWosAI(
       // Do not let the broad bare-interest catalog guard intercept "สนใจครับ".
       const hasConcreteProgramDetail = /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(lastAssistant) &&
         /[0-9]+[.)].+(?:—|-|–).+/u.test(lastAssistant);
-      if (!hasProgramContext && !isOptionalServiceContinuation && !hasConcreteProgramDetail) {
+      if (!earlyJourneyState.selectedProgram && !hasProgramContext && !isOptionalServiceContinuation && !hasConcreteProgramDetail) {
         const language = detectWosLanguage(userMessage, history.filter((message) => message.role === 'user').map((message) => message.content));
         try {
           const items = await searchHealthProgramOverview(5);
@@ -1598,6 +1600,19 @@ export async function runWosAI(
       recentOptions
     );
 
+    // Canonical journey state is the source of truth for an earlier selection.
+    // Keep it for follow-ups, but let explicit catalog/topic requests switch away.
+    const activeSelectedProgram =
+      selectedOption?.label ??
+      (
+        journeyState.selectedProgram &&
+        !isProgramOverviewQuestion(userMessage) &&
+        !isCatalogChoiceQuestion(userMessage) &&
+        !isProgramTopicRequest(userMessage)
+          ? journeyState.selectedProgram
+          : undefined
+      );
+
     // A numeric/indexed selection is deterministic conversation state. Resolve
     // it directly against the live catalog so a small model cannot turn "1"
     // back into a broad search or ask the customer to confirm the selection.
@@ -1904,8 +1919,8 @@ CONTACT INFO RULE:
     // Drop assistant turns that are leaked tool-call JSON (already sent to
     // customers before the output guard existed) so the model does not
     // imitate its own earlier mistake.
-    const modelUserMessage = selectedOption
-      ? `ลูกค้าเลือกโปรแกรม "${selectedOption.label}" จากรายการก่อนหน้า`
+    const modelUserMessage = activeSelectedProgram
+      ? `The customer previously selected program "${activeSelectedProgram}" and is continuing that program context with: ${userMessage}`
       : userMessage;
 
     const messages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
@@ -2020,7 +2035,7 @@ CONTACT INFO RULE:
     // function-call response even for greetings. We therefore search the
     // verified catalog first and only use model tools for workflows that
     // genuinely need them (currently hotel availability).
-    if (!shouldForceHotelAvailability(modelUserMessage) && !selectedOption) {
+    if (!shouldForceHotelAvailability(modelUserMessage) && !activeSelectedProgram) {
       try {
         const catalogQuery = customerLanguage === 'lo'
           ? normalizeLaoCatalogQuery(userMessage)
