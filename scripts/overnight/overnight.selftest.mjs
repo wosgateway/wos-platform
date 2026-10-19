@@ -65,7 +65,8 @@ test("guard: applyEdits is atomic, exact-match, and blocks secrets", () => {
 test("helpers: duration, scrub, parsers", () => {
   assert.equal(parseDuration("6h"), 21_600_000); assert.equal(parseDuration("1h30m"), 5_400_000); assert.equal(parseDuration("45"), 2_700_000);
   assert.throws(() => parseDuration("soon"));
-  assert.ok(!scrub("OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz123").includes("abcdefgh"));
+  const fakeApiKey = "sk-" + "abcdefghijklmnopqrstuvwxyz123";
+  assert.ok(!scrub("OPENAI_API_KEY=" + fakeApiKey).includes("abcdefgh"));
   assert.deepEqual(parseTsc("src/a.ts(10,5): error TS2322: Type 'x' is not assignable."), ["src/a.ts::TS2322::Type 'x' is not assignable."]);
   const j = JSON.stringify({ numTotalTests: 2, numFailedTests: 1, testResults: [{ name: "/r/src/a.test.ts", status: "failed", assertionResults: [{ status: "failed", fullName: "a b" }, { status: "passed", fullName: "ok" }] }] });
   assert.deepEqual(parseVitestJson("noise\n" + j + "\n", "/r").ids, ["src/a.test.ts::a b"]);
@@ -375,7 +376,7 @@ else if (mode === "badresult") reply("definitely not json");
 else if (mode === "array") reply("[1,2,3]");
 else if (mode === "iserror") process.stdout.write(JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, result: "stopped" }));
 else if (mode === "empty") { /* no output at all */ }
-else if (mode === "nonzero") { process.stderr.write("boom API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789 failed"); process.exit(3); }
+else if (mode === "nonzero") { process.stderr.write("boom API_KEY=" + ("sk-" + "abcdefghijklmnopqrstuvwxyz0123456789") + " failed"); process.exit(3); }
 else if (mode === "sleep") setTimeout(() => {}, 60000);
 else if (mode === "fffd") reply({ text: "bad " + String.fromCharCode(0xfffd) });
 else if (mode === "badutf8") process.stdout.write(Buffer.from([0x7b, 0xff, 0x7d]));
