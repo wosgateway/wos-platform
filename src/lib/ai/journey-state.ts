@@ -1,3 +1,5 @@
+import { normalizeSelectionInput } from './selection-lexical';
+import { buildHandoffConfirmation } from '../handoff/concierge';
 import type { WosLanguage } from './language-dictionary';
 import type { WosAIHistoryMessage } from './core';
 
@@ -33,14 +35,22 @@ export type WosJourneyState = {
   hotelRooms?: number;
   /**
    * The single optional-service question Fern's immediately preceding turn was
-   * waiting on. Short replies ("สนใจ", "ไม่เอา") may only ever bind to this.
+   * waiting on. This field describes the immediate assistant turn only.
    */
   pendingQuestion?: WosAddonQuestion;
+  /** Unresolved question before this turn, retained across social interruptions. */
+  activePendingQuestion?: WosAddonQuestion;
   /**
    * Which pending question the CURRENT customer message actually answered
    * (undefined when it answered nothing, e.g. "ขอบคุณ").
    */
   answeredQuestion?: WosAddonQuestion;
+  /**
+   * Explicit service wording in the CURRENT message only (never accumulated):
+   * true = requests/accepts the service, false = declines it, absent = no explicit
+   * preference for that service in this message.
+   */
+  currentTurnAddon?: { transport?: boolean; hotel?: boolean };
 };
 
 export type WosAddonQuestion = 'name' | 'transport' | 'pickup' | 'hotel';
@@ -251,7 +261,136 @@ function isGenericProgramRequest(message: string): boolean {
     || /(?:โปรแกรม|บริการ)\s*(?:อะไร|ไหน|อะไรบ้าง|ไหนบ้าง)/iu.test(text);
 }
 
+/** Named selection syntax shared by core validation and journey reconstruction. */
+export function extractExplicitProgramTitle(message: string): string | undefined {
+  const text = message.trim();
+  // Lao wording enters the same selection syntax through the shared canonical catalog normalization.
+  const canonical = /[\u0e80-\u0eff]/u.test(text) ? normalizeSelectionInput(text).trim() : text;
+  return canonical.match(/^(?:เลือก|เอา|ต้องการ|choose|interested in)\s*["“]?([^"”\n]+?)["”]?$/iu)?.[1]?.trim();
+}
+
+const JOURNEY_WORDS = new Intl.Segmenter('th', { granularity: 'word' });
+
+/** A service token must span complete words, including in unspaced Thai text. */
+function hasWordBoundedMatch(text: string, pattern: RegExp): boolean {
+  const boundaries = new Set<number>();
+  for (const word of JOURNEY_WORDS.segment(text)) {
+    if (!word.isWordLike) continue;
+    boundaries.add(word.index);
+    boundaries.add(word.index + word.segment.length);
+  }
+  for (const match of text.matchAll(new RegExp(pattern.source, `${pattern.flags}g`))) {
+    if (boundaries.has(match.index!) && boundaries.has(match.index! + match[0].length)) return true;
+  }
+  return false;
+}
+
+const BARE_NAME_PATTERN = /^[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60}$/u;
+
+const NON_NAME_VOCAB = /(?:จอง|booking|book|reserve|ตรวจ|โปรแกรม|บริการ|สนใจ|ต้องการ|เอา|รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้อง|เวียงจันทน์|อุดร|หนองคาย|ขอนแก่น|travel|trip|transport|hotel|ຈອງ|ກວດ|ໂຮງແຮມ|ລົດ|ສົນໃຈ|ຕ້ອງການ|นวด|สปา|\bspa\b|massage|ผ่าตัด|ศัลยกรรม|รักษา|หมอ|แพทย์|คลินิก|โรงพยาบาล|แพ็กเกจ|แพคเกจ|package|ราคา|เท่าไร|เท่าไหร่|สวัสดี|หวัดดี|ขอบคุณ|ทำไม|อะไร|ยังไง|อย่างไร|ไหม|มั้ย|หรือ|ที่ไหน|เมื่อไร|วันนี้|พรุ่งนี้|อากาศ|\b(?:hello|hi|hey)\b)/iu;
+
+/**
+ * Single semantic for "this user turn is a customer-name answer".
+ *  - explicit: the turn states a name ("ชื่อสมชาย", "ผมชื่อ ...").
+ *  - bare: the turn is only a name AND an unresolved assistant question asked for a name.
+ * Pending `name` alone is never enough: reset, catalog discovery, add-on interest/answers,
+ * thanks, provinces/locations and service/program words are NOT name answers.
+ * Both `customerName` derivation and `selectedProgram` carry-over use this helper.
+ */
+function classifyNameAnswer(nameAsked: boolean, message: string): { kind: 'explicit' | 'bare'; name: string } | undefined {
+  const text = message.trim();
+  if (!text) return undefined;
+  if (isJourneyResetMessage(text) || isGenericProgramRequest(text) || isAddonInterestMessage(text)) return undefined;
+  const explicit = findCustomerName([text]);
+  if (explicit) return { kind: 'explicit', name: explicit };
+  if (!nameAsked || isSelectionTurn(text)) return undefined;
+  if (!BARE_NAME_PATTERN.test(text) || hasWordBoundedMatch(text, NON_NAME_VOCAB)) return undefined;
+  if (isTransparentInterruption(text) || isShortAffirmative(text) || isShortNegative(text)) return undefined;
+  if (LOCATION_ALIASES[text] !== undefined || findProvince([text])) return undefined;
+  return { kind: 'bare', name: text };
+}
+
+/**
+ * Program selection is journey state, so it must survive turns that do not touch it.
+ * `selectionFromTurn` reads the selection a single turn establishes; this wrapper carries the
+ * previous turn's selection across ordinary turns until an existing intentional
+ * journey boundary clears it or a new selection replaces it.
+ * Dependency order is one-way: this reads add-on state; add-on state never reads selection.
+ */
 function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = ''): { title: string; provider?: string } | undefined {
+  // Scope every legacy selection lookup, including numeric/catalog/summary recovery.
+  // No lookup may cross a user turn that ended the previous journey context.
+  let scoped = history;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role !== 'user') continue;
+    const text = history[i].content;
+    if (isSelectionTurn(text) && !/^\d{1,2}[.)]?$/.test(text.trim())) {
+      const next = history[i + 1];
+      if (next && (next.role !== 'assistant' || !hasSelectionAcceptance(next.content))) {
+        scoped = history.slice(i + 1);
+        break;
+      }
+    }
+    if (isCatalogSelection(history.slice(0, i), text)) { scoped = history.slice(Math.max(0, i - 1)); break; }
+    if (isSelectionTurn(text)) { scoped = history.slice(/^\d{1,2}[.)]?$/.test(text.trim()) ? Math.max(0, i - 1) : i); break; }
+    if (!carriesJourneyTurn(history.slice(0, i), text)) {
+      scoped = history.slice(i + 1); break;
+    }
+  }
+  if (!isSelectionTurn(currentMessage) && !isCatalogSelection(scoped, currentMessage) && !carriesJourneyTurn(scoped, currentMessage)) return undefined;
+  const direct = selectionFromTurn(isSelectionTurn(currentMessage) && !/^\d/.test(currentMessage.trim()) ? [] : scoped, currentMessage);
+  if (direct) return direct;
+  for (let i = scoped.length - 1; i >= 0; i--) {
+    if (scoped[i].role !== 'user') continue;
+    return latestSelectedProgram(scoped.slice(0, i), scoped[i].content);
+  }
+  return undefined;
+}
+
+/** A bare title selects only an actual option in the immediately preceding catalog. */
+function isCatalogSelection(history: WosAIHistoryMessage[], text: string): boolean {
+  const previous = history[history.length - 1];
+  if (previous?.role !== 'assistant') return false;
+  const candidate = text.trim().toLocaleLowerCase();
+  const aliases: Record<string, string[]> = {
+    'ตรวจเข่า': ['ກວດເຂົ່າ', 'ກວດຫົວເຂົ່າ'],
+    'ตรวจสุขภาพ': ['ກວດສຸຂະພາບ', 'ກວດສຸຂະພາບທົ່ວໄປ'],
+  };
+  return [...previous.content.matchAll(/^\s*\d+[.)]\s*(.+)$/gm)].some((match) => {
+    const title = match[1].split(/\s+[—–-]\s+/u)[0].trim();
+    return candidate === title.toLocaleLowerCase() || (aliases[title] ?? []).includes(candidate);
+  });
+}
+
+function isSelectionTurn(text: string): boolean {
+  return !isJourneyResetMessage(text) && !isGenericProgramRequest(text) && !isAddonInterestMessage(text)
+    && (Boolean(extractExplicitProgramTitle(text)) || /^\d{1,2}[.)]?$/u.test(text.trim()));
+}
+
+function carriesJourneyTurn(history: WosAIHistoryMessage[], text: string): boolean {
+  return !isJourneyContextBoundary(text, deriveActivePendingQuestion(history));
+}
+
+function hasProgramDetail(content: string): boolean {
+  return /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(content)
+    && /(?:^|\n)\s*(?:\d+[.)]\s*)?[^\n]{2,80}?\s+(?:—|-)\s+/u.test(content);
+}
+
+function hasStructuredPlainProgramDetail(content: string): boolean {
+  const price = /(?:ราคา(?:โปรโมชั่น|ปกติ)?|ລາຄາ(?:ໂປຣໂມຊັນ|ປົກກະຕິ)?|(?:Promotional )?Price:)\s+\d[\d,]*(?:\.\d+)?\s+(?:บาท|ບາດ|THB)/iu;
+  const duration = /(?:ระยะเวลา|ໄລຍະເວລາ|Duration:)\s+\d+(?:\.\d+)?\s+(?:นาที|ชั่วโมง|ນາທີ|ຊົ່ວໂມງ|minutes?|hours?)(?![\p{L}\p{M}\p{N}])/iu;
+  return price.test(content) && duration.test(content);
+}
+
+function hasSelectionAcceptance(content: string): boolean {
+  return classifyAssistantQuestion(content) !== undefined
+    || (['th', 'lo', 'en'] as const).some(language => content.trim() === buildHandoffConfirmation(language).trim())
+    || /(?:^|\n)\s*[•*-]\s*(?:โปรแกรม|ໂປຣແກຣມ|selected program)\s*:\s*([^\n]+)/iu.test(content)
+    || hasProgramDetail(content)
+    || hasStructuredPlainProgramDetail(content);
+}
+
+function selectionFromTurn(history: WosAIHistoryMessage[], currentMessage = ''): { title: string; provider?: string } | undefined {
   const optionMessages = history.filter((m) => m.role === 'assistant');
   const latest = [...optionMessages].reverse().find((message) => /\d/.test(message.content));
   const selectedIndex = currentMessage.trim().match(/^(\d{1,2})[.)]?$/)?.[1];
@@ -308,8 +447,7 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   const bareSelectionAffirmative = !pendingAddonQuestion && /^(?:สนใจ|ต้องการ|เอา|ขอ|ใช่|yes|y|ok|okay|interested|ສົນໃຈ|ຕ້ອງການ|ເອົາ|ແມ່ນ)(?:ครับ|ค่ะ|คะ|ครับผม)?$/iu.test(currentMessage.trim());
   if (bareSelectionAffirmative) {
     const latestConcreteProgram = [...optionMessages].reverse().find((message) =>
-      /(?:ราคาโปรโมชั่น|ราคาปกติ|ระยะเวลา|provider|ผู้ให้บริการ|ລາຄາ|ໄລຍະເວລາ)/iu.test(message.content) &&
-      /(?:^|\n)\s*(?:\d+[.)]\s*)?[^\n]{2,80}?\s+(?:—|-)\s+/u.test(message.content)
+      hasProgramDetail(message.content)
     );
     if (latestConcreteProgram) {
       const firstProgramLine = latestConcreteProgram.content
@@ -401,9 +539,9 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   // "สนใจ ..." without a prior catalog option is an interest/topic
   // signal, not a confirmed selection. Let the catalog router show the
   // matching program first; selection becomes explicit after an option list.
-  const named = currentMessage.match(/(?:เลือก|เอา|ต้องการ|interested in|choose)\s*["“]?([^"”\n]+?)["”]?(?:\s|$)/iu);
-  if (named?.[1] && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(named[1].trim())) {
-    return { title: named[1].trim() };
+  const namedTitle = extractExplicitProgramTitle(currentMessage);
+  if (namedTitle && !/^(?:รายการนี้|ตัวนี้|อันนี้|this one|this item)$/iu.test(namedTitle)) {
+    return { title: namedTitle };
   }
 
   // "รายการนี้/อันนี้/this one" means keep the most recent explicit
@@ -477,6 +615,12 @@ function lastMatchSpan(pattern: RegExp, text: string): { start: number; end: num
  * Fern asks one question at a time.
  */
 export function classifyAssistantQuestion(text: string): WosAddonQuestion | undefined {
+  const question = classifyAssistantQuestionDetail(text);
+  return question === 'ambiguous' ? undefined : question;
+}
+
+// Preserve the public classifier contract while distinguishing ambiguity from no question.
+function classifyAssistantQuestionDetail(text: string): WosAddonQuestion | 'ambiguous' | undefined {
   if (!text) return undefined;
   const candidates = ([
     ['transport', TRANSPORT_ASK],
@@ -496,7 +640,7 @@ export function classifyAssistantQuestion(text: string): WosAddonQuestion | unde
     if (sibling) {
       const between = text.slice(Math.min(sibling.span.end, last.span.start), last.span.start);
       const sameQuestion = last.span.start - sibling.span.end <= 20 && !/[?？!\n。]/u.test(between);
-      if (sameQuestion) return undefined;
+      if (sameQuestion) return 'ambiguous';
     }
   }
   return last.type;
@@ -575,7 +719,7 @@ function looksLikePickupAnswer(text: string): boolean {
   const t = text.trim();
   if (t.length < 2 || t.length > 120) return false;
   if (isShortAffirmative(t) || isShortNegative(t)) return false;
-  if (isThanksMessage(t) || isJourneyResetMessage(t)) return false;
+  if (isTransparentInterruption(t) || isJourneyResetMessage(t)) return false;
   if (PURE_ACK_RE.test(normalizeShortReply(t))) return false;
   if (/[?？]\s*$/u.test(t) || NOT_A_PLACE.test(t)) return false;
   if (isGenericProgramRequest(t)) return false;
@@ -623,8 +767,10 @@ function applyAddonTurn(
   if (transportExplicit === true) next.transportNeeded = true;
   if (transportExplicit === false) declineTransport();
   if (hotelExplicit !== undefined) next.hotelNeeded = hotelExplicit;
-  if (question === 'transport' && transportExplicit !== undefined) answered = 'transport';
-  if (question === 'hotel' && hotelExplicit !== undefined) answered = 'hotel';
+  // An explicit service preference answers that service in the current turn, even when the
+  // previously pending question was about something else (e.g. `name`).
+  if (transportExplicit !== undefined) answered = 'transport';
+  if (hotelExplicit !== undefined) answered = 'hotel';
 
   // 2. A short or free-text reply binds ONLY to the question that was just asked.
   if (question === 'transport' && transportExplicit === undefined) {
@@ -664,29 +810,29 @@ function applyAddonTurn(
 
 function deriveAddonState(history: WosAIHistoryMessage[], currentMessage: string): AddonSlots & {
   pendingQuestion?: WosAddonQuestion;
+  activePendingQuestion?: WosAddonQuestion;
   answeredQuestion?: WosAddonQuestion;
+  currentTurnAddon?: { transport?: boolean; hotel?: boolean };
 } {
-  const messages: WosAIHistoryMessage[] = [...history, { role: 'user', content: currentMessage }];
-  let slots: AddonSlots = {};
-  let answeredQuestion: WosAddonQuestion | undefined;
-
-  for (let i = 0; i < messages.length; i++) {
-    const message = messages[i];
-    if (message.role === 'assistant') {
-      const seeded = parseSummarySlots(message.content);
-      if (seeded) slots = { ...slots, ...seeded };
-      continue;
-    }
-    const previous = messages[i - 1];
-    const question = previous?.role === 'assistant' ? classifyAssistantQuestion(previous.content) : undefined;
-    const result = applyAddonTurn(slots, question, message.content);
-    slots = result.slots;
-    if (i === messages.length - 1) answeredQuestion = result.answered;
-  }
+  const replay = replayAddonHistory(history);
+  const activePendingQuestion = replay.open;
+  const question = isJourneyContextBoundary(currentMessage, replay.open) ? undefined : replay.open;
+  const result = applyAddonTurn(replay.slots, question, currentMessage);
+  const slots = result.slots;
+  const answeredQuestion = result.answered;
 
   const lastHistory = history[history.length - 1];
   const pendingQuestion = lastHistory?.role === 'assistant' ? classifyAssistantQuestion(lastHistory.content) : undefined;
-  return { ...slots, pendingQuestion, answeredQuestion };
+  // CURRENT message only: explicit service wording, same helper applyAddonTurn uses.
+  const currentTransport = explicitServicePreference(currentMessage.trim(), TRANSPORT_NOUN);
+  const currentHotel = explicitServicePreference(currentMessage.trim(), HOTEL_NOUN);
+  const currentTurnAddon = currentTransport === undefined && currentHotel === undefined
+    ? undefined
+    : {
+        ...(currentTransport !== undefined ? { transport: currentTransport } : {}),
+        ...(currentHotel !== undefined ? { hotel: currentHotel } : {}),
+      };
+  return { ...slots, pendingQuestion, activePendingQuestion, answeredQuestion, currentTurnAddon };
 }
 
 export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMessage: string): WosJourneyState {
@@ -716,25 +862,24 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
 
   const selected = latestSelectedProgram(effectiveHistory, currentMessage);
   const explicitCustomerName = findCustomerName(allTexts);
-  const lastAssistantMessage = [...effectiveHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-  const bareNamePattern = /^[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60}$/u;
-  const nameRequestPattern = /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu;
-  let bareCustomerName: string | undefined;
+  let likelyBareCustomerName: string | undefined;
   if (!explicitCustomerName) {
-    if (nameRequestPattern.test(lastAssistantMessage) && bareNamePattern.test(currentMessage.trim())) {
-      bareCustomerName = currentMessage.trim();
+    const currentAnswer = classifyNameAnswer(deriveActivePendingQuestion(effectiveHistory) === 'name', currentMessage);
+    if (currentAnswer?.kind === 'bare') {
+      likelyBareCustomerName = currentAnswer.name;
     } else {
       for (let i = effectiveHistory.length - 1; i >= 1; i--) {
-        if (effectiveHistory[i].role !== 'user' || !bareNamePattern.test(effectiveHistory[i].content.trim())) continue;
+        if (effectiveHistory[i].role !== 'user') continue;
         const previousAssistant = effectiveHistory[i - 1];
-        if (previousAssistant?.role === 'assistant' && nameRequestPattern.test(previousAssistant.content)) {
-          bareCustomerName = effectiveHistory[i].content.trim();
+        if (previousAssistant?.role !== 'assistant') continue;
+        const priorAnswer = classifyNameAnswer(deriveActivePendingQuestion(effectiveHistory.slice(0, i)) === 'name', effectiveHistory[i].content);
+        if (priorAnswer?.kind === 'bare') {
+          likelyBareCustomerName = priorAnswer.name;
           break;
         }
       }
     }
   }
-  const likelyBareCustomerName = bareCustomerName && !/(?:จอง|booking|book|reserve|ตรวจ|โปรแกรม|บริการ|สนใจ|ต้องการ|เอา|รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้อง|เวียงจันทน์|อุดร|หนองคาย|ขอนแก่น|travel|trip|transport|hotel|ຈອງ|ກວດ|ໂຮງແຮມ|ລົດ|ສົນໃຈ|ຕ້ອງການ)/iu.test(bareCustomerName) ? bareCustomerName : undefined;
 
   // Fern's own booking summary is durable state evidence. Chatwoot may not
   // provide a usable sender name on every WhatsApp event, so recover the
@@ -828,7 +973,9 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     transportNeeded: addon.transportNeeded,
     hotelNeeded: addon.hotelNeeded,
     pendingQuestion: addon.pendingQuestion,
+    activePendingQuestion: addon.activePendingQuestion,
     answeredQuestion: addon.answeredQuestion,
+    currentTurnAddon: addon.currentTurnAddon,
   };
 }
 
@@ -847,4 +994,63 @@ export function formatJourneyState(state: WosJourneyState, language: WosLanguage
   ];
   const lang = language === 'lo' ? 'Lao' : language === 'en' ? 'English' : 'Thai';
   return `STRUCTURED WOS JOURNEY STATE (derived, not a database fact; language=${lang}):\n${lines.join('\n')}\nUse this only to preserve conversation continuity. Never invent missing values. Missing fields must be collected from the customer or verified WOS systems.`;
+}
+/** Social-only interruption; short answers to a question are resolved first. */
+export function isTransparentInterruption(text: string): boolean {
+  if (isThanksMessage(text)) return true;
+  const normalized = normalizeShortReply(text);
+  if (!normalized) return false;
+  const word = '(?:ขอบคุณ(?:มาก)?|thanks|thank you|thx|ຂອບໃຈ(?:ຫຼາຍ)?|โอเค|okay|ok|รับทราบ|เข้าใจแล้ว|เข้าใจ|อ๋อ|อ่อ|อืม|ครับผม|ครับ|ค่ะ|คะ|ຄ່ະ|ຄັບ)';
+  return new RegExp(`^(?:${word}${POLITE_TAIL}\\s*)+$`, 'iu').test(normalized);
+}
+
+/** Same service-topic boundary used by core routing and history reconstruction. */
+export function isNewJourneyServiceTopic(message: string): boolean {
+  return hasWordBoundedMatch(message, /(?:นวด|สปา|spa|massage|ตรวจสุขภาพ|สุขภาพ|wellness)/iu);
+}
+
+/** A pickup place is an answer; a province outside pickup is a context switch. */
+function isJourneyContextBoundary(message: string, question?: WosAddonQuestion): boolean {
+  if (isJourneyResetMessage(message) || isGenericProgramRequest(message)
+    || isSelectionTurn(message) || isNewJourneyServiceTopic(message)) return true;
+  // Explicit pickup answers transport too; stronger boundaries above still win.
+  if ((question === 'transport' || question === 'pickup') && extractExplicitPickup(message)) return false;
+  return question !== 'pickup' && Boolean(findProvince([message]));
+}
+
+/** Replay actual slots and question together, independent of program selection/core. */
+function replayAddonHistory(history: WosAIHistoryMessage[]): { slots: AddonSlots; open?: WosAddonQuestion } {
+  let open: WosAddonQuestion | undefined;
+  let slots: AddonSlots = {};
+  for (const message of history) {
+    if (message.role === 'assistant') {
+      const seeded = parseSummarySlots(message.content);
+      if (seeded) slots = { ...slots, ...seeded };
+      const question = classifyAssistantQuestionDetail(message.content);
+      if (question === 'ambiguous') open = undefined;
+      else if (question) open = question;
+      continue;
+    }
+    if (isJourneyResetMessage(message.content)) { slots = {}; open = undefined; continue; }
+    const boundary = isJourneyContextBoundary(message.content, open);
+    if (boundary) open = undefined;
+    const result = applyAddonTurn(slots, open, message.content);
+    slots = result.slots;
+    const pickupDeclined = open === 'pickup' && result.answered === 'transport' && slots.transportNeeded === false;
+    if ((open === 'name' && classifyNameAnswer(true, message.content))
+      || (open !== undefined && result.answered === open) || pickupDeclined) {
+      open = undefined;
+    } else if (!boundary && (result.answered !== undefined || isTransparentInterruption(message.content))) {
+      // Explicit preference for another add-on leaves the unresolved question open.
+      continue;
+    } else {
+      open = undefined;
+    }
+  }
+  return { slots, open };
+}
+
+/** Unresolved question BEFORE the current turn; pendingQuestion stays immediate-only. */
+export function deriveActivePendingQuestion(history: WosAIHistoryMessage[]): WosAddonQuestion | undefined {
+  return replayAddonHistory(history).open;
 }

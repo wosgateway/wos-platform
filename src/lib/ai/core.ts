@@ -33,7 +33,7 @@ import {
   type WosLanguage,
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
-import { deriveWosJourneyState, formatJourneyState, isThanksMessage } from './journey-state';
+import { deriveWosJourneyState, formatJourneyState, isThanksMessage, isNewJourneyServiceTopic, extractExplicitProgramTitle } from './journey-state';
 import { buildConciergeHandoffSummary } from '@/lib/handoff/concierge';
 import { buildAskHotelReply, decideConciergeReply } from './concierge-flow';
 import { runUnderstandingGate } from './understanding/gate';
@@ -1152,9 +1152,8 @@ export async function runWosAI(
         : undefined;
     // ...unless Fern's last turn was actually a transport / pickup / hotel question:
     // then the affirmative answers THAT question (handled by the concierge controller).
-    const lastTurnAskedAddon = journeyState.pendingQuestion === 'transport' ||
-      journeyState.pendingQuestion === 'pickup' ||
-      journeyState.pendingQuestion === 'hotel';
+    const pendingAddon = journeyState.activePendingQuestion ?? journeyState.pendingQuestion;
+    const lastTurnAskedAddon = pendingAddon === 'transport' || pendingAddon === 'pickup' || pendingAddon === 'hotel';
     if (isBareProgramAffirmative && lastConcreteProgramDetail && !lastTurnAskedAddon) {
       const acceptedMatch = lastConcreteProgramDetail.content.match(/[0-9]+[.)] +(.+?) (?:—|-|–) /u);
       const acceptedTitle = acceptedMatch?.[1]?.trim();
@@ -1166,7 +1165,7 @@ export async function runWosAI(
     }
 
     const journeyUpdateReply = buildJourneyDataUpdateReply(userMessage, journeyState, customerLanguage);
-    const isNewJourneyIntent = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|โรงแรม|ที่พัก|hotel|transport|transfer|shuttle|นวด|สปา|spa|massage|ตรวจสุขภาพ|สุขภาพ|wellness)/iu.test(userMessage);
+    const isNewJourneyIntent = isNewJourneyIntentForTurn(userMessage, journeyState);
     const isConversationProgressMessage = /(?:ทำไงต่อ|ทำอะไรต่อ|ต้องการอะไรอีก|ต้องทำอะไรต่อ|ผมแจ้งไปแล้ว|แจ้งไปแล้ว|แล้วไงต่อ|ต้องทำอะไรเพิ่ม|what(?:'s| is) next|next step|i already told you)/iu.test(userMessage);
     // Never answer a progress/update message with the old generic
     // "I've updated your details" loop. The webhook owns the final
@@ -1267,26 +1266,43 @@ export async function runWosAI(
     }
     // Customers often name another catalog item directly after handoff.
     // Resolve an exact catalog match before stale hotel/concierge state wins.
+    // Only an explicit choice whose complete title matches the catalog may bypass detail lookup.
+    const explicitChoiceTitle = extractExplicitProgramTitle(userMessage);
+    const isExplicitProgramSelection = Boolean(explicitChoiceTitle && journeyState.selectedProgram
+      && explicitChoiceTitle.toLocaleLowerCase() === journeyState.selectedProgram.trim().toLocaleLowerCase()
+      && !isProgramOverviewQuestion(userMessage) && !isCatalogChoiceQuestion(userMessage));
+    let confirmedProgramSelection = false;
     const isShortProgramLookup = userMessage.trim().length >= 3 && userMessage.trim().length <= 80;
     if (journeyState.selectedProgram && isShortProgramLookup && !isSimpleThanks) {
       try {
-        const directCandidates = await searchPrograms(userMessage.trim(), 3);
-        const normalizedInput = userMessage.trim().toLocaleLowerCase();
+        const directCandidates = await searchPrograms(
+          isExplicitProgramSelection ? explicitChoiceTitle! : userMessage.trim(),
+          3
+        );
+        const normalizedInput = (isExplicitProgramSelection ? explicitChoiceTitle! : userMessage).trim().toLocaleLowerCase();
         const directMatch = directCandidates.find((program) => {
           const title = String(program.title ?? '').trim();
           const normalizedTitle = title.toLocaleLowerCase();
+          if (isExplicitProgramSelection) return normalizedTitle === normalizedInput;
           return normalizedTitle === normalizedInput ||
             normalizedTitle.includes(normalizedInput) ||
             normalizedInput.includes(normalizedTitle);
         });
         if (directMatch) {
-          const answer = buildProgramAnswer([directMatch], userMessage, '', customerLanguage);
-          if (answer) return answer;
+          confirmedProgramSelection = isExplicitProgramSelection
+            && explicitChoiceTitle!.toLocaleLowerCase() === String(directMatch.title).trim().toLocaleLowerCase();
+          if (!confirmedProgramSelection) {
+            const answer = buildProgramAnswer([directMatch], userMessage, '', customerLanguage);
+            if (answer) return answer;
+          }
         }
       } catch (directProgramLookupError) {
         console.warn('[WOS_AI_DIRECT_PROGRAM_LOOKUP_FAILED]', directProgramLookupError instanceof Error ? directProgramLookupError.message : String(directProgramLookupError));
       }
     }
+
+    // Unresolved explicit choices cannot enter booking through a guessed title.
+    if (isExplicitProgramSelection && !confirmedProgramSelection) return buildFallbackReply(userMessage);
 
     const isSummaryRequest = /^(?:\u0e2a\u0e23\u0e38\u0e1b|summary|summarize)$/iu.test(userMessage.trim());
     const isNextStepRequest = /^(?:\u0e17\u0e33\u0e44\u0e07\u0e15\u0e48\u0e2d|\u0e17\u0e33\u0e2d\u0e30\u0e44\u0e23\u0e15\u0e48\u0e2d|\u0e02\u0e31\u0e49\u0e19\u0e15\u0e2d\u0e19\u0e15\u0e48\u0e2d\u0e44\u0e1b|next step|what(?:'s| is) next)$/iu.test(userMessage.trim());
@@ -1305,12 +1321,12 @@ export async function runWosAI(
     // so there are deliberately no per-turn yes/no regexes here. Do not re-add
     // them: parallel copies of this logic are what let a transport "สนใจ" leak
     // into the hotel state and made Fern loop or over-summarise.
-    if (journeyState.selectedProgram && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
+    if (journeyState.selectedProgram && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && (!isExplicitProgramLookup || confirmedProgramSelection)) {
       const conciergeReply = decideConciergeReply(journeyState, customerLanguage);
       if (conciergeReply) return conciergeReply;
     }
 
-    if (journeyState.selectedProgram && !journeyState.customerName && !/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test([...history].reverse().find((m) => m.role === 'assistant')?.content ?? '') && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && !isExplicitProgramLookup) {
+    if (journeyState.selectedProgram && !journeyState.customerName && !/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test([...history].reverse().find((m) => m.role === 'assistant')?.content ?? '') && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && (!isExplicitProgramLookup || confirmedProgramSelection)) {
       if (customerLanguage === 'lo') return 'ຂໍຊື່ສຳລັບການປະສານງານແດ່ຄ່ະ 😊';
       if (customerLanguage === 'en') return 'Perfect 😊 What name should I use for the booking?';
       return 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ';
@@ -2598,4 +2614,28 @@ const runToolRounds = async (
     // Never expose an upstream 500/503 directly to the customer.
     return buildFallbackReply(userMessage);
   }
+}
+
+// A new health/wellness service topic always starts a new journey intent.
+// Add-on topics (transport / pickup / hotel) only start a new journey when the turn is NOT
+// an answer to an add-on question; journey state decides that, not the wording.
+const NEW_JOURNEY_ADDON_TOPIC = /(?:รถ|รถรับส่ง|รับที่|รับจาก|มารับ|โรงแรม|ที่พัก|hotel|transport|transfer|shuttle)/iu;
+
+export function isNewJourneyIntentForTurn(message: string, state: ReturnType<typeof deriveWosJourneyState>): boolean {
+  if (isNewJourneyServiceTopic(message)) return true;
+  if (!NEW_JOURNEY_ADDON_TOPIC.test(message)) return false;
+  const isAddonQuestion = (q?: string) => q === 'hotel' || q === 'transport' || q === 'pickup';
+  const pref = state.currentTurnAddon;
+  if (pref && (pref.transport !== undefined || pref.hotel !== undefined)) {
+    // Explicit service wording in THIS message. A pending pickup question belongs to transport.
+    const pending = state.activePendingQuestion ?? state.pendingQuestion;
+    const pendingService = pending === 'hotel'
+      ? 'hotel'
+      : (pending === 'transport' || pending === 'pickup') ? 'transport' : undefined;
+    // Declines never start a journey; a request starts one unless it answers the pending service.
+    return (pref.transport === true && pendingService !== 'transport')
+      || (pref.hotel === true && pendingService !== 'hotel');
+  }
+  // No explicit service wording (e.g. pickup free text): preserve existing behaviour.
+  return !isAddonQuestion(state.answeredQuestion);
 }
