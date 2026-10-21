@@ -33,7 +33,7 @@ import {
   type WosLanguage,
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
-import { deriveWosJourneyState, formatJourneyState } from './journey-state';
+import { deriveWosJourneyState, formatJourneyState, isThanksMessage } from './journey-state';
 import { buildConciergeHandoffSummary } from '@/lib/handoff/concierge';
 import { buildAskHotelReply, decideConciergeReply } from './concierge-flow';
 import { runUnderstandingGate } from './understanding/gate';
@@ -1131,7 +1131,7 @@ export async function runWosAI(
     // Simple social acknowledgements must never advance or replay an active
     // concierge stage. A customer saying "ขอบคุณ" after handoff is finished
     // should get a natural acknowledgement, not the previous hotel message.
-    const isSimpleThanks = /^(?:thanks|thank you|thx|ขอบคุณ(?:มาก)?(?:ครับ|ค่ะ)?|ຂອບໃຈ(?:ຫຼາຍ)?)[\s!?.]*$/iu.test(userMessage.trim());
+    const isSimpleThanks = isThanksMessage(userMessage);
     if (isSimpleThanks) {
       if (customerLanguage === 'lo') return 'ດ້ວຍຄວາມຍິນດີຄ່ະ 😊';
       if (customerLanguage === 'en') return 'You’re very welcome 😊';

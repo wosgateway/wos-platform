@@ -153,6 +153,19 @@ describe('concierge journey: yes/no answers bind to the question just asked', ()
 });
 
 describe('concierge journey: unrelated turns do not move state', () => {
+  it.each(['ขอบคุณ', 'ขอบคุณ ຫຼາຍ', 'ຂອບໃຈ มาก', 'ຂອບໃຈຫຼາຍ'])('acknowledges %s after summary without replaying confirmation', text => {
+    const chat = chatAtTransportQuestion();
+    chat.say('ไม่ต้องการรถรับส่ง');
+    chat.say('ไม่เอาโรงแรม');
+    const before = slots(chat.last.state);
+    const { reply, state } = chat.say(text);
+    expect(reply).toMatch(/ยินดี|ຍິນດີ|ขอบคุณ|ຂອບໃຈ/u);
+    expect(reply).not.toMatch(/ยืนยัน|รถรับส่ง|โรงแรม|ขอชื่อ/u);
+    expect(classifyAssistantQuestion(reply!)).toBeUndefined();
+    expect(state).toMatchObject({ selectedProgram: 'ตรวจเข่า', customerName: 'สมชาย', transportNeeded: false, hotelNeeded: false });
+    expect(slots(state)).toEqual(before);
+  });
+
   it('"ขอบคุณ" at every stage leaves every slot unchanged', () => {
     const chat = chatAtTransportQuestion();
     const stages: Array<() => void> = [

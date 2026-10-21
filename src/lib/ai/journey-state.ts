@@ -527,7 +527,9 @@ export function isShortNegative(text: string): boolean {
 }
 
 export function isThanksMessage(text: string): boolean {
-  return /^(?:thanks|thank you|thx|ขอบคุณ(?:มาก)?(?:ครับ|ค่ะ)?|ຂອບໃຈ(?:ຫຼາຍ)?)[\s!?.]*$/iu.test(text.trim());
+  const thanks = '(?:thanks|thank you|thx|ขอบคุณ|ຂອບໃຈ)';
+  const intensifier = '(?:\\s*(?:มาก|ຫຼາຍ))?';
+  return new RegExp(`^${thanks}${intensifier}${POLITE_TAIL}$`, 'iu').test(normalizeShortReply(text));
 }
 
 /**
