@@ -13,6 +13,8 @@ import { clearState, loadProvinces, loadState, logAiRequest, saveState } from '.
 import type { CatalogItem } from './types';
 import { understand } from './understand';
 
+export type GateDiagnosticCategory = 'PROGRAM_SEARCH' | 'TRANSPORT' | 'OTHER' | 'NONE';
+
 export type GateResult = { handled: true; text: string } | { handled: false };
 type History = { role: 'user' | 'assistant'; content: string }[];
 
@@ -134,7 +136,13 @@ export async function runUnderstandingGate(args: {
   history: History;
   conversationId?: string;
   channel?: string;
+  // Temporary observer: only a bounded category, never business data.
+  onDiagnosticCategory?: (category: GateDiagnosticCategory) => void;
 }): Promise<GateResult> {
+  const observe = (category: GateDiagnosticCategory) => {
+    try { args.onDiagnosticCategory?.(category); } catch { /* Observation cannot affect the gate. */ }
+  };
+  observe('NONE');
   const m = mode();
   if (m === 'off') return NOT_HANDLED;
   const message = args.userMessage.trim();
@@ -166,6 +174,8 @@ export async function runUnderstandingGate(args: {
     if (!u) { await log({ error, deferReason: 'understand_failed' }); return NOT_HANDLED; }
 
     const action = decide(u, message, ctx, { provinces, coveredProvinceIds: coveredProvinceIds(catalogNames, provinces) });
+    observe(action.type === 'SEARCH' ? 'PROGRAM_SEARCH'
+      : action.type === 'DEFER' && action.reason === 'intent_transport' ? 'TRANSPORT' : 'OTHER');
     const base = { language: u.language, intent: u.intent, confidence: u.confidence, entities: u.entities, action: action.type };
 
     if (action.type === 'RESET' && args.conversationId && m === 'on') await clearState(args.conversationId);

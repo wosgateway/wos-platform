@@ -35,9 +35,9 @@ import {
 import { getSymptomSearchAliases } from './symptom-intent';
 import { deriveWosJourneyState, formatJourneyState, isThanksMessage, isNewJourneyServiceTopic, extractExplicitProgramTitle } from './journey-state';
 import { buildConciergeHandoffSummary, isHandoffConfirmation } from '@/lib/handoff/concierge';
-import { extractRejectedProgramTitle } from './journey-state';
+import { extractRejectedProgramTitle, isShortNegative } from './journey-state';
 import { buildAskHotelReply, decideConciergeReply } from './concierge-flow';
-import { runUnderstandingGate } from './understanding/gate';
+import { runUnderstandingGate, type GateDiagnosticCategory } from './understanding/gate';
 
 // Lazy: `new OpenAI()` throws when OPENAI_API_KEY is missing, and doing that
 // at module scope made `next build` fail whenever the key was not present in
@@ -901,6 +901,21 @@ async function getContactInfoBlock(): Promise<string> {
   }
 }
 
+// Temporary request-local branch diagnostics. No content-bearing fields.
+export type WosRoutingDiagnosticEvent = {
+  stage: 'evidence' | 'gate.enter' | 'gate.category' | 'gate.result' | 'gate.return'
+    | 'selected_lookup.enter' | 'selected_lookup.return' | 'catalog.enter' | 'concierge.return';
+  pendingAnswer?: boolean;
+  negativeAnswer?: boolean;
+  thanks?: boolean;
+  namedRejection?: boolean;
+  handled?: boolean;
+  category?: GateDiagnosticCategory;
+};
+function emitRoutingDiagnostic(observer: ((event: WosRoutingDiagnosticEvent) => void) | undefined, event: WosRoutingDiagnosticEvent) {
+  try { observer?.(event); } catch { /* Observation cannot affect routing. */ }
+}
+
 export async function runWosAI(
   userMessage: string,
   // Optional prior turns of this conversation, oldest first. AI Core
@@ -910,7 +925,7 @@ export async function runWosAI(
   history: WosAIHistoryMessage[] = [],
   // Optional transport context. conversationId enables stored conversation state
   // (Chatwoot conversation id); without it the understanding gate runs stateless.
-  opts: { conversationId?: string; channel?: string } = {}
+  opts: { conversationId?: string; channel?: string; routingDiagnostic?: (event: WosRoutingDiagnosticEvent) => void } = {}
 ) {
   try {
     // HARD CONVERSATION BOUNDARY: standalone greetings must never fall
@@ -957,6 +972,13 @@ export async function runWosAI(
     // A named refusal is a journey control turn, before any positive catalog intent.
     // After cancellation a bare confirmation cannot revive stored/summary selection.
     const selectionState = deriveWosJourneyState(cleanHistory, userMessage);
+    if (opts.routingDiagnostic) {
+      emitRoutingDiagnostic(opts.routingDiagnostic, {
+        stage: 'evidence', pendingAnswer: Boolean(selectionState.answeredQuestion),
+        negativeAnswer: isShortNegative(userMessage), thanks: isSimpleThanks,
+        namedRejection: Boolean(extractRejectedProgramTitle(userMessage, cleanHistory)),
+      });
+    }
     if (extractRejectedProgramTitle(userMessage, cleanHistory)
       || (selectionState.rejectedProgram && !selectionState.selectedProgram && isHandoffConfirmation(userMessage))) {
       if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈໂປຣແກຣມໃດຄະ?';
@@ -968,13 +990,23 @@ export async function runWosAI(
     // LLM -> intent/entities (validated against canonical provinces) -> business rules ->
     // verified catalog. Handles only the program-catalog intents; anything else, any error
     // and any low-confidence result falls through to the legacy path below unchanged.
+    let gateCategory: GateDiagnosticCategory = 'NONE';
+    emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'gate.enter' });
     const gate = await runUnderstandingGate({
       userMessage,
       history,
       conversationId: opts.conversationId,
       channel: opts.channel,
+      onDiagnosticCategory: opts.routingDiagnostic ? category => {
+        gateCategory = category;
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'gate.category', category });
+      } : undefined,
     });
-    if (gate.handled) return gate.text;
+    emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'gate.result', handled: gate.handled, category: gateCategory });
+    if (gate.handled) {
+      emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'gate.return', handled: true, category: gateCategory });
+      return gate.text;
+    }
 
     // HARD CONVERSATION BOUNDARY: a bare "interest" message without a
     // program selection must enter catalog discovery, not booking/name
@@ -1009,6 +1041,7 @@ export async function runWosAI(
       if (!earlyJourneyState.selectedProgram && !hasProgramContext && !isOptionalServiceContinuation && !hasConcreteProgramDetail) {
         const language = detectWosLanguage(userMessage, history.filter((message) => message.role === 'user').map((message) => message.content));
         try {
+          emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
           const items = await searchHealthProgramOverview(5);
           const answer = buildProgramAnswer(items, userMessage, '', language);
           if (answer) return answer;
@@ -1028,6 +1061,7 @@ export async function runWosAI(
     if (topSymptomAlias) {
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? '';
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchPrograms([topSymptomAlias, province].filter(Boolean).join(' '), 5);
         if (items.length > 0) {
           const answer = buildProgramAnswer(items, userMessage, '', detectWosLanguage(userMessage));
@@ -1130,6 +1164,7 @@ export async function runWosAI(
       && !/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(lastAssistantForLanguage);
     if (isBareInterestAfterReset) {
       try {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchHealthProgramOverview(5);
         const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
         if (answer) return answer;
@@ -1285,6 +1320,7 @@ export async function runWosAI(
     let confirmedProgramSelection = false;
     const isShortProgramLookup = userMessage.trim().length >= 3 && userMessage.trim().length <= 80;
     if (journeyState.selectedProgram && isShortProgramLookup && !isSimpleThanks) {
+      emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'selected_lookup.enter' });
       try {
         const directCandidates = await searchPrograms(
           isExplicitProgramSelection ? explicitChoiceTitle! : userMessage.trim(),
@@ -1304,7 +1340,10 @@ export async function runWosAI(
             && explicitChoiceTitle!.toLocaleLowerCase() === String(directMatch.title).trim().toLocaleLowerCase();
           if (!confirmedProgramSelection) {
             const answer = buildProgramAnswer([directMatch], userMessage, '', customerLanguage);
-            if (answer) return answer;
+            if (answer) {
+              emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'selected_lookup.return' });
+              return answer;
+            }
           }
         }
       } catch (directProgramLookupError) {
@@ -1334,7 +1373,10 @@ export async function runWosAI(
     // into the hotel state and made Fern loop or over-summarise.
     if (journeyState.selectedProgram && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && (!isExplicitProgramLookup || confirmedProgramSelection)) {
       const conciergeReply = decideConciergeReply(journeyState, customerLanguage);
-      if (conciergeReply) return conciergeReply;
+      if (conciergeReply) {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'concierge.return' });
+        return conciergeReply;
+      }
     }
 
     if (journeyState.selectedProgram && !journeyState.customerName && !/(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ)/iu.test([...history].reverse().find((m) => m.role === 'assistant')?.content ?? '') && !isHotelAvailabilityIntent && !isProvinceCatalogContinuation && (!isExplicitProgramLookup || confirmedProgramSelection)) {
@@ -1393,6 +1435,7 @@ export async function runWosAI(
             ? `ตอนนี้ WOS มีโปรแกรมสุขภาพใน ${provinces.join(', ')} ค่ะ สนใจโปรแกรมที่จังหวัดไหนคะ?`
             : 'สนใจโปรแกรมที่จังหวัดไหนคะ?';
         }
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchHealthProgramOverview(5, province);
         if (items.length > 0) {
           const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
@@ -1413,6 +1456,7 @@ export async function runWosAI(
     const previousAssistantAskedProvince = previousAssistantAskedProvinceForCatalog;
     if (requestedProvince && previousAssistantAskedProvince) {
       try {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchHealthProgramOverview(5, requestedProvince);
         const answer = buildProgramAnswer(items, requestedProvince, languageHistory.join('\n'), customerLanguage);
         if (answer) return answer;
@@ -1439,6 +1483,7 @@ export async function runWosAI(
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? '';
         const symptomQuery = [earlySymptomAlias, province].filter(Boolean).join(' ');
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchPrograms(symptomQuery, 5);
         if (items.length > 0) {
           const answer = buildProgramAnswer(items, userMessage, '', customerLanguage);
@@ -1458,6 +1503,7 @@ export async function runWosAI(
     const assistantAskedOptionalService = /(?:รถ|รถรับส่ง|transport|transfer|shuttle|ລົດ|ຮັບສົ່ງ|โรงแรม|ที่พัก|ห้องพัก|hotel|room|ໂຮງແຮມ|ທີ່ພັກ)/iu.test(lastAssistantTextForInterest);
     if (isBareInterest && !journeyState.selectedProgram && !assistantAskedOptionalService && recentOptions.length === 0) {
       try {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchHealthProgramOverview(5);
         const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
         if (answer) return answer;
@@ -1512,6 +1558,7 @@ export async function runWosAI(
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? journeyState.destination ?? '';
         const symptomQuery = [symptomAlias, province].filter(Boolean).join(' ');
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchPrograms(symptomQuery, 5);
         if (items.length > 0) {
           const answer = buildProgramAnswer(items, userMessage, '', customerLanguage);
@@ -1571,6 +1618,7 @@ export async function runWosAI(
     if (isHealthServiceOverview(userMessage) || /(?:\u0e21\u0e35\u0e42\u0e04\u0e07\u0e01\u0e32\u0e23|\u0e42\u0e04\u0e07\u0e01\u0e32\u0e23\u0e43\u0e14|\u0e21\u0e35\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23|\u0e1a\u0e23\u0e34\u0e01\u0e32\u0e23\u0e43\u0e14|\u0e2a\u0e38\u0e02\u0e30\u0e20\u0e32\u0e1e|\u0e01\u0e27\u0e14\u0e2b\u0e31\u0e27\u0e40\u0e02\u0e48\u0e32)/iu.test(userMessage)) {
       try {
         const province = detectLocationFromRawText(userMessage)[0] ?? '';
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const items = await searchHealthProgramOverview(5, province || undefined);
         if (items.length > 0) {
           const answer = buildProgramAnswer(items, userMessage, languageHistory.join('\n'), customerLanguage);
@@ -1645,6 +1693,7 @@ export async function runWosAI(
     // back into a broad search or ask the customer to confirm the selection.
     if (currentSelection) {
       try {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const selectedPrograms = await searchPrograms(currentSelection.label, 3);
         const matched = selectedPrograms.find((program) => {
           const title = String(program.title ?? '').trim();
@@ -1721,6 +1770,7 @@ export async function runWosAI(
     const asksPrice = selectedOption && /ราคา|ค่าใช้จ่าย|กี่บาท|โปรโมชั่น|โปรโมชัน|ລາຄາ|ຄ່າໃຊ້ຈ່າຍ|ກີ່ກີບ|ກີ່ບາດ|ໂປຣໂມຊັນ|ໂປຣໂມຊັນພິເສດ|price|cost|how much|promotion/iu.test(userMessage);
     if (asksPrice) {
       try {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const selectedPrograms = await searchPrograms(selectedOption.label, 1);
         const selectedAnswer = buildProgramPriceAnswer(
           selectedPrograms[0],
@@ -1813,6 +1863,7 @@ export async function runWosAI(
       // whether the booking target is the first item in old conversation
       // history. If several programs match, ask which one; never pick one.
       try {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const bookingMatches = await searchPrograms(userMessage, 3);
         if (bookingMatches.length === 1) {
           const label = bookingMatches[0].title ?? 'โปรแกรมที่เลือก';
@@ -2067,6 +2118,7 @@ CONTACT INFO RULE:
         const catalogQuery = customerLanguage === 'lo'
           ? normalizeLaoCatalogQuery(userMessage)
           : userMessage;
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const directCatalogPrograms = await searchPrograms(catalogQuery, 5);
         const directCatalogAnswer = buildProgramAnswer(
           directCatalogPrograms,
@@ -2600,6 +2652,7 @@ const runToolRounds = async (
 
     if (wantsCatalog) {
       try {
+        emitRoutingDiagnostic(opts.routingDiagnostic, { stage: 'catalog.enter' });
         const fallbackPrograms = await searchPrograms(userMessage, 5);
         const fallbackAnswer = buildProgramAnswer(
           fallbackPrograms,
