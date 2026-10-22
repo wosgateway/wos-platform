@@ -137,8 +137,6 @@ describe('early thanks acknowledgement through real runWosAI', () => {
     expect(answer).not.toBe(TH);
     expect(deriveWosJourneyState(history, input)).toMatchObject({ transportNeeded: false, answeredQuestion: 'transport' });
     expect(classifyAssistantQuestion(answer)).toBe('hotel');
-    expect(adapters.gate).toHaveBeenCalledOnce();
-    expect(adapters.database).not.toHaveBeenCalled();
-    expect(adapters.model).not.toHaveBeenCalled();
+    expectNoExternalWork();
   });
 });

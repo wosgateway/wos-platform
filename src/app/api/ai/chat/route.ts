@@ -1,4 +1,4 @@
-import { timingSafeEqual, randomUUID } from 'node:crypto';
+import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { simpleRateLimit } from '@/lib/rate-limit';
@@ -73,22 +73,6 @@ function getRetryAfterSeconds(error: unknown): number {
 }
 
 export async function POST(request: Request) {
-  // Temporary preview diagnostics; opaque UUID only, no request content.
-  let routingDiagnostic: ((event: import('@/lib/ai/core').WosRoutingDiagnosticEvent) => void) | undefined;
-  try {
-    if (process.env.VERCEL_ENV === 'preview') {
-      const supplied = request.headers.get('x-wos-routing-diagnostic-id');
-      const correlationId = supplied && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(supplied)
-        ? supplied : randomUUID();
-      let sequence = 0;
-      const emit = (event: object) => {
-        try { console.log('[WOS_ROUTING_DIAGNOSTIC]', JSON.stringify({ correlationId, sequence: ++sequence, ...event })); }
-        catch { /* Logging cannot affect the HTTP result. */ }
-      };
-      emit({ stage: 'route.enter' });
-      routingDiagnostic = emit;
-    }
-  } catch { /* Diagnostic setup cannot affect the HTTP result. */ }
   try {
     // This endpoint is public and every call costs OpenAI tokens.
     try {
@@ -174,7 +158,7 @@ export async function POST(request: Request) {
           .slice(-20)
       : [];
 
-    const answer = await runWosAI(message.trim(), history, { routingDiagnostic });
+    const answer = await runWosAI(message.trim(), history);
 
     return jsonResponse({
       answer,
