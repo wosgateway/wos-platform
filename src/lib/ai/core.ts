@@ -34,7 +34,8 @@ import {
 } from './language-dictionary';
 import { getSymptomSearchAliases } from './symptom-intent';
 import { deriveWosJourneyState, formatJourneyState, isThanksMessage, isNewJourneyServiceTopic, extractExplicitProgramTitle } from './journey-state';
-import { buildConciergeHandoffSummary } from '@/lib/handoff/concierge';
+import { buildConciergeHandoffSummary, isHandoffConfirmation } from '@/lib/handoff/concierge';
+import { extractRejectedProgramTitle } from './journey-state';
 import { buildAskHotelReply, decideConciergeReply } from './concierge-flow';
 import { runUnderstandingGate } from './understanding/gate';
 
@@ -951,6 +952,16 @@ export async function runWosAI(
       if (customerLanguage === 'lo') return 'ດ້ວຍຄວາມຍິນດີຄ່ະ 😊';
       if (customerLanguage === 'en') return 'You’re very welcome 😊';
       return 'ยินดีมากค่ะ 😊';
+    }
+
+    // A named refusal is a journey control turn, before any positive catalog intent.
+    // After cancellation a bare confirmation cannot revive stored/summary selection.
+    const selectionState = deriveWosJourneyState(cleanHistory, userMessage);
+    if (extractRejectedProgramTitle(userMessage, cleanHistory)
+      || (selectionState.rejectedProgram && !selectionState.selectedProgram && isHandoffConfirmation(userMessage))) {
+      if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈໂປຣແກຣມໃດຄະ?';
+      if (customerLanguage === 'en') return 'Understood 😊 Which program are you interested in?';
+      return 'รับทราบค่ะ 😊 สนใจโปรแกรมไหนคะ?';
     }
 
     // UNDERSTANDING GATE (WOS_AI_UNDERSTANDING=off|shadow|on, default off).

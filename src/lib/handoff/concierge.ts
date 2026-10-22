@@ -56,6 +56,7 @@ export function extractContact(sender: ChatwootSender | undefined, text: string)
 }
 
 export function isJourneyReady(state: WosJourneyState): boolean {
+  if (state.rejectedProgram && !state.selectedProgram) return false;
   // A selected health/treatment program is itself the active journey need.
   // Do not require a separate needs[] classifier to recognize it.
   // Once the customer has selected a program and provided a name, enter

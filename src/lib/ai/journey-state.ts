@@ -1,4 +1,4 @@
-import { normalizeSelectionInput } from './selection-lexical';
+import { normalizeSelectionInput, SELECTION_SERVICE_ALIASES } from './selection-lexical';
 import { buildHandoffConfirmation } from '../handoff/concierge';
 import type { WosLanguage } from './language-dictionary';
 import type { WosAIHistoryMessage } from './core';
@@ -13,6 +13,8 @@ export type WosJourneyState = {
   checkout?: string;
   selectedProgram?: string;
   selectedProvider?: string;
+  /** Rejected selection barrier; older summaries cannot authorize a handoff. */
+  rejectedProgram?: string;
   needs: readonly ('health' | 'treatment' | 'transport' | 'hotel' | 'trip')[];
   activeNeed?: 'health' | 'treatment' | 'transport' | 'hotel' | 'trip';
   tripDurationDays?: number;
@@ -64,6 +66,7 @@ export type WosConciergeStage =
   | 'awaiting_confirmation';
 
 export function getWosConciergeStage(state: WosJourneyState): WosConciergeStage {
+  if (state.rejectedProgram && !state.selectedProgram) return 'collecting_booking';
   // Health/treatment program bookings have their own core fields.
   // Trip-only fields such as destination, travelers, and budget are not
   // required unless the customer actually asks for a trip.
@@ -317,13 +320,30 @@ function classifyNameAnswer(nameAsked: boolean, message: string): { kind: 'expli
  * journey boundary clears it or a new selection replaces it.
  * Dependency order is one-way: this reads add-on state; add-on state never reads selection.
  */
-function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = ''): { title: string; provider?: string } | undefined {
+function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = ''): { title?: string; provider?: string; rejectedTitle?: string } | undefined {
+  const rejected = extractRejectedProgramTitle(currentMessage, history);
+  if (rejected) {
+    const previous = latestSelectedProgram(history);
+    return previous?.title && sameProgramTitle(rejected, previous.title)
+      ? { rejectedTitle: previous.title } : previous;
+  }
   // Scope every legacy selection lookup, including numeric/catalog/summary recovery.
   // No lookup may cross a user turn that ended the previous journey context.
   let scoped = history;
+  let cancelled: { rejectedTitle: string } | undefined;
   for (let i = history.length - 1; i >= 0; i--) {
     if (history[i].role !== 'user') continue;
     const text = history[i].content;
+    const priorRejection = extractRejectedProgramTitle(text, history.slice(0, i));
+    if (priorRejection) {
+      const previous = latestSelectedProgram(history.slice(0, i));
+      if (previous?.title && sameProgramTitle(priorRejection, previous.title)) {
+        scoped = history.slice(i + 1);
+        cancelled = { rejectedTitle: previous.title };
+        break;
+      }
+      continue;
+    }
     if (isSelectionTurn(text) && !/^\d{1,2}[.)]?$/.test(text.trim())) {
       const next = history[i + 1];
       if (next && (next.role !== 'assistant' || !hasSelectionAcceptance(next.content))) {
@@ -342,9 +362,9 @@ function latestSelectedProgram(history: WosAIHistoryMessage[], currentMessage = 
   if (direct) return direct;
   for (let i = scoped.length - 1; i >= 0; i--) {
     if (scoped[i].role !== 'user') continue;
-    return latestSelectedProgram(scoped.slice(0, i), scoped[i].content);
+    return latestSelectedProgram(scoped.slice(0, i), scoped[i].content) ?? cancelled;
   }
-  return undefined;
+  return cancelled;
 }
 
 /** A bare title selects only an actual option in the immediately preceding catalog. */
@@ -368,7 +388,7 @@ function isSelectionTurn(text: string): boolean {
 }
 
 function carriesJourneyTurn(history: WosAIHistoryMessage[], text: string): boolean {
-  return !isJourneyContextBoundary(text, deriveActivePendingQuestion(history));
+  return !isJourneyContextBoundary(text, deriveActivePendingQuestion(history), history);
 }
 
 function hasProgramDetail(content: string): boolean {
@@ -499,6 +519,7 @@ function selectionFromTurn(history: WosAIHistoryMessage[], currentMessage = ''):
       currentMessage,
     ];
     for (const candidateMessage of candidateMessages) {
+      if (extractRejectedProgramTitle(candidateMessage, history)) continue;
       const text = candidateMessage.trim().toLocaleLowerCase();
       const laoProgramAliases: Record<string, string[]> = {
         'ตรวจเข่า': ['ກວດເຂົ່າ', 'ກວດຫົວເຂົ່າ'],
@@ -670,6 +691,46 @@ export function isShortNegative(text: string): boolean {
   return NEGATIVE_RE.test(normalizeShortReply(text));
 }
 
+// Same named-negative syntax as explicit addon preferences; the target is data.
+const NEGATIVE_WANT = '(?:ไม่|ยังไม่|ບໍ່)\\s*(?:ต้องการ|เอา|ขอ|สนใจ|ใช้|ຕ້ອງການ|ເອົາ|ສົນໃຈ)';
+
+function sameProgramTitle(a: string, b: string): boolean {
+  return normalizeSelectionInput(a).trim().toLocaleLowerCase()
+    === normalizeSelectionInput(b).trim().toLocaleLowerCase();
+}
+
+/** A named refusal is not selection, catalog membership, or positive lookup intent.
+ * Addon nouns remain owned by explicitServicePreference, never program cancellation. */
+export function extractRejectedProgramTitle(message: string, history: WosAIHistoryMessage[] = []): string | undefined {
+  const text = normalizeSelectionInput(message).trim();
+  const match = text.match(new RegExp(
+    `^(?:${NEGATIVE_WANT}|(?:don't|do not)\\s+(?:need|want))\\s*["“]?([^"”\\n]+?)["”]?${POLITE_TAIL}[.!?。]*$`, 'iu',
+  ));
+  const title = match?.[1]?.trim();
+  if (!title || new RegExp(`^${ANY_SERVICE_NOUN}${POLITE_TAIL}$`, 'iu').test(title)) return undefined;
+  // A syntactic remainder is only a candidate, never proof of a program name.
+  // Reuse canonical service identities and the existing catalog/acceptance/summary
+  // evidence in this conversation. No lookup and no inferred catalog membership.
+  const targets = SELECTION_SERVICE_ALIASES.map(([, service]) => service);
+  for (let i = 0; i < history.length; i++) {
+    const turn = history[i];
+    if (turn.role !== 'assistant') continue;
+    for (const option of turn.content.matchAll(/^\s*\d+[.)]\s*(.+)$/gm)) {
+      targets.push(option[1].split(/\s+[—–-]\s+/u)[0].trim());
+    }
+    const summary = turn.content.match(/(?:^|\n)\s*[•*-]\s*(?:โปรแกรม|ໂປຣແກຣມ|selected program)\s*:\s*([^\n]+)/iu);
+    if (summary?.[1]) targets.push(summary[1].trim());
+    const previous = history[i - 1];
+    if (previous?.role === 'user' && hasSelectionAcceptance(turn.content)) {
+      const accepted = extractExplicitProgramTitle(previous.content);
+      if (accepted) targets.push(accepted);
+    }
+  }
+  return targets.find(target =>
+    !new RegExp(`^${ANY_SERVICE_NOUN}${POLITE_TAIL}$`, 'iu').test(target)
+    && sameProgramTitle(title, target));
+}
+
 export function isThanksMessage(text: string): boolean {
   const thanks = '(?:thanks|thank you|thx|ขอบคุณ|ຂອບໃຈ)';
   const intensifier = '(?:\\s*(?:มาก|ຫຼາຍ))?';
@@ -685,7 +746,7 @@ export function isThanksMessage(text: string): boolean {
 function explicitServicePreference(text: string, noun: string): boolean | undefined {
   const reach = `\\s*${WANT_GAP}\\s*(?:${ANY_SERVICE_NOUN}\\s*${SERVICE_JOIN}\\s*)*?${noun}`;
   const negative = new RegExp(
-    `(?:ไม่|ยังไม่|ບໍ່)\\s*(?:ต้องการ|เอา|ขอ|สนใจ|ใช้|ຕ້ອງການ|ເອົາ|ສົນໃຈ)${reach}` +
+    `${NEGATIVE_WANT}${reach}` +
     `|(?:don't|do not)\\s+(?:need|want)\\s+(?:a\\s+|any\\s+)?${noun}|\\bno\\s+(?:need\\s+for\\s+)?(?:a\\s+)?${noun}`,
     'iu',
   );
@@ -751,10 +812,12 @@ function applyAddonTurn(
   slots: AddonSlots,
   question: WosAddonQuestion | undefined,
   rawAnswer: string,
+  history: WosAIHistoryMessage[] = [],
 ): { slots: AddonSlots; answered?: WosAddonQuestion } {
   const answer = rawAnswer.trim();
   const next: AddonSlots = { ...slots };
   let answered: WosAddonQuestion | undefined;
+  if (extractRejectedProgramTitle(answer, history)) return { slots: next };
 
   const declineTransport = () => {
     next.transportNeeded = false;
@@ -816,8 +879,8 @@ function deriveAddonState(history: WosAIHistoryMessage[], currentMessage: string
 } {
   const replay = replayAddonHistory(history);
   const activePendingQuestion = replay.open;
-  const question = isJourneyContextBoundary(currentMessage, replay.open) ? undefined : replay.open;
-  const result = applyAddonTurn(replay.slots, question, currentMessage);
+  const question = isJourneyContextBoundary(currentMessage, replay.open, history) ? undefined : replay.open;
+  const result = applyAddonTurn(replay.slots, question, currentMessage, history);
   const slots = result.slots;
   const answeredQuestion = result.answered;
 
@@ -949,6 +1012,7 @@ export function deriveWosJourneyState(history: WosAIHistoryMessage[], currentMes
     checkin: findDate(allTexts),
     selectedProgram: selected?.title,
     selectedProvider: selected?.provider,
+    rejectedProgram: selected?.rejectedTitle,
     needs,
     activeNeed,
     tripDurationDays: findTripDuration(allTexts),
@@ -1010,7 +1074,8 @@ export function isNewJourneyServiceTopic(message: string): boolean {
 }
 
 /** A pickup place is an answer; a province outside pickup is a context switch. */
-function isJourneyContextBoundary(message: string, question?: WosAddonQuestion): boolean {
+function isJourneyContextBoundary(message: string, question?: WosAddonQuestion, history: WosAIHistoryMessage[] = []): boolean {
+  if (extractRejectedProgramTitle(message, history)) return true;
   if (isJourneyResetMessage(message) || isGenericProgramRequest(message)
     || isSelectionTurn(message) || isNewJourneyServiceTopic(message)) return true;
   // Explicit pickup answers transport too; stronger boundaries above still win.
@@ -1022,7 +1087,7 @@ function isJourneyContextBoundary(message: string, question?: WosAddonQuestion):
 function replayAddonHistory(history: WosAIHistoryMessage[]): { slots: AddonSlots; open?: WosAddonQuestion } {
   let open: WosAddonQuestion | undefined;
   let slots: AddonSlots = {};
-  for (const message of history) {
+  for (const [index, message] of history.entries()) {
     if (message.role === 'assistant') {
       const seeded = parseSummarySlots(message.content);
       if (seeded) slots = { ...slots, ...seeded };
@@ -1032,9 +1097,10 @@ function replayAddonHistory(history: WosAIHistoryMessage[]): { slots: AddonSlots
       continue;
     }
     if (isJourneyResetMessage(message.content)) { slots = {}; open = undefined; continue; }
-    const boundary = isJourneyContextBoundary(message.content, open);
+    const prior = history.slice(0, index);
+    const boundary = isJourneyContextBoundary(message.content, open, prior);
     if (boundary) open = undefined;
-    const result = applyAddonTurn(slots, open, message.content);
+    const result = applyAddonTurn(slots, open, message.content, prior);
     slots = result.slots;
     const pickupDeclined = open === 'pickup' && result.answered === 'transport' && slots.transportNeeded === false;
     if ((open === 'name' && classifyNameAnswer(true, message.content))
