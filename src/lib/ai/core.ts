@@ -925,6 +925,34 @@ export async function runWosAI(
       return 'สวัสดีค่ะ 😊 ใบเฟิร์นสบายดีค่ะ วันนี้มีอะไรให้ช่วยไหมคะ';
     }
 
+    const cleanHistory = sanitizeHistory(history);
+    if (cleanHistory.length !== history.length) {
+      console.warn(
+        '[WOS_AI_HISTORY_SANITIZED]',
+        JSON.stringify({
+          removed: history.length - cleanHistory.length,
+        })
+      );
+    }
+
+    const languageHistory = cleanHistory.filter((m) => m.role === 'user').map((m) => m.content);
+    const lastUserLanguageAnchor = languageHistory.at(-1) ?? '';
+    const lastAssistantForLanguage = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
+    const looksLikeNameReply = /^(?:[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60})$/u.test(userMessage.trim())
+      && /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu.test(lastAssistantForLanguage);
+    const customerLanguage = looksLikeNameReply
+      ? detectWosLanguage(lastUserLanguageAnchor, languageHistory)
+      : detectWosLanguage(userMessage, languageHistory);
+    // Simple social acknowledgements must never advance or replay an active
+    // concierge stage. A customer saying "ขอบคุณ" after handoff is finished
+    // should get a natural acknowledgement, not the previous hotel message.
+    const isSimpleThanks = isThanksMessage(userMessage);
+    if (isSimpleThanks) {
+      if (customerLanguage === 'lo') return 'ດ້ວຍຄວາມຍິນດີຄ່ະ 😊';
+      if (customerLanguage === 'en') return 'You’re very welcome 😊';
+      return 'ยินดีมากค่ะ 😊';
+    }
+
     // UNDERSTANDING GATE (WOS_AI_UNDERSTANDING=off|shadow|on, default off).
     // LLM -> intent/entities (validated against canonical provinces) -> business rules ->
     // verified catalog. Handles only the program-catalog intents; anything else, any error
@@ -1055,25 +1083,7 @@ export async function runWosAI(
      * 2. Build AI instructions
      * -------------------------------------------------------
      */
-    const cleanHistory = sanitizeHistory(history);
-    if (cleanHistory.length !== history.length) {
-      console.warn(
-        '[WOS_AI_HISTORY_SANITIZED]',
-        JSON.stringify({
-          removed: history.length - cleanHistory.length,
-        })
-      );
-    }
-
     const recentOptions = extractRecentConversationOptions(cleanHistory);
-    const languageHistory = cleanHistory.filter((m) => m.role === 'user').map((m) => m.content);
-    const lastUserLanguageAnchor = languageHistory.at(-1) ?? '';
-    const lastAssistantForLanguage = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
-    const looksLikeNameReply = /^(?:[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60})$/u.test(userMessage.trim())
-      && /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu.test(lastAssistantForLanguage);
-    const customerLanguage = looksLikeNameReply
-      ? detectWosLanguage(lastUserLanguageAnchor, languageHistory)
-      : detectWosLanguage(userMessage, languageHistory);
     const journeyState = deriveWosJourneyState(cleanHistory, userMessage);
     // The customer just answered the pickup question: go straight to the hotel
     // question before any catalog/model branch can swallow the reply. This is
@@ -1126,16 +1136,6 @@ export async function runWosAI(
       if (customerLanguage === 'lo') return 'ສະບາຍດີຄ່ະ 😊 ມື້ນີ້ໃຫ້ໃບເຟີນຊ່ວຍຫຍັງດີຄະ?';
       if (customerLanguage === 'en') return 'Hi 😊 What can Fern help you with today?';
       return 'สวัสดีค่ะ 😊 วันนี้มีอะไรให้ใบเฟิร์นช่วยไหมคะ';
-    }
-
-    // Simple social acknowledgements must never advance or replay an active
-    // concierge stage. A customer saying "ขอบคุณ" after handoff is finished
-    // should get a natural acknowledgement, not the previous hotel message.
-    const isSimpleThanks = isThanksMessage(userMessage);
-    if (isSimpleThanks) {
-      if (customerLanguage === 'lo') return 'ດ້ວຍຄວາມຍິນດີຄ່ະ 😊';
-      if (customerLanguage === 'en') return 'You’re very welcome 😊';
-      return 'ยินดีมากค่ะ 😊';
     }
 
     // New explicit facts must update the journey instead of being swallowed by
