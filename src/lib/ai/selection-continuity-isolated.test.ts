@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { deriveWosJourneyState as derive, getWosConciergeStage, isTransparentInterruption, classifyAssistantQuestion, deriveActivePendingQuestion } from './journey-state';
+import { deriveWosJourneyState as derive, getWosConciergeStage, isTransparentInterruption, deriveActivePendingQuestion } from './journey-state';
 import { decideConciergeReply } from './concierge-flow';
 type M = { role: 'user' | 'assistant'; content: string };
 const NAME = 'ขอชื่อสำหรับลงข้อมูลด้วยนะคะ';
