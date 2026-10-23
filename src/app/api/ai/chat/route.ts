@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto';
 import { NextResponse } from 'next/server';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { simpleRateLimit } from '@/lib/rate-limit';
+import { authorizeWebConversation, WebOwnershipError } from '@/lib/ai/web-ownership';
 
 // Multiple tool rounds + Notion + OpenAI can exceed the default limit.
 export const maxDuration = 60;
@@ -158,7 +159,20 @@ export async function POST(request: Request) {
           .slice(-20)
       : [];
 
-    const answer = await runWosAI(message.trim(), history);
+    let conversationId: string | undefined;
+    if (typeof body === 'object' && body !== null && ('conversationSelector' in body || 'conversationId' in body || 'conversation_id' in body)) {
+      try {
+        // Raw/internal IDs are never accepted, including alongside a selector.
+        if ('conversationId' in body || 'conversation_id' in body) throw new WebOwnershipError(400);
+        conversationId = await authorizeWebConversation(request, (body as { conversationSelector?: unknown }).conversationSelector);
+      } catch (error) {
+        return jsonResponse({ error: 'Web conversation unavailable' }, { status: error instanceof WebOwnershipError ? error.status : 503 });
+      }
+    }
+
+    const answer = conversationId
+      ? await runWosAI(message.trim(), history, { conversationId, channel: 'web' })
+      : await runWosAI(message.trim(), history);
 
     return jsonResponse({
       answer,
