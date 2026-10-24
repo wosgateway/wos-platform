@@ -43,7 +43,7 @@ export interface CatalogItem {
   is_promotion?: boolean;
   original_price?: number | null;
   special_price?: number | null;
-  duration?: string | null;
+  duration?: number | null;
   duration_minutes?: number | null;
   partner?: { name?: string; province?: string | null };
 }

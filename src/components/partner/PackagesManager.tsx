@@ -1,6 +1,8 @@
 // src/components/partner/PackagesManager.tsx
 'use client';
 
+import { formatDurationMinutes } from '@/lib/format-duration';
+
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
 import { createClient } from '@/lib/supabase/client';
@@ -22,7 +24,7 @@ interface Package {
   original_price: number;
   special_price: number | null;
   is_promotion: boolean;
-  duration: string | null;
+  duration: number | null;
   status: 'pending' | 'published' | 'rejected' | 'archived';
   is_active: boolean;
   image_url: string | null;
@@ -43,7 +45,7 @@ interface PackageFormData {
   original_price: string;
   special_price: string;
   is_promotion: boolean;
-  duration: string;
+  duration: number | null;
   image_url: string;
   sub_category: string;
   // เพิ่มโดย migration 117 — Hotel-only
@@ -59,7 +61,7 @@ const emptyForm: PackageFormData = {
   original_price: '',
   special_price: '',
   is_promotion: false,
-  duration: '',
+  duration: null,
   image_url: '',
   sub_category: '',
   max_guests: '',
@@ -142,7 +144,7 @@ export function PackagesManager({
 
     const { data, error: fetchError } = await supabase
       .from('packages')
-      .select('*')
+      .select('*, is_promotion:promotion')
       .eq('partner_id', partnerId)
       .order('created_at', { ascending: false });
 
@@ -171,7 +173,7 @@ export function PackagesManager({
         original_price: String(pkg.original_price),
         special_price: pkg.special_price ? String(pkg.special_price) : '',
         is_promotion: pkg.is_promotion,
-        duration: pkg.duration || '',
+        duration: pkg.duration ?? null,
         image_url: pkg.image_url || '',
         sub_category: pkg.sub_category || '',
         max_guests: pkg.max_guests ? String(pkg.max_guests) : '',
@@ -281,8 +283,8 @@ export function PackagesManager({
       description: form.description.trim() || null,
       original_price: Number(form.original_price),
       special_price: form.special_price ? Number(form.special_price) : null,
-      is_promotion: form.is_promotion,
-      duration: form.duration.trim() || null,
+      promotion: form.is_promotion,
+      duration: form.duration,
       image_url: form.image_url.trim() || null,
       // ส่งเฉพาะพาร์ทเนอร์หมวดโรงแรม — หมวดอื่นไม่มี dropdown นี้ให้กรอก
       // อยู่แล้ว จึง sub_category จะเป็น '' -> null เสมอ
@@ -418,7 +420,7 @@ export function PackagesManager({
                 <tr key={pkg.id} className="border-b border-slate-50 hover:bg-slate-50">
                   <td className="px-4 py-3">
                     <div className="font-medium text-slate-800">{pkg.title}</div>
-                    {pkg.duration && <div className="text-xs text-slate-400">⏱️ {pkg.duration}</div>}
+                    {pkg.duration != null && <div className="text-xs text-slate-400">⏱️ {formatDurationMinutes(pkg.duration, 'th')}</div>}
                     {partnerCategory === 'Hotel' && pkg.sub_category ? (
                       <div className="text-xs text-slate-400">
                         🛏️ {ROOM_TYPE_OPTIONS.find((o) => o.value === pkg.sub_category)?.label ?? pkg.sub_category}
@@ -509,12 +511,14 @@ export function PackagesManager({
               </div>
 
               <div>
-                <label className="form-label">ระยะเวลา</label>
+                <label className="form-label">ระยะเวลา (นาที)</label>
                 <input
                   className="form-input"
-                  value={form.duration}
-                  onChange={(e) => setForm({ ...form, duration: e.target.value })}
-                  placeholder="เช่น 2 ชั่วโมง, 1 วัน"
+                  type="number"
+                  step="1"
+                  value={form.duration ?? ''}
+                  onChange={(e) => setForm({ ...form, duration: Number.isNaN(e.target.valueAsNumber) ? null : e.target.valueAsNumber })}
+                  placeholder="เช่น 60"
                 />
               </div>
 

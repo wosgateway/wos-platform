@@ -22,10 +22,11 @@ export interface Package {
   title: string;
   image_url: string | null;
   is_promotion: boolean;
+  duration?: number | null;
   // ใหม่ — รองรับ workflow อนุมัติ (ดู migration_link_branches_packages.sql)
   // 'pending' = พาร์ทเนอร์ส่งมาจาก portal รอแอดมินอนุมัติ, 'published' = ขึ้นเว็บจริง,
   // 'rejected' = แอดมินปฏิเสธ, 'archived' = เคยเผยแพร่แล้วถอดออก
-  status: 'pending' | 'published' | 'rejected' | 'archived';
+  status: 'draft' | 'pending' | 'published' | 'rejected' | 'archived';
   // สวิตช์เปิด/ปิดการแสดงผลของแอดมิน — แยกจาก status เพื่อให้แอดมินระงับ
   // การแสดงบนหน้าเว็บชั่วคราวได้โดยไม่ต้องรีเซ็ตสถานะอนุมัติ (ดู migration_add_package_is_active.sql)
   is_active: boolean;
@@ -82,11 +83,11 @@ export async function fetchPackagesByPartner(
   // โผล่ไปหน้าเว็บสาธารณะที่ลูกค้าเห็น
   let query = supabase
     .from('packages')
-    .select('*')
+    .select('*, is_promotion:promotion')
     .eq('partner_id', partnerId)
     .eq('status', 'published')
     .eq('is_active', true);
-  if (promotionsOnly) query = query.eq('is_promotion', true);
+  if (promotionsOnly) query = query.eq('promotion', true);
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;
   return data ?? [];
@@ -96,7 +97,7 @@ export async function fetchPackageById(id: string): Promise<Package> {
   const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
-    .select('*, partners(*)')
+    .select('*, is_promotion:promotion, partners(*)')
     .eq('id', id)
     .eq('status', 'published')
     .eq('is_active', true)
@@ -111,8 +112,8 @@ export async function fetchFeaturedPackages(limit = 8): Promise<Package[]> {
   const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
-    .select('*, partners!inner(id, name, category, status)')
-    .eq('is_promotion', true)
+    .select('*, is_promotion:promotion, partners!inner(id, name, category, status)')
+    .eq('promotion', true)
     .eq('status', 'published')
     .eq('is_active', true)
     .eq('partners.status', 'active')
@@ -140,7 +141,7 @@ export async function fetchPackagesByCategory(dbCategories: string[]): Promise<P
     .from('packages')
     // province included so the hotel-step province filter (BookingForm /
     // JourneyBookingForm) has something to filter on — see src/lib/province.ts
-    .select('*, partners!inner(id, name, category, status, province)')
+    .select('*, is_promotion:promotion, partners!inner(id, name, category, status, province)')
     .in('partners.category', dbCategories)
     .eq('partners.status', 'active')
     .eq('status', 'published')
@@ -233,7 +234,7 @@ export async function fetchActivePackages(
   const { data, error } = await supabase
     .from('packages')
     .select(
-      'id, partner_id, title, description, image_url, is_promotion, original_price, special_price, duration, status, is_active, sub_category, partners!inner(id, name, category, status, province)'
+      'id, partner_id, title, description, image_url, is_promotion:promotion, original_price, special_price, duration, status, is_active, sub_category, partners!inner(id, name, category, status, province)'
     )
     .eq('status', 'published')
     .eq('is_active', true)
@@ -289,7 +290,7 @@ export async function searchPackages(
     is_promotion: boolean | null;
     original_price: number | null;
     special_price: number | null;
-    duration: string | null;
+    duration: number | null;
     status: string | null;
     is_active: boolean | null;
     sub_category: string | null;

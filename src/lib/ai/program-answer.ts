@@ -7,13 +7,15 @@
 // is guessed, and availability for a date is never claimed.
 // =====================================================================
 
+import { formatDurationMinutes } from '@/lib/format-duration';
+
 export type VerifiedProgram = {
   title?: string;
   description?: string | null;
   is_promotion?: boolean;
   original_price?: number | null;
   special_price?: number | null;
-  duration?: string | null;
+  duration?: number | null;
   duration_minutes?: number | null;
   partner?: { name?: string; province?: string | null };
 };
@@ -61,15 +63,7 @@ function baht(n: number): string {
 }
 
 function duration(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string | null {
-  if (p.duration) return p.duration;
-  if (typeof p.duration_minutes === 'number' && p.duration_minutes > 0) {
-    return language === 'th'
-      ? `${p.duration_minutes} นาที`
-      : language === 'lo'
-        ? `${p.duration_minutes} ນາທີ`
-        : `${p.duration_minutes} minutes`;
-  }
-  return null;
+  return formatDurationMinutes(p.duration, language);
 }
 
 function compactDescribe(p: VerifiedProgram, language: 'th' | 'lo' | 'en'): string {

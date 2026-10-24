@@ -25,7 +25,7 @@ export type ProgramSearchResult = {
   is_promotion?: boolean;
   original_price?: number | null;
   special_price?: number | null;
-  duration?: string | null;
+  duration?: number | null;
   duration_minutes?: number | null;
   partner?: ProgramPartnerInfo;
 };
@@ -417,9 +417,8 @@ function mapSearchResult(
       item.original_price == null ? null : Number(item.original_price),
     special_price:
       item.special_price == null ? null : Number(item.special_price),
-    duration: item.duration == null ? null : String(item.duration),
-    duration_minutes:
-      item.duration_minutes == null ? null : Number(item.duration_minutes),
+    duration: item.duration == null ? null : item.duration,
+    duration_minutes: item.duration == null ? null : item.duration,
     partner: partner
       ? compact({
           name: String(partner.name ?? ''),
@@ -894,9 +893,8 @@ export async function getProgramDetails(
         item.original_price == null ? null : Number(item.original_price),
       special_price:
         item.special_price == null ? null : Number(item.special_price),
-      duration: item.duration == null ? null : String(item.duration),
-      duration_minutes:
-        item.duration_minutes == null ? null : Number(item.duration_minutes),
+      duration: item.duration == null ? null : item.duration,
+      duration_minutes: item.duration == null ? null : item.duration,
       partner: compact({
         name: String(partner.name ?? ''),
         province:

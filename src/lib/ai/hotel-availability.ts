@@ -55,7 +55,7 @@ export async function searchHotelAvailability(
   const { data: packages, error: packageError } = await supabase
     .from('packages')
     .select(
-      'id, title, original_price, special_price, is_promotion, sub_category, max_guests, partners!inner(id, name, category, status, province)'
+      'id, title, original_price, special_price, is_promotion:promotion, sub_category, max_guests, partners!inner(id, name, category, status, province)'
     )
     .eq('status', 'published')
     .eq('is_active', true)

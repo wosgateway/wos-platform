@@ -1,3 +1,4 @@
+import { formatDurationMinutes } from '@/lib/format-duration';
 import OpenAI from 'openai';
 import { WOS_AI_SYSTEM_PROMPT } from './prompts';
 import { looksLikeLeakedToolCall, sanitizeHistory } from './leak-guard';
@@ -1254,7 +1255,7 @@ export async function runWosAI(
           if (details) {
             const price = details.special_price ?? details.original_price;
             const original = details.original_price;
-            const duration = details.duration || (details.duration_minutes ? `${details.duration_minutes} นาที` : '');
+            const duration = formatDurationMinutes(details.duration, customerLanguage) ?? '';
             const description = String(details.description ?? '').trim();
             if (customerLanguage === 'en') {
               return [

@@ -13,7 +13,7 @@ const accepted = pair('เลือกตรวจเข่า', name);
 describe('historical named selection acceptance', () => {
   it.each(['th', 'lo', 'en'] as const)('accepts real %s detail without provider, rejects builder fallbacks', language => {
     const message = { th: 'รายละเอียด', lo: 'ຂໍຂໍ້ມູນ', en: 'details' }[language];
-    const program = { id: 'fixture', title: 'ตรวจเข่า', special_price: 3500, original_price: 4000, is_promotion: true, duration_minutes: 120 };
+    const program = { id: 'fixture', title: 'ตรวจเข่า', special_price: 3500, original_price: 4000, is_promotion: true, duration: 120 };
     const detail = buildProgramAnswer([program], message, '', language)!;
     expect(derive(pair('เลือกตรวจเข่า', detail), 'วิชัย').selectedProgram).toBe('ตรวจเข่า');
     for (const reply of [buildFallbackReply(message), buildProgramPriceAnswer({ title: 'ตรวจเข่า' }, message, '', language)!]) {
