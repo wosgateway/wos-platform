@@ -17,3 +17,20 @@ src-tree.txt
 test-payload.json
 
 deployment.json
+wos-webhook-test.env
+wos-webhook-prod.env
+
+# Local WOS AI Dev Agent approval state
+.wos-ai-agent/
+
+.overnight/
+
+*.backup-*
+*.log
+cloudflared-config*.yml
+preview-*.json
+smoke-body.json
+task.txt
+*.patch
+*.fixed.mjs
+*.patched.mjs

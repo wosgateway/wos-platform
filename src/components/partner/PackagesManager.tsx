@@ -30,6 +30,10 @@ interface Package {
   // ดู migration 082 — ใช้เป็นประเภทห้องสำหรับพาร์ทเนอร์หมวดโรงแรมเท่านั้น
   // (partnerCategory === 'Hotel'); หมวดอื่นไม่ใช้ฟิลด์นี้
   sub_category: string | null;
+  // เพิ่มโดย migration 117 — Hotel-only เช่นเดียวกับ sub_category
+  max_guests: number | null;
+  amenities: string[];
+  gallery_urls: string[];
 }
 
 interface PackageFormData {
@@ -42,6 +46,10 @@ interface PackageFormData {
   duration: string;
   image_url: string;
   sub_category: string;
+  // เพิ่มโดย migration 117 — Hotel-only
+  max_guests: string;
+  amenities: string[];
+  gallery_urls: string[];
 }
 
 const emptyForm: PackageFormData = {
@@ -54,7 +62,24 @@ const emptyForm: PackageFormData = {
   duration: '',
   image_url: '',
   sub_category: '',
+  max_guests: '',
+  amenities: [],
+  gallery_urls: [],
 };
+
+// รายการสิ่งอำนวยความสะดวกมาตรฐาน — เก็บเป็น array ของ value พวกนี้ใน
+// packages.amenities (jsonb) ดู migration 117 — เป็น UI-enforced list
+// เหมือน ROOM_TYPE_OPTIONS ด้านล่าง ไม่มี CHECK constraint ที่ DB
+const AMENITY_OPTIONS: { value: string; label: string }[] = [
+  { value: 'breakfast', label: '🍳 รวมอาหารเช้า' },
+  { value: 'wifi', label: '📶 Wi-Fi ฟรี' },
+  { value: 'aircon', label: '❄️ แอร์' },
+  { value: 'tv', label: '📺 ทีวี' },
+  { value: 'fridge', label: '🧊 ตู้เย็น' },
+  { value: 'balcony', label: '🌇 ระเบียง' },
+  { value: 'bathtub', label: '🛁 อ่างอาบน้ำ' },
+  { value: 'parking', label: '🅿️ ที่จอดรถ' },
+];
 
 // ตัวเลือกประเภทห้องมาตรฐาน — free-text ที่ฝั่ง DB (ไม่มี CHECK constraint
 // เหมือน vehicleType ของฝั่ง Transport) แต่ dropdown นี้คือ source of truth
@@ -149,6 +174,9 @@ export function PackagesManager({
         duration: pkg.duration || '',
         image_url: pkg.image_url || '',
         sub_category: pkg.sub_category || '',
+        max_guests: pkg.max_guests ? String(pkg.max_guests) : '',
+        amenities: pkg.amenities || [],
+        gallery_urls: pkg.gallery_urls || [],
       });
     } else {
       setForm(emptyForm);
@@ -189,6 +217,49 @@ export function PackagesManager({
     }
   }
 
+  // แยกจาก handleImageUpload (รูปปก) — เพิ่มเข้า gallery_urls แทนการ
+  // แทนที่ image_url เดิม ใช้ validation ชุดเดียวกันทุกอย่าง
+  async function handleGalleryUpload(file: File) {
+    setFormError(null);
+
+    if (!ALLOWED_MIME_TYPES.includes(file.type)) {
+      setFormError('รองรับเฉพาะไฟล์รูปภาพ JPEG, PNG, WEBP หรือ GIF เท่านั้น');
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setFormError(`ไฟล์ใหญ่เกินไป (${(file.size / 1024 / 1024).toFixed(1)}MB) — จำกัดไม่เกิน 5MB`);
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const path = `packages/${organizationId}/gallery_${Date.now()}_${file.name.replace(/[^a-zA-Z0-9._-]/g, '_')}`;
+      const { error: uploadError } = await supabase.storage
+        .from('partner-images')
+        .upload(path, file);
+      if (uploadError) throw uploadError;
+      const { data } = supabase.storage.from('partner-images').getPublicUrl(path);
+      setForm((f) => ({ ...f, gallery_urls: [...f.gallery_urls, data.publicUrl] }));
+    } catch (e) {
+      setFormError(e instanceof Error ? e.message : 'อัปโหลดรูปไม่สำเร็จ');
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function removeGalleryImage(url: string) {
+    setForm((f) => ({ ...f, gallery_urls: f.gallery_urls.filter((u) => u !== url) }));
+  }
+
+  function toggleAmenity(value: string) {
+    setForm((f) => ({
+      ...f,
+      amenities: f.amenities.includes(value)
+        ? f.amenities.filter((a) => a !== value)
+        : [...f.amenities, value],
+    }));
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setFormError(null);
@@ -216,25 +287,52 @@ export function PackagesManager({
       // ส่งเฉพาะพาร์ทเนอร์หมวดโรงแรม — หมวดอื่นไม่มี dropdown นี้ให้กรอก
       // อยู่แล้ว จึง sub_category จะเป็น '' -> null เสมอ
       sub_category: partnerCategory === 'Hotel' ? form.sub_category.trim() || null : null,
+      // migration 117 — เช่นเดียวกับ sub_category: Hotel เท่านั้น
+      // หมวดอื่นบันทึกเป็นค่าว่างเสมอ ไม่ว่า form state จะมีอะไรค้างอยู่
+      max_guests: partnerCategory === 'Hotel' && form.max_guests ? Number(form.max_guests) : null,
+      amenities: partnerCategory === 'Hotel' ? form.amenities : [],
+      gallery_urls: partnerCategory === 'Hotel' ? form.gallery_urls : [],
     };
 
     let result;
     if (form.id) {
       // แก้ไขโปรแกรมเดิม — กลับไปเป็น 'pending' เสมอ เพราะแก้เนื้อหาแล้ว
       // ควรให้แอดมินตรวจสอบซ้ำก่อนขึ้นเว็บอีกครั้ง ไม่ auto-publish ทับของเดิม
+      //
+      // BUGFIX: .select() ต่อท้ายเป็นสิ่งจำเป็น ไม่ใช่ของประดับ —
+      // Supabase update() ที่ RLS/`.eq()` กรองแล้วเจอ 0 แถว จะไม่ error
+      // เลย (0 แถวอัปเดตก็ถือเป็น "สำเร็จ" ในมุม Postgres) โค้ดเดิมไม่มี
+      // .select() จึงไม่มีทางรู้ว่าอัปเดตได้จริงกี่แถว → เจอเคสห้องที่
+      // partner_id ในตารางไม่ตรงกับ partnerId ปัจจุบัน (เช่น ถูกสร้างจาก
+      // ฝั่ง Admin แล้วผูกกับ partner ผิดตัว) กด "บันทึก" แล้วปิด modal
+      // เหมือนสำเร็จ แต่จริงๆ ไม่เคยเขียนอะไรลง DB เลย ข้อมูลเก่าจึงโผล่
+      // กลับมาเหมือนไม่มีอะไรเปลี่ยน — เช็ค result.data ด้านล่างเพื่อจับเคสนี้
       result = await supabase
         .from('packages')
         .update({ ...payload, status: 'pending' })
         .eq('id', form.id)
-        .eq('partner_id', partnerId);
+        .eq('partner_id', partnerId)
+        .select('id');
     } else {
-      result = await supabase.from('packages').insert({ ...payload, status: 'pending' });
+      result = await supabase.from('packages').insert({ ...payload, status: 'pending' }).select('id');
     }
 
     setSaving(false);
 
     if (result.error) {
       setFormError('บันทึกไม่สำเร็จ: ' + result.error.message);
+      return;
+    }
+
+    // แถวไม่ error แต่ก็ไม่มีแถวไหนถูกแก้/สร้างเลย = สิทธิ์ไม่ตรง
+    // (partner_id ของห้องนี้ไม่ตรงกับพาร์ทเนอร์ที่ล็อกอินอยู่) ไม่ใช่
+    // เคสที่ควรปิด modal เงียบๆ แบบเดิม
+    if (!result.data || result.data.length === 0) {
+      setFormError(
+        form.id
+          ? 'บันทึกไม่สำเร็จ: ไม่พบสิทธิ์แก้ไขห้องนี้ (partner_id ของห้องนี้อาจไม่ตรงกับบัญชีของคุณ) กรุณาติดต่อทีมงาน WOS ให้ตรวจสอบข้อมูลห้องนี้'
+          : 'บันทึกไม่สำเร็จ: ไม่สามารถสร้างห้องได้ กรุณาติดต่อทีมงาน WOS'
+      );
       return;
     }
 
@@ -245,14 +343,28 @@ export function PackagesManager({
   async function handleDelete(id: string) {
     if (!confirm('ลบโปรแกรมนี้? การดำเนินการนี้ไม่สามารถกู้คืนได้')) return;
 
-    const { error: deleteError } = await supabase
+    // BUGFIX (code review ก่อน merge): เคสเดียวกับที่แก้ handleSubmit
+    // ไปแล้ว — .delete() ที่ .eq('partner_id', partnerId) กรองแล้วเจอ 0
+    // แถว (เช่น ห้องนี้ partner_id ไม่ตรงกับบัญชีปัจจุบัน แบบเคส Standard
+    // Double) จะไม่ error เลย เพราะ "ลบ 0 แถว" ก็ถือเป็น success ในมุม
+    // Postgres — ต้องเติม .select('id') แล้วเช็คว่าลบได้จริงกี่แถว ไม่งั้น
+    // ปุ่ม "ลบ" จะดูเหมือนสำเร็จ (list โหลดใหม่) ทั้งที่ห้องนั้นยังอยู่ครบ
+    const { data: deletedRows, error: deleteError } = await supabase
       .from('packages')
       .delete()
       .eq('id', id)
-      .eq('partner_id', partnerId);
+      .eq('partner_id', partnerId)
+      .select('id');
 
     if (deleteError) {
       alert('ลบไม่สำเร็จ: ' + deleteError.message);
+      return;
+    }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      alert(
+        'ลบไม่สำเร็จ: ไม่พบสิทธิ์ลบห้องนี้ (partner_id ของห้องนี้อาจไม่ตรงกับบัญชีของคุณ) กรุณาติดต่อทีมงาน WOS ให้ตรวจสอบข้อมูลห้องนี้'
+      );
       return;
     }
 
@@ -310,6 +422,8 @@ export function PackagesManager({
                     {partnerCategory === 'Hotel' && pkg.sub_category ? (
                       <div className="text-xs text-slate-400">
                         🛏️ {ROOM_TYPE_OPTIONS.find((o) => o.value === pkg.sub_category)?.label ?? pkg.sub_category}
+                        {pkg.max_guests ? ` · สูงสุด ${pkg.max_guests} ท่าน` : ''}
+                        {pkg.amenities?.length ? ` · ${pkg.amenities.length} สิ่งอำนวยความสะดวก` : ''}
                       </div>
                     ) : null}
                   </td>
@@ -424,6 +538,20 @@ export function PackagesManager({
                 </div>
               ) : null}
 
+              {partnerCategory === 'Hotel' ? (
+                <div>
+                  <label className="form-label">จำนวนผู้เข้าพักสูงสุด</label>
+                  <input
+                    type="number"
+                    min={1}
+                    className="form-input"
+                    value={form.max_guests}
+                    onChange={(e) => setForm({ ...form, max_guests: e.target.value })}
+                    placeholder="เช่น 2"
+                  />
+                </div>
+              ) : null}
+
               <div>
                 <label className="form-label">ราคาปกติ (บาท) *</label>
                 <input
@@ -462,6 +590,28 @@ export function PackagesManager({
                 </label>
               </div>
 
+              {partnerCategory === 'Hotel' ? (
+                <div className="md:col-span-2">
+                  <label className="form-label">สิ่งอำนวยความสะดวก</label>
+                  <div className="flex flex-wrap gap-2">
+                    {AMENITY_OPTIONS.map((opt) => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        onClick={() => toggleAmenity(opt.value)}
+                        className={`rounded-full px-3 py-1.5 text-xs font-medium border transition-colors ${
+                          form.amenities.includes(opt.value)
+                            ? 'border-primary bg-primary-light text-primary-dark'
+                            : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                        }`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
               <div className="md:col-span-2">
                 <label className="form-label">รูปภาพ</label>
                 <input
@@ -491,6 +641,42 @@ export function PackagesManager({
                   </div>
                 )}
               </div>
+
+              {partnerCategory === 'Hotel' ? (
+                <div className="md:col-span-2">
+                  <label className="form-label">รูปเพิ่มเติม (แกลเลอรี)</label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="form-input"
+                    onChange={(e) => e.target.files?.[0] && handleGalleryUpload(e.target.files[0])}
+                  />
+                  {form.gallery_urls.length > 0 && (
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      {form.gallery_urls.map((url) => (
+                        <div key={url} className="relative">
+                          <Image
+                            src={url}
+                            alt="gallery"
+                            width={64}
+                            height={64}
+                            className="h-16 w-16 rounded-lg object-cover"
+                            unoptimized
+                          />
+                          <button
+                            type="button"
+                            onClick={() => removeGalleryImage(url)}
+                            className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs text-white"
+                            title="ลบรูปนี้"
+                          >
+                            ×
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ) : null}
             </div>
 
             <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-700">
