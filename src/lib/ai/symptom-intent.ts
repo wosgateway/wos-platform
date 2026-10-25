@@ -4,7 +4,7 @@
  * These are service-intent hints, not medical diagnoses. Keep the map small
  * and explicit so a symptom cannot broaden into an unrelated catalog search.
  */
-const SYMPTOM_SEARCH_ALIASES: Array<[string, string]> = [
+export const SYMPTOM_SEARCH_ALIASES: ReadonlyArray<readonly [string, string]> = [
   ['ปวดเข่า', 'ตรวจเข่า'],
   ['เจ็บเข่า', 'ตรวจเข่า'],
   ['ปวดข้อเข่า', 'ตรวจเข่า'],
