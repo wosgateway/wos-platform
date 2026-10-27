@@ -1,4 +1,4 @@
-import { authorizeCatalogTurn, DENIED, pendingForExecution, type CatalogAuthorization, type ClassificationProvenance } from '../catalog-authorization';
+import { authorizeCatalogTurn, pendingForExecution, type CatalogAuthorization, type ClassificationProvenance } from '../catalog-authorization';
 import { clearPendingService, replacePendingService, setCurrentProvince } from './state';
 import { detectProvinceInText } from './provinces';
 // Integration point called from runWosAI().

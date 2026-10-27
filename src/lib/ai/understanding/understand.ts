@@ -2,7 +2,6 @@ import { normalizeCatalogInput } from '../catalog-query-normalization';
 import { deriveLegacyLookupSemantics } from '../legacy-lookup-semantics';
 import { extractJson, parseUnderstanding, type CatalogItem, type Understanding } from './types';
 import { detectProvinceInText, matchProvince, type ProvinceRecord } from './provinces';
-import { getSymptomSearchAliases } from '../symptom-intent';
 
 export type LlmJson = (args: { system: string; user: string; timeoutMs: number }) => Promise<string>;
 

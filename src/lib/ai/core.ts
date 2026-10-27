@@ -370,7 +370,7 @@ async function executeTool(
   rawUserMessage: string,
   catalog: { searchPrograms: typeof rawSearchPrograms; searchHealthProgramOverview: typeof rawSearchHealthProgramOverview; getProgramDetails: typeof rawGetProgramDetails; getCatalogProvinces: typeof rawGetCatalogProvinces }
 ) {
-  const { searchPrograms, searchHealthProgramOverview, getProgramDetails, getCatalogProvinces } = catalog;
+  const { searchPrograms, getProgramDetails, getCatalogProvinces } = catalog;
   /**
    * ---------------------------------------------------------
    * searchPrograms

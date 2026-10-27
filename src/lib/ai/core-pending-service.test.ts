@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runWosAI } from './core';
-import { clearPendingService, loadState, replacePendingService, saveState, setCurrentProvince } from './understanding/state';
+import { loadState, replacePendingService, saveState } from './understanding/state';
 import * as authorization from './catalog-authorization';
 import { normalizeSelectionInput } from './selection-lexical';
 import { extractExplicitProgramTitle, deriveWosJourneyState } from './journey-state';
