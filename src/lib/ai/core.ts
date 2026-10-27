@@ -1,3 +1,10 @@
+import { authorizeCatalogTurn, DENIED, provinceContinuation, type CatalogAuthorization, type ClassificationProvenance, type CatalogTurnOwner } from './catalog-authorization';
+import { loadState, loadProvinces, clearState, clearPendingService, replacePendingService, setCurrentProvince, saveState, type ConversationState } from './understanding/state';
+import { detectProvinceInText, coveredProvinceIds, type ProvinceRecord } from './understanding/provinces';
+import { normalizeCatalogInput, hasCatalogLocationWording, hasProvinceCoverageWording } from './catalog-query-normalization';
+import { extractConcreteServiceEvidence } from './concrete-service-evidence';
+import type { Understanding } from './understanding/types';
+import { isShortNegative } from './journey-state';
 import { formatDurationMinutes } from '@/lib/format-duration';
 import OpenAI from 'openai';
 import { WOS_AI_SYSTEM_PROMPT } from './prompts';
@@ -18,10 +25,10 @@ import {
   validateToolArgs,
 } from './tool-guard';
 import {
-  searchPrograms,
-  searchHealthProgramOverview,
-  getProgramDetails,
-  getCatalogProvinces,
+  searchPrograms as rawSearchPrograms,
+  searchHealthProgramOverview as rawSearchHealthProgramOverview,
+  getProgramDetails as rawGetProgramDetails,
+  getCatalogProvinces as rawGetCatalogProvinces,
   detectLocationFromRawText,
 } from './programs';
 import { searchWosNotionKnowledge } from './notion-knowledge';
@@ -360,8 +367,10 @@ async function executeTool(
   // Unlike query/province below, this text never passes through the
   // model's tool-call JSON generation, so it cannot suffer the same
   // mistranslation/mojibake corruption - see the fallback below.
-  rawUserMessage: string
+  rawUserMessage: string,
+  catalog: { searchPrograms: typeof rawSearchPrograms; searchHealthProgramOverview: typeof rawSearchHealthProgramOverview; getProgramDetails: typeof rawGetProgramDetails; getCatalogProvinces: typeof rawGetCatalogProvinces }
 ) {
+  const { searchPrograms, searchHealthProgramOverview, getProgramDetails, getCatalogProvinces } = catalog;
   /**
    * ---------------------------------------------------------
    * searchPrograms
@@ -913,6 +922,24 @@ export async function runWosAI(
   // (Chatwoot conversation id); without it the understanding gate runs stateless.
   opts: { conversationId?: string; channel?: string } = {}
 ) {
+  let authorization: CatalogAuthorization = DENIED;
+  let storedState: ConversationState | null = null;
+  let currentProvince: ProvinceRecord | null = null;
+  const permit = (operations: string[]) => { if (!authorization.allowed || !operations.includes(authorization.operation!)) throw new Error('Catalog operation not authorized'); };
+  const searchPrograms: typeof rawSearchPrograms = async (query, limit, options) => {
+    permit(['search', 'selection', 'detail', 'more', 'discovery']);
+    const pending = authorization.pendingExecution;
+    const consumes = authorization.kind === 'pending' && pending && query === pending.query && currentProvince?.id === pending.provinceId;
+    const scoped = currentProvince && !detectLocationFromRawText(query).length ? query + ' ' + currentProvince.name_th : query;
+    const strict = consumes ? { throwOnError: true } : options;
+    const items = strict ? await rawSearchPrograms(scoped, limit, strict) : await rawSearchPrograms(scoped, limit);
+    if (consumes && opts.conversationId) { await clearPendingService(opts.conversationId, pending.id); if (storedState) storedState.pending = null; }
+    return items;
+  };
+  const searchHealthProgramOverview: typeof rawSearchHealthProgramOverview = (limit, province) => { permit(['discovery']); return rawSearchHealthProgramOverview(limit, province ?? currentProvince?.name_th); };
+  const getProgramDetails: typeof rawGetProgramDetails = id => { permit(['selection', 'detail']); return rawGetProgramDetails(id); };
+  const getCatalogProvinces: typeof rawGetCatalogProvinces = () => { permit(['search', 'coverage', 'discovery']); return rawGetCatalogProvinces(); };
+
   try {
     // HARD CONVERSATION BOUNDARY: standalone greetings must never fall
     // through to catalog/knowledge/LLM lookup. This keeps simple "hello"
@@ -960,6 +987,7 @@ export async function runWosAI(
     const selectionState = deriveWosJourneyState(cleanHistory, userMessage);
     if (extractRejectedProgramTitle(userMessage, cleanHistory)
       || (selectionState.rejectedProgram && !selectionState.selectedProgram && isHandoffConfirmation(userMessage))) {
+      if (opts.conversationId) await clearPendingService(opts.conversationId);
       if (customerLanguage === 'lo') return 'ຮັບຊາບຄ່ະ 😊 ສົນໃຈໂປຣແກຣມໃດຄະ?';
       if (customerLanguage === 'en') return 'Understood 😊 Which program are you interested in?';
       return 'รับทราบค่ะ 😊 สนใจโปรแกรมไหนคะ?';
@@ -980,6 +1008,56 @@ export async function runWosAI(
       if (pendingReply) return pendingReply;
     }
 
+    const isJourneyResetCommand = /^(?:เริ่มข้อมูลใหม่|เริ่มใหม่|เริ่มคุยใหม่|จองใหม่(?:เลย)?|ล้างข้อมูล(?:เดิม)?|เริ่มการจองใหม่|start over|start new|new booking|new journey|reset|clear previous|clear data|ລ້າງຂໍ້ມູນເກົ່າ|ລ້າງຂໍ້ມູນ|ເລີ່ມໃໝ່|ຈອງໃໝ່)$/iu.test(userMessage.trim());
+    if (isJourneyResetCommand) {
+      if (opts.conversationId) await clearState(opts.conversationId);
+      if (customerLanguage === 'lo') return 'ໄດ້ເລີຍຄ່ະ 😊 ໃບເຟີນລ້າງຂໍ້ມູນການຈອງເກົ່າໃຫ້ແລ້ວ. ເລີ່ມຂໍ້ມູນໃໝ່ໄດ້ເລີຍຄ່ະ';
+      if (customerLanguage === 'en') return 'Done 😊 I cleared the previous booking information. We can start fresh.';
+      return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นล้างข้อมูลการจองเดิมให้แล้วนะคะ เริ่มข้อมูลใหม่ได้เลยค่ะ';
+    }
+    if (isShortNegative(userMessage)) { if (opts.conversationId) await clearPendingService(opts.conversationId); return buildFallbackReply(userMessage); }
+    const conciergeOwns = Boolean(selectionState.answeredQuestion || selectionState.currentTurnAddon);
+    const explicitSelection = extractExplicitProgramTitle(userMessage);
+    let owner: CatalogTurnOwner = conciergeOwns ? 'deterministic-state' : explicitSelection ? 'selection'
+      : selectionState.selectedProgram && !extractConcreteServiceEvidence(userMessage) ? 'unresolved' : 'none';
+    if (!opts.conversationId
+      && selectionState.answeredQuestion === 'pickup'
+      && selectionState.transportNeeded === true
+      && selectionState.transportOrigin
+      && selectionState.hotelNeeded === undefined) {
+      return buildAskHotelReply(customerLanguage, selectionState);
+    }
+    const needsProvinceReferences = Boolean(opts.conversationId)
+      || hasCatalogLocationWording(userMessage)
+      || detectLocationFromRawText(userMessage).length > 0;
+    const provinces = needsProvinceReferences ? await loadProvinces() : [];
+    const explicitProvince = conciergeOwns ? null : detectProvinceInText(normalizeCatalogInput(userMessage), provinces);
+    currentProvince = explicitProvince;
+    if (opts.conversationId) {
+      storedState = await loadState(opts.conversationId);
+      currentProvince = explicitProvince ?? provinces.find(p => p.id === storedState?.provinceId) ?? null;
+      if (explicitProvince) await setCurrentProvince(opts.conversationId, opts.channel ?? 'web', storedState, explicitProvince.id);
+    }
+    const continuation = !conciergeOwns && storedState?.pending ? provinceContinuation(userMessage, provinces) : null;
+    if (continuation) owner = 'province-continuation';
+    else if (hasProvinceCoverageWording(userMessage)) owner = 'coverage-context';
+    const resolve = (understanding: Understanding | null, provenance?: ClassificationProvenance) => authorization = authorizeCatalogTurn({
+      message: userMessage, owner, history: cleanHistory, understanding, provenance, pending: storedState?.pending, continuationProvince: continuation, provinces,
+      existingCatalogRequest: !selectionState.selectedProgram && isProgramOverviewQuestion(userMessage),
+    });
+    resolve(null);
+    if (authorization.service && hasCatalogLocationWording(userMessage) && !detectProvinceInText(normalizeCatalogInput(userMessage), provinces)) {
+      if (opts.conversationId) await replacePendingService(opts.conversationId, opts.channel ?? 'web', authorization.service);
+      return customerLanguage === 'lo' ? 'ສົນໃຈໂປຣແກຣມໃນແຂວງໃດຄະ?' : customerLanguage === 'en' ? 'Which province are you interested in?' : 'สนใจโปรแกรมของจังหวัดไหนคะ?';
+    }
+    if (authorization.kind === 'pending' && authorization.service && currentProvince) {
+      const covered = await getCatalogProvinces();
+      if (!coveredProvinceIds(covered, provinces).has(currentProvince.id)) return buildFallbackReply(userMessage);
+      const items = await searchPrograms(authorization.service.query, 5, { throwOnError: true });
+      if (opts.conversationId && items.length) await saveState(opts.conversationId, opts.channel ?? 'web', { lastCatalog: items, catalogQuery: { provinceId: currentProvince.id, query: authorization.service.query }, catalogOffset: items.length });
+      return buildProgramAnswer(items, userMessage, '', customerLanguage) ?? buildFallbackReply(userMessage);
+    }
+
     // UNDERSTANDING GATE (WOS_AI_UNDERSTANDING=off|shadow|on, default off).
     // LLM -> intent/entities (validated against canonical provinces) -> business rules ->
     // verified catalog. Handles only the program-catalog intents; anything else, any error
@@ -989,8 +1067,19 @@ export async function runWosAI(
       history,
       conversationId: opts.conversationId,
       channel: opts.channel,
+      authorize: resolve,
     });
     if (gate.handled) return gate.text;
+    if (gate.semantic?.authority === 'authoritative') resolve(gate.semantic.understanding, gate.semantic.provenance);
+    if (authorization.operation === 'search' && authorization.service) {
+      if (currentProvince && opts.conversationId) {
+        const covered = await getCatalogProvinces();
+        if (!coveredProvinceIds(covered, provinces).has(currentProvince.id)) return buildFallbackReply(userMessage);
+      }
+      const items = await searchPrograms(authorization.service.query, 5);
+      return buildProgramAnswer(items, userMessage, '', customerLanguage) ?? buildFallbackReply(userMessage);
+    }
+    if (!authorization.allowed && !selectionState.selectedProgram && extractConcreteServiceEvidence(userMessage)) return buildFallbackReply(userMessage);
 
     // HARD CONVERSATION BOUNDARY: a bare "interest" message without a
     // program selection must enter catalog discovery, not booking/name
@@ -1057,7 +1146,7 @@ export async function runWosAI(
     // Deterministic catalog overview: this question is a direct request for
     // the current province coverage, so do not let the local model turn it
     // into a generic greeting or an unrelated program search.
-    if (/(?:มี|ขอ|อยากทราบ|บอก).*จังหวัด|จังหวัด.*(?:ไหน|อะไร|บ้าง)/i.test(userMessage)) {
+    if (authorization.operation === 'coverage') {
       const provinces = await getCatalogProvinces();
       if (provinces.length === 0) {
         return 'ตอนนี้ยังไม่พบข้อมูลจังหวัดจากแคตตาล็อกที่เผยแพร่ค่ะ ขอให้ทีม WOS ตรวจสอบข้อมูลให้เพิ่มเติมนะคะ';
@@ -1129,12 +1218,7 @@ export async function runWosAI(
     // Explicit reset commands are control messages, not new questions. Return
     // immediately so stale history cannot be echoed by the LLM before the
     // reset boundary in journey-state.ts takes effect.
-    const isJourneyResetCommand = /^(?:เริ่มข้อมูลใหม่|เริ่มใหม่|เริ่มคุยใหม่|จองใหม่(?:เลย)?|ล้างข้อมูล(?:เดิม)?|เริ่มการจองใหม่|start over|start new|new booking|new journey|reset|clear previous|clear data|ລ້າງຂໍ້ມູນເກົ່າ|ລ້າງຂໍ້ມູນ|ເລີ່ມໃໝ່|ຈອງໃໝ່)$/iu.test(userMessage.trim());
-    if (isJourneyResetCommand) {
-      if (customerLanguage === 'lo') return 'ໄດ້ເລີຍຄ່ະ 😊 ໃບເຟີນລ້າງຂໍ້ມູນການຈອງເກົ່າໃຫ້ແລ້ວ. ເລີ່ມຂໍ້ມູນໃໝ່ໄດ້ເລີຍຄ່ະ';
-      if (customerLanguage === 'en') return 'Done 😊 I cleared the previous booking information. We can start fresh.';
-      return 'เรียบร้อยค่ะ 😊 ใบเฟิร์นล้างข้อมูลการจองเดิมให้แล้วนะคะ เริ่มข้อมูลใหม่ได้เลยค่ะ';
-    }
+
 
     // A bare affirmative after a reset (for example Lao "ສົນໃຈ") is only
     // an interest signal. It is never enough to enter the booking/name stage.
@@ -2380,7 +2464,8 @@ const runToolRounds = async (
             await executeTool(
               normalized.name,
               normalized.args,
-              userMessage
+              userMessage,
+              { searchPrograms, searchHealthProgramOverview, getProgramDetails, getCatalogProvinces }
             ),
             knownProgramIds,
             searchState

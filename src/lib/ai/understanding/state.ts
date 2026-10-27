@@ -1,5 +1,5 @@
 // Supabase I/O for the Understanding layer (service role, server only).
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createServiceClient } from '@/lib/supabase/service';
 import type { CatalogItem } from './types';
 import type { ProvinceRecord } from './provinces';
@@ -21,7 +21,58 @@ export async function loadProvinces(): Promise<ProvinceRecord[]> {
 }
 
 // ---- conversation state ----------------------------------------------------
+export interface PendingService {
+  id: string;
+  query: string;
+  source: 'explicit-service' | 'symptom';
+  createdAt: string;
+}
+
+function pendingTuple(pending: PendingService | null) {
+  return {
+    pending_request_id: pending?.id ?? null,
+    pending_service_query: pending?.query ?? null,
+    pending_service_source: pending?.source ?? null,
+    pending_service_created_at: pending?.createdAt ?? null,
+  };
+}
+
+/** Complete tuple writes only. Errors must retain the caller's request, never look like success. */
+export async function replacePendingService(conversationId: string, channel: string,
+  service: Pick<PendingService, 'query' | 'source'>): Promise<PendingService> {
+  const pending: PendingService = { ...service, id: randomUUID(), createdAt: new Date().toISOString() };
+  const { error } = await createServiceClient().from('ai_conversation_state').upsert({
+    conversation_id: conversationId, channel, ...pendingTuple(pending),
+  }, { onConflict: 'conversation_id' });
+  if (error) throw new Error('Pending service persistence failed');
+  return pending;
+}
+
+/** Compare-and-clear prevents an old lookup from clearing a replacement request. */
+export async function clearPendingService(conversationId: string, requestId?: string): Promise<void> {
+  let update = createServiceClient().from('ai_conversation_state')
+    .update(pendingTuple(null)).eq('conversation_id', conversationId);
+  if (requestId) update = update.eq('pending_request_id', requestId);
+  const { error } = await update;
+  if (error) throw new Error('Pending service clear failed');
+}
+
+/** Province authority is independent of coverage and selection. */
+export async function setCurrentProvince(conversationId: string, channel: string,
+  state: ConversationState | null, provinceId: string): Promise<void> {
+  if (state?.provinceId === provinceId) return;
+  const catalogProvince = state?.catalogProvinceId ?? state?.catalogQuery?.provinceId;
+  const invalidate = catalogProvince && catalogProvince !== provinceId;
+  const { error } = await createServiceClient().from('ai_conversation_state').upsert({
+    conversation_id: conversationId, channel, province_id: provinceId,
+    ...(invalidate ? { catalog_query: null, last_catalog: [], catalog_offset: 0, catalog_updated_at: null } : {}),
+  }, { onConflict: 'conversation_id' });
+  if (error) throw new Error('Province persistence failed');
+}
+
 export interface ConversationState {
+  pending?: PendingService | null;
+  catalogProvinceId?: string | null;
   provinceId: string | null;
   lastCatalog: CatalogItem[];
   catalogQuery: { provinceId: string | null; query: string | null } | null;
@@ -35,12 +86,15 @@ const CATALOG_TTL_MS = 6 * 60 * 60_000;
 export async function loadState(conversationId: string): Promise<ConversationState | null> {
   const { data, error } = await createServiceClient()
     .from('ai_conversation_state')
-    .select('province_id,last_catalog,catalog_query,catalog_offset,selected_program_id,catalog_updated_at')
+    .select('province_id,last_catalog,catalog_query,catalog_offset,selected_program_id,catalog_updated_at,pending_request_id,pending_service_query,pending_service_source,pending_service_created_at')
     .eq('conversation_id', conversationId)
     .maybeSingle();
-  if (error || !data) return null;
+  if (error) throw new Error('Conversation state read failed');
+  if (!data) return null;
   const fresh = data.catalog_updated_at && Date.now() - Date.parse(data.catalog_updated_at) < CATALOG_TTL_MS;
   return {
+    pending: data.pending_request_id ? { id: data.pending_request_id, query: data.pending_service_query, source: data.pending_service_source, createdAt: data.pending_service_created_at } : null,
+    catalogProvinceId: (data.catalog_query as ConversationState['catalogQuery'])?.provinceId ?? null,
     provinceId: data.province_id ?? null,
     lastCatalog: fresh && Array.isArray(data.last_catalog) ? (data.last_catalog as CatalogItem[]) : [],
     catalogQuery: fresh ? (data.catalog_query as ConversationState['catalogQuery']) : null,
@@ -50,7 +104,7 @@ export async function loadState(conversationId: string): Promise<ConversationSta
   };
 }
 
-export async function saveState(conversationId: string, channel: string, patch: Partial<ConversationState>): Promise<void> {
+export async function saveState(conversationId: string, channel: string, patch: Partial<Omit<ConversationState, 'pending' | 'catalogProvinceId'>>): Promise<void> {
   const row: Record<string, unknown> = { conversation_id: conversationId, channel };
   if ('provinceId' in patch) row.province_id = patch.provinceId;
   if ('lastCatalog' in patch) { row.last_catalog = patch.lastCatalog; row.catalog_updated_at = new Date().toISOString(); }

@@ -659,7 +659,8 @@ function passesRelevanceGate(
 
 export async function searchPrograms(
   query: string,
-  limit = 5
+  limit = 5,
+  options?: { throwOnError: boolean }
 ): Promise<ProgramSearchResult[]> {
   const safeLimit = Math.min(Math.max(limit, 1), 10);
   const locationAliases = detectLocation(query);
@@ -735,6 +736,7 @@ export async function searchPrograms(
       // return hotel/room/transport packages for a province.
       return await searchHealthProgramOverview(safeLimit, locationAliases[0]);
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error('[WOS_AI_TOOL] province browse failed:', error);
       return [];
     }
@@ -762,6 +764,7 @@ export async function searchPrograms(
         })),
       });
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error(
         '[WOS_AI_TOOL] searchPrograms candidate failed:',
         candidate.value,
@@ -833,6 +836,7 @@ export async function searchPrograms(
         }
       }
     } catch (error) {
+      if (options?.throwOnError) throw error;
       console.error(
         '[WOS_AI_TOOL] fetchActivePackages fallback failed:',
         error

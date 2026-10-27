@@ -1,3 +1,6 @@
+import { authorizeCatalogTurn, DENIED, pendingForExecution, type CatalogAuthorization, type ClassificationProvenance } from '../catalog-authorization';
+import { clearPendingService, replacePendingService, setCurrentProvince } from './state';
+import { detectProvinceInText } from './provinces';
 // Integration point called from runWosAI().
 //   WOS_AI_UNDERSTANDING=off     (default) -> no-op, zero behaviour change
 //   WOS_AI_UNDERSTANDING=shadow  -> understand + decide + log, but legacy still answers
@@ -10,10 +13,10 @@ import { createUnderstandLlm } from './llm';
 import { catalogMatchesHistory, decide, type Action, type DecideContext } from './orchestrator';
 import { coveredProvinceIds, type ProvinceRecord } from './provinces';
 import { clearState, loadProvinces, loadState, logAiRequest, saveState } from './state';
-import type { CatalogItem } from './types';
+import type { CatalogItem, Understanding } from './types';
 import { understand } from './understand';
 
-export type GateResult = { handled: true; text: string } | { handled: false };
+export type GateResult = { handled: true; text: string } | { handled: false; semantic?: { authority: 'authoritative' | 'observational'; provenance: ClassificationProvenance; understanding: Understanding } };
 type History = { role: 'user' | 'assistant'; content: string }[];
 
 const NOT_HANDLED: GateResult = { handled: false };
@@ -43,7 +46,7 @@ function toItem(p: Awaited<ReturnType<typeof searchPrograms>>[number]): CatalogI
 
 async function execute(
   action: Action,
-  a: { message: string; lang: WosLanguage; provinces: ProvinceRecord[]; conversationId?: string; channel: string },
+  a: { message: string; lang: WosLanguage; provinces: ProvinceRecord[]; conversationId?: string; channel: string; pendingId?: string },
 ): Promise<string | null> {
   const { lang, provinces, conversationId, channel } = a;
   const save = (p: Parameters<typeof saveState>[2]) => (conversationId ? saveState(conversationId, channel, p) : Promise.resolve());
@@ -84,7 +87,8 @@ async function execute(
     case 'SEARCH': {
       const query = [action.query, action.province?.name_th].filter(Boolean).join(' ');
       const wanted = action.kind === 'more' ? Math.min(action.offset + 5, 10) : 5;
-      const found = await searchPrograms(query, wanted);
+      const found = a.pendingId ? await searchPrograms(query, wanted, { throwOnError: true }) : await searchPrograms(query, wanted);
+      if (conversationId && a.pendingId) await clearPendingService(conversationId, a.pendingId);
       const items = action.kind === 'more' ? found.slice(action.offset) : found;
       if (items.length === 0) {
         return action.kind === 'more'
@@ -102,11 +106,9 @@ async function execute(
       const text = buildProgramAnswer(items.map(toItem) as VerifiedProgram[], a.message, '', lang);
       if (!text) return null;
       await save({
-        provinceId: action.province?.id ?? null,
         lastCatalog: items.map(toItem),
         catalogQuery: { provinceId: action.province?.id ?? null, query: action.query },
         catalogOffset: action.kind === 'more' ? action.offset + items.length : items.length,
-        selectedProgramId: null,
       });
       return text;
     }
@@ -134,6 +136,7 @@ export async function runUnderstandingGate(args: {
   history: History;
   conversationId?: string;
   channel?: string;
+  authorize?: (understanding: Understanding | null, provenance?: ClassificationProvenance) => CatalogAuthorization;
 }): Promise<GateResult> {
   const m = mode();
   if (m === 'off') return NOT_HANDLED;
@@ -146,9 +149,8 @@ export async function runUnderstandingGate(args: {
     logAiRequest({ conversationId: args.conversationId, channel, mode: m, message, handled: false, latencyMs: Date.now() - t0, ...extra });
 
   try {
-    const [provinces, catalogNames, state] = await Promise.all([
+    const [provinces, state] = await Promise.all([
       loadProvinces(),
-      getCatalogProvinces(),
       args.conversationId ? loadState(args.conversationId) : Promise.resolve(null),
     ]);
     if (provinces.length === 0) { await log({ deferReason: 'no_provinces' }); return NOT_HANDLED; }
@@ -162,20 +164,36 @@ export async function runUnderstandingGate(args: {
       journeyProvinceId: state?.provinceId ?? null,
     };
 
-    const { understanding: u, error } = await understand(createUnderstandLlm(), message, args.history, ctx.recentCatalog, provinces);
+    const { understanding: u, error, provenance = 'deterministic' } = await understand(createUnderstandLlm(), message, args.history, ctx.recentCatalog, provinces);
+    const authorization = args.authorize?.(m === 'on' ? u : null, provenance)
+      ?? authorizeCatalogTurn({ message, owner: 'none', history: args.history, understanding: m === 'on' ? u : null, provenance, provinces });
     if (!u) { await log({ error, deferReason: 'understand_failed' }); return NOT_HANDLED; }
+    const deferred: GateResult = { handled: false, semantic: { authority: m === 'on' ? 'authoritative' : 'observational', provenance, understanding: u } };
+    if (m === 'shadow') return deferred;
+    if (!authorization.allowed && u.intent !== 'RESET') return deferred;
+    if (u.intent === 'RESET') { if (args.conversationId) await clearState(args.conversationId); return deferred; }
+    const explicitProvince = detectProvinceInText(message, provinces);
+    if (explicitProvince && args.conversationId) await setCurrentProvince(args.conversationId, channel, state, explicitProvince.id);
+    const catalogNames = await getCatalogProvinces();
 
     const action = decide(u, message, ctx, { provinces, coveredProvinceIds: coveredProvinceIds(catalogNames, provinces) });
+    if (action.type === 'SEARCH' && action.kind === 'search' && authorization.service) {
+      action.query = authorization.service.query;
+    }
+    const actionOperation = action.type === 'SEARCH' ? action.kind === 'more' ? 'more' : action.kind === 'discovery' ? 'discovery' : 'search'
+      : action.type === 'SELECT' || action.type === 'ASK_SELECTION' ? 'selection' : action.type === 'DETAIL' || action.type === 'ASK_CLARIFY' ? 'detail' : null;
+    if (actionOperation && actionOperation !== authorization.operation) return deferred;
     const base = { language: u.language, intent: u.intent, confidence: u.confidence, entities: u.entities, action: action.type };
 
     if (action.type === 'RESET' && args.conversationId && m === 'on') await clearState(args.conversationId);
-    if (m === 'shadow' || action.type === 'DEFER' || action.type === 'RESET') {
+    if (action.type === 'DEFER' || action.type === 'RESET') {
       await log({ ...base, deferReason: action.type === 'DEFER' ? action.reason : null });
       return NOT_HANDLED;
     }
 
     const lang = detectWosLanguage(message, args.history.filter((h) => h.role === 'user').map((h) => h.content));
-    const text = await execute(action, { message, lang, provinces, conversationId: args.conversationId, channel });
+    if (action.type === 'ASK_PROVINCE' && authorization.service && args.conversationId) await replacePendingService(args.conversationId, channel, authorization.service);
+    const text = await execute(action, { message, lang, provinces, conversationId: args.conversationId, channel, pendingId: pendingForExecution(authorization, action) });
     await log({ ...base, handled: !!text, deferReason: text ? null : 'execute_returned_null' });
     return text ? { handled: true, text } : NOT_HANDLED;
   } catch (err) {

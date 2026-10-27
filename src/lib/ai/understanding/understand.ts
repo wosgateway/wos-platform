@@ -1,3 +1,5 @@
+import { normalizeCatalogInput } from '../catalog-query-normalization';
+import { deriveLegacyLookupSemantics } from '../legacy-lookup-semantics';
 import { extractJson, parseUnderstanding, type CatalogItem, type Understanding } from './types';
 import { detectProvinceInText, matchProvince, type ProvinceRecord } from './provinces';
 import { getSymptomSearchAliases } from '../symptom-intent';
@@ -125,11 +127,9 @@ function deterministicFallback(
   // understanding gate and legacy catalog path share one source of truth.
   // A specific symptom is searchable even when no province is provided.
   // ------------------------------------------------------------
-  const symptomAlias = getSymptomSearchAliases(m)[0];
-  if (symptomAlias) {
-    return makeUnderstanding(m, 'PROGRAM_SEARCH', 0.99, {
-      program_query: symptomAlias,
-    });
+  const request = deriveLegacyLookupSemantics({ message: m, owner: 'none' });
+  if (request.kind === 'lookup' && request.intent === 'PROGRAM_SEARCH') {
+    return makeUnderstanding(m, 'PROGRAM_SEARCH', .99, { program_query: request.query });
   }
 
   // ------------------------------------------------------------
@@ -461,9 +461,9 @@ export async function understand(
   catalog: CatalogItem[],
   provinces: ProvinceRecord[] = [],
   timeoutMs = 6000,
-): Promise<{ understanding: Understanding | null; error?: string }> {
-  const deterministic = deterministicFallback(message, catalog);
-  if (deterministic) return { understanding: deterministic };
+): Promise<{ understanding: Understanding | null; error?: string; provenance?: 'model' | 'deterministic' }> {
+  const deterministic = deterministicFallback(normalizeCatalogInput(message), catalog);
+  if (deterministic) return { understanding: deterministic, provenance: 'deterministic' };
 
   const user = buildUser(message, history, catalog);
   let lastError = 'invalid_output';
@@ -475,11 +475,11 @@ export async function understand(
 
       if (parsed) {
         const normalized = normalizeUnderstanding(withCanonicalProvince(parsed, message, provinces), message, catalog);
-        return { understanding: normalized };
+        return { understanding: normalized, provenance: 'model' };
       }
 
       const fallback = deterministicFallback(message, catalog);
-      if (fallback) return { understanding: fallback };
+      if (fallback) return { understanding: fallback, provenance: 'deterministic' };
 
       lastError = 'invalid_output';
     } catch (err) {
@@ -489,7 +489,7 @@ export async function understand(
   }
 
   const fallback = deterministicFallback(message, catalog);
-  if (fallback) return { understanding: fallback };
+  if (fallback) return { understanding: fallback, provenance: 'deterministic' };
 
   return { understanding: null, error: lastError };
 }

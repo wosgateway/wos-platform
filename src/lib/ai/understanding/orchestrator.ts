@@ -73,8 +73,9 @@ export function decide(
   // Province: the model's value must exist in canonical data; text match is a deterministic backup.
   const fromModel = matchProvince(e.province, deps.provinces);
   const fromText = detectProvinceInText(message, deps.provinces);
-  const province = fromModel ?? fromText;
-  const namedButUnknown = !!e.province && !fromModel && !fromText;
+  const persisted = deps.provinces.find(p => p.id === ctx.journeyProvinceId) ?? null;
+  const province = fromText ?? persisted ?? fromModel;
+  const namedButUnknown = !!e.province && !fromModel && !fromText && !persisted;
 
   switch (u.intent) {
     case 'PROGRAM_DISCOVERY':
