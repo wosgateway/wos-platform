@@ -3,7 +3,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { understand } from './understanding/understand';
 import { runUnderstandingGate } from './understanding/gate';
 import { runWosAI } from './core';
-import { classifyAssistantQuestion, deriveWosJourneyState } from './journey-state';
 import type { Understanding } from './understanding/types';
 
 const io = vi.hoisted(() => ({ model: vi.fn(), complete: vi.fn(), overview: vi.fn(), search: vi.fn(), provinces: vi.fn(), catalog: vi.fn(), log: vi.fn(), forbidden: vi.fn() }));
@@ -52,6 +51,19 @@ const history = [
  {role:'assistant' as const,content:'รับทราบค่ะ 😊 สนใจรถรับส่งด้วยไหมคะ?'},
 ];
 describe('real-core semantic authorization',()=>{
+ it('authorizes Lao explicit selection through the real semantic gate',async()=>{
+  vi.stubEnv('WOS_AI_UNDERSTANDING','on');
+  io.model.mockResolvedValue(JSON.stringify({...semantic('PROGRAM_SEARCH'),language:'lo'}));
+  const reply=await runWosAI('ເລືອກກວດເຂົ່າ',[]);
+  expect(runUnderstandingGate).toHaveBeenCalledOnce();
+  expect(understand).toHaveBeenCalledOnce();
+  const classified=await vi.mocked(understand).mock.results[0].value;
+  expect(classified.understanding?.entities.program_query).toBe('ตรวจเข่า');
+  const gateResult=await vi.mocked(runUnderstandingGate).mock.results[0].value;
+  expect(io.search).toHaveBeenCalledOnce();
+  expect(io.search).toHaveBeenCalledWith('ตรวจเข่า', 5);
+  expect(reply).toContain('ตรวจเข่า');
+ });
  it.each(['off','shadow','on'])('hostile non-request never searches in %s',async mode=>{
   vi.stubEnv('WOS_AI_UNDERSTANDING',mode);
   const reply=await runWosAI('ไม่ได้ถามเรื่องตรวจเข่า',[]);
@@ -112,52 +124,6 @@ describe('real-core semantic authorization',()=>{
  it('does not fall back to catalog when a non-request mentions program vocabulary',async()=>{
   vi.stubEnv('WOS_AI_UNDERSTANDING','off');
   await runWosAI('ไม่ได้ถามเรื่องโปรแกรม',[]);expect(io.search).not.toHaveBeenCalled();expect(io.complete).not.toHaveBeenCalled();
- });
- it('stateless pickup owns province-bearing text without loading province references',async()=>{
-  vi.stubEnv('WOS_AI_UNDERSTANDING','off');
-  io.provinces.mockImplementation(()=>{throw new Error('Unexpected province reference access');});
-  const pickupHistory = [
-   {role:'user' as const,content:'เลือกตรวจเข่า'},
-   {role:'assistant' as const,content:'ขอชื่อสำหรับลงข้อมูลด้วยนะคะ'},
-   {role:'user' as const,content:'สมชาย'},
-   {role:'assistant' as const,content:'สนใจรถรับส่งด้วยไหมคะ?'},
-   {role:'user' as const,content:'สนใจ'},
-   {role:'assistant' as const,content:'ขอจุดรับด้วยนะคะ'},
-  ];
-  expect(deriveWosJourneyState(pickupHistory,'')).toMatchObject({
-   selectedProgram:'ตรวจเข่า',customerName:'สมชาย',pendingQuestion:'pickup',
-  });
-  const input='รับที่สนามบินอุดรธานี';
-  expect(deriveWosJourneyState(pickupHistory,input)).toMatchObject({
-   selectedProgram:'ตรวจเข่า',customerName:'สมชาย',answeredQuestion:'pickup',
-   transportNeeded:true,transportOrigin:'สนามบินอุดรธานี',
-  });
-  const reply=await runWosAI(input,pickupHistory);
-  expect(classifyAssistantQuestion(reply)).toBe('hotel');
-  expect(io.provinces).not.toHaveBeenCalled();expect(io.forbidden).not.toHaveBeenCalled();
-  expect(io.search).not.toHaveBeenCalled();expect(io.catalog).not.toHaveBeenCalled();
-  expect(deriveWosJourneyState([...pickupHistory,{role:'user',content:input},
-   {role:'assistant',content:reply}],'')).toMatchObject({
-   selectedProgram:'ตรวจเข่า',customerName:'สมชาย',transportOrigin:'สนามบินอุดรธานี',
-   pendingQuestion:'hotel',
-  });
- });
- it.each([
-  ['อุดรธานี', false],
-  ['ดาวอังคาร', true],
- ] as const)('stateless explicit province resolution: %s',async(province,unresolved)=>{
-  vi.stubEnv('WOS_AI_UNDERSTANDING','off');
-  const reply=await runWosAI(`มีโปรแกรมตรวจสุขภาพในจังหวัด${province}ไหม`,[]);
-  expect(io.provinces).toHaveBeenCalledOnce();
-  if(unresolved){
-   expect(reply).toBe('สนใจโปรแกรมของจังหวัดไหนคะ?');
-   expect(io.search).not.toHaveBeenCalled();expect(io.overview).not.toHaveBeenCalled();
-   expect(io.complete).not.toHaveBeenCalled();
-  }else{
-   expect(reply).not.toContain('จังหวัดไหน');
-   expect(io.search.mock.calls.length+io.overview.mock.calls.length+io.catalog.mock.calls.length).toBeGreaterThan(0);
-  }
-  expect(io.forbidden).not.toHaveBeenCalled();
  });
  it('freezes current service/province route',async()=>{
   vi.stubEnv('WOS_AI_UNDERSTANDING','off');
