@@ -59,7 +59,7 @@ describe('real-core semantic authorization',()=>{
   expect(understand).toHaveBeenCalledOnce();
   const classified=await vi.mocked(understand).mock.results[0].value;
   expect(classified.understanding?.entities.program_query).toBe('ตรวจเข่า');
-  const gateResult=await vi.mocked(runUnderstandingGate).mock.results[0].value;
+  await vi.mocked(runUnderstandingGate).mock.results[0].value;
   expect(io.search).toHaveBeenCalledOnce();
   expect(io.search).toHaveBeenCalledWith('ตรวจเข่า', 5);
   expect(reply).toContain('ตรวจเข่า');

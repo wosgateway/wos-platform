@@ -440,7 +440,7 @@ async function executeTool(
   diagnostic: WosAIDiagnostic | undefined,
   catalog: CatalogExecutor,
 ) {
-  const { searchPrograms, searchHealthProgramOverview, getProgramDetails, getCatalogProvinces } = catalog;
+  const { searchPrograms, getProgramDetails, getCatalogProvinces } = catalog;
   /**
    * ---------------------------------------------------------
    * searchPrograms

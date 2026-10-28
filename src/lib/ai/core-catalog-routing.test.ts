@@ -1,7 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { runWosAI, type WosAIHistoryMessage } from './core';
+import { runWosAI } from './core';
 import * as programs from './programs';
-import { classifyAssistantQuestion, deriveWosJourneyState } from './journey-state';
 
 const db = vi.hoisted(() => ({ rpc: vi.fn(), browse: vi.fn() }));
 // Keep programs.ts AND data.ts real; fixtures replace only Supabase I/O.

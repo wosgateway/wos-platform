@@ -43,7 +43,16 @@ function writer(role: 'admin' | 'partner', promotion: boolean, update = true) {
     payload: Record<string, unknown>;
   }> = [];
 
-  const chain: any = {
+  type WriterChain = {
+    from(table: string): WriterChain;
+    update(payload: Record<string, unknown>): WriterChain;
+    insert(payload: Record<string, unknown>): WriterChain;
+    eq(): WriterChain;
+    select(): WriterChain;
+    then(resolve: (value: unknown) => unknown): unknown;
+  };
+
+  const chain: WriterChain = {
     from: (table: string) => {
       if (table !== 'packages') throw new Error('Unexpected table');
       return chain;
