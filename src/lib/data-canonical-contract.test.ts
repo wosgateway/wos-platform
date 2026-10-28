@@ -35,3 +35,30 @@ describe('canonical catalog application boundary', () => {
     expect(rows[0].is_promotion).toBe(true);
   });
 });
+
+// Compatibility consumers receive the existing output property, not a stored legacy field.
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { ProgramCardV2 } from '@/components/ProgramCardV2';
+import { buildProgramPriceAnswer } from '@/lib/ai/program-answer';
+import type { Package } from './data';
+vi.mock('next/image', () => ({ default: () => null }));
+vi.mock('next-intl', () => ({ useLocale: () => 'en', useTranslations: () => (key: string) => key }));
+vi.mock('@/i18n/navigation', () => ({ Link: ({ children }: { children: React.ReactNode }) => children }));
+vi.mock('@/components/journey/AddToJourneyButton', () => ({ AddToJourneyButton: () => null }));
+describe('search output compatibility consumers', () => {
+  it.each([true, false])('UI and AI consume is_promotion=%s', async flag => {
+    vi.stubGlobal('React', React);
+    try {
+      mock.result = [{ id: 'fixture', title: 'Program', duration: null, is_promotion: flag, original_price: 100, special_price: 80 }];
+      const [row] = await searchPackages('Program', 10);
+      expect(mock.calls).toContainEqual(['rpc', 'search_packages_thai', { search_term: 'Program', result_limit: 10 }]);
+      expect(row.is_promotion).toBe(flag);
+      expect(row).not.toHaveProperty('promotion');
+      const html = renderToStaticMarkup(React.createElement(ProgramCardV2, { pkg: row as unknown as Package }));
+      expect(html.includes('🔥')).toBe(flag);
+      const answer = buildProgramPriceAnswer({ title: typeof row.title === 'string' ? row.title : undefined, is_promotion: typeof row.is_promotion === 'boolean' ? row.is_promotion : undefined, original_price: typeof row.original_price === 'number' ? row.original_price : null, special_price: typeof row.special_price === 'number' ? row.special_price : null }, 'price', '', 'en');
+      expect(answer?.includes('promotional price')).toBe(flag);
+    } finally { vi.unstubAllGlobals(); }
+  });
+});
