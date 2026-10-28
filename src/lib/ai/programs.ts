@@ -1,4 +1,4 @@
-import { CATALOG_PROVINCE_ALIASES, normalizeCatalogInput, canonicalCatalogService, hasProvinceCoverageWording, hasCatalogLocationWording } from './catalog-query-normalization';
+import { CATALOG_PROVINCE_ALIASES, normalizeCatalogInput, canonicalCatalogService, hasProvinceCoverageWording, hasCatalogLocationWording, hasCatalogDiscoveryWording } from './catalog-query-normalization';
 import {
   fetchActivePackages,
   fetchPackageById,
@@ -704,6 +704,7 @@ export function prepareCatalogQuery(query: string) {
   const unresolvedProvince = hasCatalogLocationWording(query) && locationAliases.length === 0 && !hasProvinceCoverageWording(query);
   const unknownLaoService = /[\u0e80-\u0eff]/u.test(removeStopWords(serviceQuery)) && !service;
   const kind = unresolvedProvince || unknownLaoService ? 'other' as const
+    : hasCatalogDiscoveryWording(query) ? 'discovery' as const
     : meaningfulCandidates.some(candidate => !candidate.generic) ? 'specific' as const : 'discovery' as const;
   return { locationAliases, serviceQuery, serviceCandidates, candidates, kind, service, unresolvedProvince };
 }

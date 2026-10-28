@@ -58,7 +58,10 @@ export function hasCatalogDiscoveryWording(input: string): boolean {
   // Unrecognized service wording must remain available to LLM understanding.
   const places = Object.entries(CATALOG_PROVINCE_ALIASES)
     .flatMap(([canonical, names]) => [canonical, ...names]).sort((a, b) => b.length - a.length);
+  const hasKnownPlace = places.some(place => text.includes(place));
   for (const place of places) text = text.replaceAll(place, '');
   text = text.replace(/จังหวัด|\s+/gu, '');
-  return /^(?:มี)?(?:โปรแกรม|บริการ)(?:อะไร|มีอะไร)(?:บ้าง)?$/u.test(text);
+  if (hasKnownPlace) text = text.replace(/(?:ใน|ที่|ของ)(?=(?:ครับผม|ครับ|ค่ะ|คะ)?[?？]*$)/u, '');
+  return /^(?:มี)?(?:โปรแกรม|บริการ)(?:อะไร|มีอะไร)(?:บ้าง)?$/u.test(text)
+    || /^(?:สนใจ|ขอดู|ดู|อยากดู|อยากทราบ)(?:โปรแกรม|บริการ)(?:ครับผม|ครับ|ค่ะ|คะ)?[?？]*$/u.test(text);
 }

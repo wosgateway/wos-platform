@@ -133,3 +133,39 @@ describe('real-core semantic authorization',()=>{
   expect(io.search).toHaveBeenCalledWith(message,5);
  });
 });
+
+describe('release discovery and selected-program regression', () => {
+  beforeEach(() => vi.stubEnv('WOS_AI_UNDERSTANDING', 'off'));
+
+  it.each(['สนใจโปรแกรมในอุดร', 'ขอดูโปรแกรมในอุดร'])('%s returns the verified province catalog without selecting', async message => {
+    const reply = await runWosAI(message, []);
+    expect(io.overview).toHaveBeenCalledOnce();
+    expect(io.overview).toHaveBeenCalledWith(5, 'อุดรธานี');
+    expect(reply).toContain('ตรวจเข่า');
+    expect(reply).not.toMatch(/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล|ไม่พบข้อมูล/iu);
+    expect(io.complete).not.toHaveBeenCalled();
+  });
+
+  it('generic discovery asks for province without selecting a program', async () => {
+    const reply = await runWosAI('สนใจโปรแกรม', []);
+    expect(io.catalog).toHaveBeenCalledOnce();
+    expect(reply).toContain('จังหวัด');
+    expect(reply).not.toMatch(/ขอชื่อสำหรับ|ชื่อสำหรับลงข้อมูล/iu);
+    expect(io.overview).not.toHaveBeenCalled();
+    expect(io.search).not.toHaveBeenCalled();
+    expect(io.complete).not.toHaveBeenCalled();
+  });
+
+  it('bare interest preserves explicit selection and the pending name question', async () => {
+    const reply = await runWosAI('สนใจ', [
+      { role: 'user', content: 'เลือกตรวจเข่า' },
+      { role: 'assistant', content: 'ได้เลยค่ะ 😊 ขอชื่อสำหรับลงข้อมูลให้ทีม WOS ประสานงานต่อด้วยนะคะ' },
+    ]);
+    expect(reply).toMatch(/ชื่อ/iu);
+    expect(reply).not.toMatch(/จังหวัดไหน|มีโปรแกรมอะไรบ้าง|หลายรายการ/iu);
+    expect(io.overview).not.toHaveBeenCalled();
+    expect(io.search).not.toHaveBeenCalled();
+    expect(io.catalog).not.toHaveBeenCalled();
+    expect(io.complete).not.toHaveBeenCalled();
+  });
+});

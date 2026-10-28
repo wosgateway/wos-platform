@@ -173,3 +173,21 @@ describe('existing Lao knee aliases converge on shared preparation',()=>{
     const answer=await runWosAI(message,[]);expect(answer).toContain('Knee Udon');expect(answer).not.toContain('Health Udon');expect(answer).not.toContain('Health Nongkhai');expect(answer).not.toContain('Hotel Udon');
   });
 });
+
+describe('discovery query preparation matches runtime routing', () => {
+  it.each(['สนใจโปรแกรมในอุดร', 'ขอดูโปรแกรมในอุดร', 'ดูโปรแกรมในอุดร', 'อยากดูบริการในหนองคาย'])('%s remains discovery with its province', message => {
+    const prepared = programs.prepareCatalogQuery(message);
+    expect(prepared.kind).toBe('discovery');
+    expect(prepared.locationAliases[0]).toBe(message.includes('หนองคาย') ? 'หนองคาย' : 'อุดรธานี');
+    expect(prepared.service).toBeNull();
+  });
+  it.each(['สนใจโปรแกรม', 'ขอดูโปรแกรม', 'อยากทราบบริการ'])('%s is unscoped discovery', message => {
+    const prepared = programs.prepareCatalogQuery(message);
+    expect(prepared.kind).toBe('discovery');
+    expect(prepared.locationAliases).toEqual([]);
+    expect(prepared.service).toBeNull();
+  });
+  it.each(['สนใจโปรแกรมในดาวอังคาร', 'ขอดูโปรแกรมรักษาโรคหายากในอุดร', 'ไม่สนใจโปรแกรมในอุดร', 'เขาบอกว่าสนใจโปรแกรมในอุดร', 'สนใจโปรแกรมใน'])('%s cannot become broad discovery', message => {
+    expect(programs.prepareCatalogQuery(message).kind).not.toBe('discovery');
+  });
+});
