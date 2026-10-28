@@ -8,7 +8,7 @@ const read = (file: string) =>
   readFileSync(path.join(root, file), 'utf8');
 
 const replacementBlock = (sql: string) =>
-  sql.split('execute $replacement$')[1].split('$replacement$;')[0];
+  sql.split('replacement_ddl := $replacement$')[1].split('$replacement$;')[0];
 
 describe('package promotion search repository contract', () => {
   it('application writers persist canonical promotion only', () => {
@@ -22,7 +22,7 @@ describe('package promotion search repository contract', () => {
 
   it('search RPC consumes canonical promotion storage', () => {
     const artifact = read(
-      'supabase/candidates/20261027000002_packages_search_promotion_production.sql',
+      'supabase/candidates/20261028000000_packages_search_promotion_production.sql',
     );
     const replacement = replacementBlock(artifact);
 
@@ -33,7 +33,7 @@ describe('package promotion search repository contract', () => {
 
   it('search RPC preserves compatibility output for existing consumers', () => {
     const artifact = read(
-      'supabase/candidates/20261027000002_packages_search_promotion_production.sql',
+      'supabase/candidates/20261028000000_packages_search_promotion_production.sql',
     );
 
     expect(artifact).toContain('is_promotion boolean');
@@ -42,7 +42,7 @@ describe('package promotion search repository contract', () => {
 
   it('search RPC retains visibility and ranking semantics', () => {
     const artifact = read(
-      'supabase/candidates/20261027000002_packages_search_promotion_production.sql',
+      'supabase/candidates/20261028000000_packages_search_promotion_production.sql',
     );
 
     expect(artifact).toContain("p.status = 'published'");
@@ -55,7 +55,7 @@ describe('package promotion search repository contract', () => {
 
   it('Phase 1 establishes canonical promotion from legacy storage', () => {
     const migration = read(
-      'supabase/migrations/20261027000000_packages_promotion_upgrade.sql',
+      'supabase/candidates/20261027000000_packages_promotion_upgrade.sql',
     );
 
     expect(migration).toMatch(
@@ -74,7 +74,7 @@ describe('package promotion search repository contract', () => {
 
   it('does not make the disposable-local migration part of the production artifact', () => {
     const artifact = read(
-      'supabase/candidates/20261027000002_packages_search_promotion_production.sql',
+      'supabase/candidates/20261028000000_packages_search_promotion_production.sql',
     );
 
     expect(artifact).not.toContain(

@@ -22,6 +22,7 @@
     "ai:dev-agent:audit": "node scripts/wos-ai-agent-audit.mjs",
     "security:order-links": "node scripts/order-link-security-check.mjs",
     "ai:dev-agent:repo": "node scripts/wos-ai-agent-repo.mjs",
+    "test:promotion:local": "node scripts/test-package-promotion-local.mjs",
     "test:handoff": "vitest run src/lib/handoff",
     "eval": "tsx eval/run.ts",
     "ai:overnight": "node scripts/wos-ai-overnight.mjs",

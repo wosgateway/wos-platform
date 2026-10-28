@@ -9,7 +9,7 @@ const read = (file: string) =>
 
 const artifact = () =>
   read(
-    'supabase/candidates/20261027000002_packages_search_promotion_production.sql',
+    'supabase/candidates/20261028000000_packages_search_promotion_production.sql',
   );
 
 const legacyRpc = () => {
@@ -23,7 +23,7 @@ const legacyRpc = () => {
 };
 
 const replacementBlock = (sql: string) =>
-  sql.split('execute $replacement$')[1].split('$replacement$;')[0];
+  sql.split('replacement_ddl := $replacement$')[1].split('$replacement$;')[0];
 
 describe('standalone production Phase 2 artifact contract', () => {
   it('replaces only the promotion storage source in the repository RPC', () => {
@@ -91,7 +91,7 @@ describe('standalone production Phase 2 artifact contract', () => {
     const sql = artifact();
 
     expect(
-      (sql.match(/create\s+or\s+replace\s+function/gi) ?? []).length,
+      (replacementBlock(sql).match(/create\s+or\s+replace\s+function/gi) ?? []).length,
     ).toBe(1);
 
     expect(sql).toContain(
