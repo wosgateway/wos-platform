@@ -1,6 +1,6 @@
-import { timingSafeEqual } from 'node:crypto';
+import { timingSafeEqual, randomUUID } from 'node:crypto';
 import { NextResponse } from 'next/server';
-import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
+import { runWosAI, type WosAIHistoryMessage, type WosAIDiagnostic } from '@/lib/ai/core';
 import { simpleRateLimit } from '@/lib/rate-limit';
 import { authorizeWebConversation, WebOwnershipError } from '@/lib/ai/web-ownership';
 
@@ -74,8 +74,32 @@ function getRetryAfterSeconds(error: unknown): number {
 }
 
 export async function POST(request: Request) {
+  const started = performance.now();
+  const requestId = randomUUID();
+  const trace: WosAIDiagnostic = (event, details = {}) => {
+    try {
+      console.log('[WOS_AI_TRACE]', JSON.stringify({
+        requestId, event, timestamp: new Date().toISOString(),
+        elapsedMs: Math.round((performance.now() - started) * 1000) / 1000, ...details,
+      }));
+    } catch { /* Observation must not affect the response. */ }
+  };
+  const respond = (data: unknown, init?: number | ResponseInit) => {
+    const response = jsonResponse(data, init);
+    trace('response.return', { status: response.status });
+    return response;
+  };
+  // Best effort only: Next may not signal every socket disconnect here.
+  const onAbort = () => trace('request.abort');
+  trace('request.start');
+  try {
+    if (request.signal.aborted) onAbort();
+    else request.signal.addEventListener('abort', onAbort, { once: true });
+  } catch { /* Abort observation is optional; no cancellation is added. */ }
   try {
     // This endpoint is public and every call costs OpenAI tokens.
+    const rateLimitStarted = performance.now();
+    trace('rate_limit.start');
     try {
       const isRegressionRequest = hasValidRegressionToken(request);
       const limit = await simpleRateLimit(
@@ -86,13 +110,15 @@ export async function POST(request: Request) {
         RATE_LIMIT_WINDOW_MS
       );
 
+      trace('rate_limit.end', { durationMs: performance.now() - rateLimitStarted });
       if (!limit.allowed) {
-        return jsonResponse(
+        return respond(
           { error: 'Too many requests. Please try again later.' },
           { status: 429 }
         );
       }
     } catch (rateLimitError) {
+      trace('rate_limit.error', { durationMs: performance.now() - rateLimitStarted, errorType: 'rate_limit_error' });
       // Fail open: a Redis outage should not take the assistant down.
       console.error(
         '[AI_CHAT_RATE_LIMIT_ERROR]',
@@ -104,11 +130,14 @@ export async function POST(request: Request) {
     // of falling into the catch-all 500. The body is never logged: it is
     // customer text.
     let body: unknown;
-
+    const bodyStarted = performance.now();
+    trace('body_read.start');
     try {
       body = JSON.parse(await request.text());
+      trace('body_read.end', { durationMs: performance.now() - bodyStarted });
     } catch {
-      return jsonResponse(
+      trace('body_read.error', { durationMs: performance.now() - bodyStarted, errorType: 'body_read_or_parse_error' });
+      return respond(
         { error: 'Invalid JSON body' },
         { status: 400 }
       );
@@ -120,14 +149,14 @@ export async function POST(request: Request) {
         : undefined;
 
     if (typeof message !== 'string' || !message.trim()) {
-      return jsonResponse(
+      return respond(
         { error: 'message is required' },
         { status: 400 }
       );
     }
 
     if (message.length > MAX_MESSAGE_LENGTH) {
-      return jsonResponse(
+      return respond(
         { error: `message must be at most ${MAX_MESSAGE_LENGTH} characters` },
         { status: 400 }
       );
@@ -166,15 +195,23 @@ export async function POST(request: Request) {
         if ('conversationId' in body || 'conversation_id' in body) throw new WebOwnershipError(400);
         conversationId = await authorizeWebConversation(request, (body as { conversationSelector?: unknown }).conversationSelector);
       } catch (error) {
-        return jsonResponse({ error: 'Web conversation unavailable' }, { status: error instanceof WebOwnershipError ? error.status : 503 });
+        return respond({ error: 'Web conversation unavailable' }, { status: error instanceof WebOwnershipError ? error.status : 503 });
       }
     }
 
-    const answer = conversationId
-      ? await runWosAI(message.trim(), history, { conversationId, channel: 'web' })
-      : await runWosAI(message.trim(), history);
+    const aiStarted = performance.now();
+    trace('ai.start');
+    let answer: Awaited<ReturnType<typeof runWosAI>>;
+    try {
+      answer = await runWosAI(message.trim(), history, conversationId ? { diagnostic: trace, conversationId, channel: 'web' } : { diagnostic: trace });
+      trace('ai.end', { durationMs: performance.now() - aiStarted });
+    } catch (error) {
+      trace('ai.error', { durationMs: performance.now() - aiStarted,
+        ...(getErrorStatus(error) !== undefined ? { status: getErrorStatus(error) } : {}), errorType: 'ai_error' });
+      throw error;
+    }
 
-    return jsonResponse({
+    return respond({
       answer,
     });
   } catch (error) {
@@ -184,7 +221,7 @@ export async function POST(request: Request) {
       const retryAfter = getRetryAfterSeconds(error);
       console.warn('[AI_CHAT_RATE_LIMITED] upstream 429, retry after', retryAfter, 's');
 
-      return jsonResponse(
+      return respond(
         {
           error: 'AI service is busy',
           message:
@@ -199,9 +236,11 @@ export async function POST(request: Request) {
       error instanceof Error ? error.message : error
     );
 
-    return jsonResponse(
+    return respond(
       { error: 'AI service temporarily unavailable' },
       { status: 500 }
     );
+  } finally {
+    try { request.signal.removeEventListener('abort', onAbort); } catch { /* Best effort. */ }
   }
 }

@@ -76,11 +76,17 @@ describe('gate semantic envelope preserves invocation and authority', () => {
     expect(io.search).not.toHaveBeenCalled();
   });
   it('on handled retains the original response shape and exact catalog text', async () => {
-    const result = await gate('ปวดเข่า');
-    expect(result).toEqual({ handled: true, text: buildProgramAnswer([knee], 'ปวดเข่า', '', 'th') });
+    const request = 'ปวดเข่า มีโปรแกรมอะไรที่เกี่ยวข้องไหม';
+    const result = await gate(request);
+    expect(result).toEqual({ handled: true, text: buildProgramAnswer([knee], request, '', 'th') });
     expect(understand).toHaveBeenCalledOnce();
     expect(io.model).not.toHaveBeenCalled();
     expect(io.search).toHaveBeenCalledWith('ตรวจเข่า', 5);
+  });
+  it('on symptom evidence alone does not authorize catalog execution', async () => {
+    await expectTransport(await gate('ปวดเข่า'), 'authoritative');
+    expect(io.model).not.toHaveBeenCalled();
+    expect(io.search).not.toHaveBeenCalled();
   });
   it('on deterministic DEFER transports the original classification', async () => {
     await expectTransport(await gate('โรงแรม'), 'authoritative');
@@ -112,7 +118,7 @@ describe('gate semantic envelope preserves invocation and authority', () => {
   });
   it('on classification survives an execute error without retrying classification', async () => {
     io.search.mockRejectedValueOnce(new Error('fixture search failure'));
-    await expectTransport(await gate('ปวดเข่า'), 'authoritative');
+    await expectTransport(await gate('ปวดเข่า มีโปรแกรมอะไรที่เกี่ยวข้องไหม'), 'authoritative');
     expect(io.search).toHaveBeenCalledOnce();
     expect(io.model).not.toHaveBeenCalled();
   });

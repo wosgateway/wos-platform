@@ -1,7 +1,7 @@
-import { normalizeCatalogInput } from '../catalog-query-normalization';
-import { deriveLegacyLookupSemantics } from '../legacy-lookup-semantics';
+import { normalizeCatalogInput, canonicalCatalogService, hasCatalogLocationWording, hasCatalogDiscoveryWording } from '../catalog-query-normalization';
 import { extractJson, parseUnderstanding, type CatalogItem, type Understanding } from './types';
 import { detectProvinceInText, matchProvince, type ProvinceRecord } from './provinces';
+import { getSymptomSearchAliases } from '../symptom-intent';
 
 export type LlmJson = (args: { system: string; user: string; timeoutMs: number }) => Promise<string>;
 
@@ -126,10 +126,17 @@ function deterministicFallback(
   // understanding gate and legacy catalog path share one source of truth.
   // A specific symptom is searchable even when no province is provided.
   // ------------------------------------------------------------
-  const request = deriveLegacyLookupSemantics({ message: m, owner: 'none' });
-  if (request.kind === 'lookup' && request.intent === 'PROGRAM_SEARCH') {
-    return makeUnderstanding(m, 'PROGRAM_SEARCH', .99, { program_query: request.query });
+  const symptomAlias = getSymptomSearchAliases(m)[0];
+  if (symptomAlias) {
+    return makeUnderstanding(m, 'PROGRAM_SEARCH', 0.99, {
+      program_query: symptomAlias,
+    });
   }
+
+  const knownService = canonicalCatalogService(m);
+  if (knownService && (/มี|ไหม|อะไร|ในจังหวัด/u.test(m) || (m === knownService && catalog.length === 0))) return makeUnderstanding(m, 'PROGRAM_SEARCH', 0.99, { program_query: knownService });
+
+  if (hasCatalogDiscoveryWording(m)) return makeUnderstanding(m, 'PROGRAM_DISCOVERY');
 
   // ------------------------------------------------------------
   // Program discovery
@@ -461,8 +468,15 @@ export async function understand(
   provinces: ProvinceRecord[] = [],
   timeoutMs = 6000,
 ): Promise<{ understanding: Understanding | null; error?: string; provenance?: 'model' | 'deterministic' }> {
-  const deterministic = deterministicFallback(normalizeCatalogInput(message), catalog);
-  if (deterministic) return { understanding: deterministic, provenance: 'deterministic' };
+  const normalizedMessage = normalizeCatalogInput(message);
+  // A named but unresolved place may not silently become an unscoped search.
+  if (hasCatalogLocationWording(normalizedMessage) && !detectProvinceInText(normalizedMessage, provinces)) {
+    return { understanding: null, error: 'unresolved_catalog_province' };
+  }
+  const deterministic = deterministicFallback(normalizedMessage, catalog);
+  if (deterministic) return { understanding: {
+    ...withCanonicalProvince(deterministic, normalizedMessage, provinces), language: langFor(message),
+  }, provenance: 'deterministic' };
 
   const user = buildUser(message, history, catalog);
   let lastError = 'invalid_output';

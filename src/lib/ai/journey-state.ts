@@ -1,7 +1,7 @@
-import { normalizeSelectionInput, SELECTION_SERVICE_ALIASES } from './selection-lexical';
-import { buildHandoffConfirmation } from '../handoff/concierge';
 import type { WosLanguage } from './language-dictionary';
 import type { WosAIHistoryMessage } from './core';
+import { normalizeSelectionInput, SELECTION_SERVICE_ALIASES } from './selection-lexical';
+import { buildHandoffConfirmation } from '../handoff/concierge';
 
 export type WosJourneyState = {
   destination?: string;
@@ -289,7 +289,6 @@ function hasWordBoundedMatch(text: string, pattern: RegExp): boolean {
 }
 
 const BARE_NAME_PATTERN = /^[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60}$/u;
-
 const NON_NAME_VOCAB = /(?:จอง|booking|book|reserve|ตรวจ|โปรแกรม|บริการ|สนใจ|ต้องการ|เอา|รถ|รถรับส่ง|โรงแรม|ที่พัก|ห้อง|เวียงจันทน์|อุดร|หนองคาย|ขอนแก่น|travel|trip|transport|hotel|ຈອງ|ກວດ|ໂຮງແຮມ|ລົດ|ສົນໃຈ|ຕ້ອງການ|นวด|สปา|\bspa\b|massage|ผ่าตัด|ศัลยกรรม|รักษา|หมอ|แพทย์|คลินิก|โรงพยาบาล|แพ็กเกจ|แพคเกจ|package|ราคา|เท่าไร|เท่าไหร่|สวัสดี|หวัดดี|ขอบคุณ|ทำไม|อะไร|ยังไง|อย่างไร|ไหม|มั้ย|หรือ|ที่ไหน|เมื่อไร|วันนี้|พรุ่งนี้|อากาศ|\b(?:hello|hi|hey)\b)/iu;
 
 /**
@@ -693,6 +692,11 @@ export function isShortNegative(text: string): boolean {
 
 // Same named-negative syntax as explicit addon preferences; the target is data.
 const NEGATIVE_WANT = '(?:ไม่|ยังไม่|ບໍ່)\\s*(?:ต้องการ|เอา|ขอ|สนใจ|ใช้|ຕ້ອງການ|ເອົາ|ສົນໃຈ)';
+
+/** Negative request semantics only; this does not establish a program's identity. */
+export function hasNegativeRequestSemantics(text: string): boolean {
+  return new RegExp('^' + NEGATIVE_WANT, 'u').test(normalizeSelectionInput(text).trim());
+}
 
 function sameProgramTitle(a: string, b: string): boolean {
   return normalizeSelectionInput(a).trim().toLocaleLowerCase()

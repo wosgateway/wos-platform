@@ -50,11 +50,15 @@ const pickupHistory: typeof history = [...history,
 ];
 
 describe('pending negative priority through actual core and actual understanding gate', () => {
-  it('proves the hostile real gate produces a handled positive catalog with a nonempty catalog', async () => {
+  it('bare rejection cannot be reinterpreted as a hostile positive catalog request', async () => {
+    expect(await runWosAI('ไม่เอาครับ', [])).not.toContain(knee.title);
+    expect(io.search).not.toHaveBeenCalled();
+    expect(io.understand).not.toHaveBeenCalled();
+  });
+  it('shared authorization vetoes the hostile real gate before catalog execution', async () => {
     const result = await runUnderstandingGate({ userMessage: input, history });
-    expect(result.handled).toBe(true);
-    if (result.handled) expect(result.text).toContain(knee.title);
-    expect(io.search).toHaveBeenCalledWith('ตรวจเข่า', 5);
+    expect(result.handled).toBe(false);
+    expect(io.search).not.toHaveBeenCalled();
     expect(io.understand).toHaveBeenCalledOnce();
   });
   it.each(['ไม่ ขอบคุณครับ', 'ไม่เอาครับ', 'ไม่เอารถ'])('resolves pending transport %s before hostile gate and preserves state', async message => {
@@ -110,7 +114,6 @@ describe('pending negative priority through actual core and actual understanding
   it.each([
     ['ขอข้อมูลตรวจเข่า', []],
     ['ขอข้อมูลตรวจเข่า', history],
-    ['ไม่เอาครับ', []],
   ] as const)('allows gate/search outside deterministic pending negatives: %s', async (message, h) => {
     expect(await runWosAI(message, [...h])).toContain(knee.title);
     expect(io.understand).toHaveBeenCalledOnce();

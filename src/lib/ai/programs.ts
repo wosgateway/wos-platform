@@ -1,3 +1,4 @@
+import { CATALOG_PROVINCE_ALIASES, normalizeCatalogInput, canonicalCatalogService, hasProvinceCoverageWording, hasCatalogLocationWording } from './catalog-query-normalization';
 import {
   fetchActivePackages,
   fetchPackageById,
@@ -511,7 +512,7 @@ const OTHER_PROVINCES = [
 // query="อุดร" (the normal short way to say "อุดรธานี") returned zero
 // results because detectLocation() only matched the full official name.
 const PROVINCE_SHORT_FORMS: Record<string, string[]> = {
-  'อุดรธานี': ['อุดร', 'อຸດອນ', 'ອຸດອນ', 'ອຸດອນທານີ', 'ອຸດຮ', 'ອຸດຣ'],
+  ...CATALOG_PROVINCE_ALIASES,
   'นครราชสีมา': ['โคราช'],
   'นครศรีธรรมราช': ['นครศรี'],
   'สุราษฎร์ธานี': ['สุราษฎร์'],
@@ -537,7 +538,7 @@ function normalizeLocation(value: string): string {
 }
 
 export function detectLocation(query: string): string[] {
-  const normalized = normalizeLocation(query);
+  const normalized = normalizeLocation(normalizeCatalogInput(query));
 
   for (const aliases of LOCATION_ALIASES) {
     if (
@@ -554,10 +555,7 @@ export function detectLocation(query: string): string[] {
 
 /** Resolve a province directly from the customer's original text before any model translation. */
 export function detectLocationFromRawText(query: string): string[] {
-  for (const aliases of LOCATION_ALIASES) {
-    if (aliases.some((alias) => query.includes(alias))) return aliases;
-  }
-  return [];
+  return detectLocation(query);
 }
 
 /**
@@ -657,12 +655,9 @@ function passesRelevanceGate(
   );
 }
 
-export async function searchPrograms(
-  query: string,
-  limit = 5,
-  options?: { throwOnError: boolean }
-): Promise<ProgramSearchResult[]> {
-  const safeLimit = Math.min(Math.max(limit, 1), 10);
+/** Shared, pure query preparation for catalog routing and retrieval. */
+export function prepareCatalogQuery(query: string) {
+  query = normalizeCatalogInput(query);
   const locationAliases = detectLocation(query);
 
   // Build service candidates from the query with the matched province's
@@ -686,13 +681,6 @@ export async function searchPrograms(
 
   const serviceCandidates = buildSearchCandidates(serviceQuery);
 
-  console.log('[WOS_AI_DEBUG] searchPrograms input:', {
-    query,
-    locationAliases,
-    serviceQuery,
-    serviceCandidates,
-  });
-
   if (locationAliases.length > 0 && serviceCandidates.length === 0) {
     // The query is genuinely just "what's available in <province>" -
     // nothing else to search on, so the province itself is the only
@@ -708,6 +696,27 @@ export async function searchPrograms(
   }
 
   candidates.splice(12);
+
+  // Strip conversational wrappers before classifying; a full-sentence search
+  // candidate is not by itself evidence of a specific service.
+  const meaningfulCandidates = buildSearchCandidates(removeStopWords(serviceQuery));
+  const service = canonicalCatalogService(serviceQuery);
+  const unresolvedProvince = hasCatalogLocationWording(query) && locationAliases.length === 0 && !hasProvinceCoverageWording(query);
+  const unknownLaoService = /[\u0e80-\u0eff]/u.test(removeStopWords(serviceQuery)) && !service;
+  const kind = unresolvedProvince || unknownLaoService ? 'other' as const
+    : meaningfulCandidates.some(candidate => !candidate.generic) ? 'specific' as const : 'discovery' as const;
+  return { locationAliases, serviceQuery, serviceCandidates, candidates, kind, service, unresolvedProvince };
+}
+
+export async function searchPrograms(
+  query: string,
+  limit = 5,
+  options?: { throwOnError: boolean },
+): Promise<ProgramSearchResult[]> {
+  const safeLimit = Math.min(Math.max(limit, 1), 10);
+  const { locationAliases, serviceQuery, serviceCandidates, candidates, kind } = prepareCatalogQuery(query);
+  if (kind === 'other') return [];
+  console.log('[WOS_AI_DEBUG] searchPrograms input:', { query, locationAliases, serviceQuery, serviceCandidates });
 
   console.log('[WOS_AI_DEBUG] final candidates:', candidates);
 
@@ -736,8 +745,8 @@ export async function searchPrograms(
       // return hotel/room/transport packages for a province.
       return await searchHealthProgramOverview(safeLimit, locationAliases[0]);
     } catch (error) {
-      if (options?.throwOnError) throw error;
       console.error('[WOS_AI_TOOL] province browse failed:', error);
+      if (options?.throwOnError) throw error;
       return [];
     }
   }

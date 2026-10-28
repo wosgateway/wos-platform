@@ -1,6 +1,3 @@
-import { authorizeCatalogTurn, pendingForExecution, type CatalogAuthorization, type ClassificationProvenance } from '../catalog-authorization';
-import { clearPendingService, replacePendingService, setCurrentProvince } from './state';
-import { detectProvinceInText } from './provinces';
 // Integration point called from runWosAI().
 //   WOS_AI_UNDERSTANDING=off     (default) -> no-op, zero behaviour change
 //   WOS_AI_UNDERSTANDING=shadow  -> understand + decide + log, but legacy still answers
@@ -15,11 +12,21 @@ import { coveredProvinceIds, type ProvinceRecord } from './provinces';
 import { clearState, loadProvinces, loadState, logAiRequest, saveState } from './state';
 import type { CatalogItem, Understanding } from './types';
 import { understand } from './understand';
+import { authorizeCatalogTurn, pendingForExecution, type CatalogAuthorization } from '../catalog-authorization';
+import { clearPendingService, replacePendingService, setCurrentProvince } from './state';
+import { detectProvinceInText } from './provinces';
 
-export type GateResult = { handled: true; text: string } | { handled: false; semantic?: { authority: 'authoritative' | 'observational'; provenance: ClassificationProvenance; understanding: Understanding } };
+/** Authority applies to classification only, not permission to execute an action.
+ * Shadow payloads are observation-only; consumers must narrow authority first. */
+export type GateSemantic =
+  | { authority: 'none' }
+  | { authority: 'observational'; understanding: Understanding }
+  | { authority: 'authoritative'; understanding: Understanding };
+
+export type GateResult = { handled: true; text: string } | { handled: false; semantic: GateSemantic };
 type History = { role: 'user' | 'assistant'; content: string }[];
 
-const NOT_HANDLED: GateResult = { handled: false };
+const NOT_HANDLED: GateResult = { handled: false, semantic: { authority: 'none' } };
 const MAX_MESSAGE_LEN = 400;
 
 function mode(): 'off' | 'shadow' | 'on' {
@@ -136,7 +143,7 @@ export async function runUnderstandingGate(args: {
   history: History;
   conversationId?: string;
   channel?: string;
-  authorize?: (understanding: Understanding | null, provenance?: ClassificationProvenance) => CatalogAuthorization;
+  authorize?: (understanding: Understanding | null, provenance?: 'model' | 'deterministic') => CatalogAuthorization;
 }): Promise<GateResult> {
   const m = mode();
   if (m === 'off') return NOT_HANDLED;
@@ -147,6 +154,7 @@ export async function runUnderstandingGate(args: {
   const t0 = Date.now();
   const log = (extra: Partial<Parameters<typeof logAiRequest>[0]>) =>
     logAiRequest({ conversationId: args.conversationId, channel, mode: m, message, handled: false, latencyMs: Date.now() - t0, ...extra });
+  let deferred: GateResult = NOT_HANDLED;
 
   try {
     const [provinces, state] = await Promise.all([
@@ -164,40 +172,57 @@ export async function runUnderstandingGate(args: {
       journeyProvinceId: state?.provinceId ?? null,
     };
 
-    const { understanding: u, error, provenance = 'deterministic' } = await understand(createUnderstandLlm(), message, args.history, ctx.recentCatalog, provinces);
+    const { understanding: u, error, provenance } = await understand(createUnderstandLlm(), message, args.history, ctx.recentCatalog, provinces);
     const authorization = args.authorize?.(m === 'on' ? u : null, provenance)
-      ?? authorizeCatalogTurn({ message, owner: 'none', history: args.history, understanding: m === 'on' ? u : null, provenance, provinces });
-    if (!u) { await log({ error, deferReason: 'understand_failed' }); return NOT_HANDLED; }
-    const deferred: GateResult = { handled: false, semantic: { authority: m === 'on' ? 'authoritative' : 'observational', provenance, understanding: u } };
-    if (m === 'shadow') return deferred;
-    if (!authorization.allowed && u.intent !== 'RESET') return deferred;
-    if (u.intent === 'RESET') { if (args.conversationId) await clearState(args.conversationId); return deferred; }
+      ?? authorizeCatalogTurn({ message, owner: 'none', history: args.history, understanding: m === 'on' ? u : null, provenance });
+    const lang = detectWosLanguage(message, args.history.filter((h) => h.role === 'user').map((h) => h.content));
+    if (!u) {
+      if (m === 'on' && error === 'unresolved_catalog_province' && authorization.allowed && authorization.service) {
+        if (args.conversationId) await replacePendingService(args.conversationId, channel, authorization.service);
+        const text = await execute({ type: 'ASK_PROVINCE', coveredIds: [] }, { message, lang, provinces, conversationId: args.conversationId, channel });
+        return text ? { handled: true, text } : NOT_HANDLED;
+      }
+      await log({ error, deferReason: 'understand_failed' }); return NOT_HANDLED;
+    }
+
+    deferred = {
+      handled: false,
+      semantic: m === 'shadow'
+        ? { authority: 'observational', understanding: u }
+        : { authority: 'authoritative', understanding: u },
+    };
+
+    if (m === 'shadow') { await log({ intent: u.intent, deferReason: 'shadow' }); return deferred; }
+    if (!authorization.allowed && u.intent !== 'RESET') {
+      await log({ intent: u.intent, action: 'DEFER', deferReason: 'lookup_not_authorized' }); return deferred;
+    }
+    if (u.intent === 'RESET') {
+      if (args.conversationId) await clearState(args.conversationId);
+      return deferred;
+    }
     const explicitProvince = detectProvinceInText(message, provinces);
     if (explicitProvince && args.conversationId) await setCurrentProvince(args.conversationId, channel, state, explicitProvince.id);
+    const effectiveProvince = explicitProvince ?? provinces.find(p => p.id === state?.provinceId) ?? null;
     const catalogNames = await getCatalogProvinces();
-
-    const action = decide(u, message, ctx, { provinces, coveredProvinceIds: coveredProvinceIds(catalogNames, provinces) });
-    if (action.type === 'SEARCH' && action.kind === 'search' && authorization.service) {
-      action.query = authorization.service.query;
-    }
-    const actionOperation = action.type === 'SEARCH' ? action.kind === 'more' ? 'more' : action.kind === 'discovery' ? 'discovery' : 'search'
-      : action.type === 'SELECT' || action.type === 'ASK_SELECTION' ? 'selection' : action.type === 'DETAIL' || action.type === 'ASK_CLARIFY' ? 'detail' : null;
-    if (actionOperation && actionOperation !== authorization.operation) return deferred;
+    const action = decide(u, message, { ...ctx, journeyProvinceId: effectiveProvince?.id ?? null },
+      { provinces, coveredProvinceIds: coveredProvinceIds(catalogNames, provinces) });
     const base = { language: u.language, intent: u.intent, confidence: u.confidence, entities: u.entities, action: action.type };
 
     if (action.type === 'RESET' && args.conversationId && m === 'on') await clearState(args.conversationId);
     if (action.type === 'DEFER' || action.type === 'RESET') {
       await log({ ...base, deferReason: action.type === 'DEFER' ? action.reason : null });
-      return NOT_HANDLED;
+      return deferred;
     }
 
-    const lang = detectWosLanguage(message, args.history.filter((h) => h.role === 'user').map((h) => h.content));
-    if (action.type === 'ASK_PROVINCE' && authorization.service && args.conversationId) await replacePendingService(args.conversationId, channel, authorization.service);
-    const text = await execute(action, { message, lang, provinces, conversationId: args.conversationId, channel, pendingId: pendingForExecution(authorization, action) });
+    if (action.type === 'ASK_PROVINCE' && authorization.service && args.conversationId) {
+      await replacePendingService(args.conversationId, channel, authorization.service);
+    }
+    const text = await execute(action, { message, lang, provinces, conversationId: args.conversationId, channel,
+      pendingId: pendingForExecution(authorization, action) });
     await log({ ...base, handled: !!text, deferReason: text ? null : 'execute_returned_null' });
-    return text ? { handled: true, text } : NOT_HANDLED;
+    return text ? { handled: true, text } : deferred;
   } catch (err) {
     await log({ error: err instanceof Error ? err.message.slice(0, 200) : 'gate_error', deferReason: 'exception' });
-    return NOT_HANDLED;
+    return deferred;
   }
 }

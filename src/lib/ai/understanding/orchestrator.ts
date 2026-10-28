@@ -12,6 +12,7 @@ export interface DecideContext {
   /** Province + query of the list currently on screen. */
   catalogQuery: { provinceId: string | null; query: string | null } | null;
   selectedProgramId: string | null;
+  /** Persisted current-conversation province; never a history-derived destination. */
   journeyProvinceId: string | null;
 }
 
@@ -73,16 +74,16 @@ export function decide(
   // Province: the model's value must exist in canonical data; text match is a deterministic backup.
   const fromModel = matchProvince(e.province, deps.provinces);
   const fromText = detectProvinceInText(message, deps.provinces);
-  const persisted = deps.provinces.find(p => p.id === ctx.journeyProvinceId) ?? null;
-  const province = fromText ?? persisted ?? fromModel;
-  const namedButUnknown = !!e.province && !fromModel && !fromText && !persisted;
+  const current = u.intent === 'PROGRAM_SEARCH' && ctx.journeyProvinceId ? deps.provinces.find(p => p.id === ctx.journeyProvinceId) ?? null : null;
+  const province = fromText ?? current ?? fromModel;
+  const namedButUnknown = !!e.province && !fromModel && !fromText;
 
   switch (u.intent) {
     case 'PROGRAM_DISCOVERY':
     case 'PROGRAM_SEARCH': {
       if (namedButUnknown) return { type: 'ASK_PROVINCE', coveredIds: covered };
       const inherited =
-        !province && u.uses_context && u.intent === 'PROGRAM_SEARCH' && ctx.journeyProvinceId
+        !province && u.intent === 'PROGRAM_SEARCH' && ctx.journeyProvinceId
           ? deps.provinces.find((p) => p.id === ctx.journeyProvinceId) ?? null
           : null;
       const prov = province ?? inherited;

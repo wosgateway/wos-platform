@@ -72,6 +72,7 @@ export async function setCurrentProvince(conversationId: string, channel: string
 
 export interface ConversationState {
   pending?: PendingService | null;
+  /** Invalidation metadata survives catalog TTL; it never authorizes replay. */
   catalogProvinceId?: string | null;
   provinceId: string | null;
   lastCatalog: CatalogItem[];
@@ -93,8 +94,11 @@ export async function loadState(conversationId: string): Promise<ConversationSta
   if (!data) return null;
   const fresh = data.catalog_updated_at && Date.now() - Date.parse(data.catalog_updated_at) < CATALOG_TTL_MS;
   return {
-    pending: data.pending_request_id ? { id: data.pending_request_id, query: data.pending_service_query, source: data.pending_service_source, createdAt: data.pending_service_created_at } : null,
     catalogProvinceId: (data.catalog_query as ConversationState['catalogQuery'])?.provinceId ?? null,
+    pending: data.pending_request_id ? {
+      id: data.pending_request_id, query: data.pending_service_query,
+      source: data.pending_service_source, createdAt: data.pending_service_created_at,
+    } : null,
     provinceId: data.province_id ?? null,
     lastCatalog: fresh && Array.isArray(data.last_catalog) ? (data.last_catalog as CatalogItem[]) : [],
     catalogQuery: fresh ? (data.catalog_query as ConversationState['catalogQuery']) : null,

@@ -84,10 +84,10 @@ describe('decide: catalog family', () => {
   it('specific search without province searches catalog-wide', () => {
     expect(decide(U({ intent: 'PROGRAM_SEARCH', entities: { program_query: 'ตรวจเข่า' } }), 'มีตรวจเข่าไหม', emptyCtx, deps)).toMatchObject({ type: 'SEARCH', province: null, query: 'ตรวจเข่า' });
   });
-  it('search inherits journey province only when the sentence uses context', () => {
+  it('search uses authoritative current province even without a model context flag', () => {
     const q = { intent: 'PROGRAM_SEARCH' as const, entities: { program_query: 'ตรวจเข่า' } };
     expect(decide(U({ ...q, uses_context: true }), 'แล้วตรวจเข่าล่ะ', listCtx, deps)).toMatchObject({ province: { id: 'udon-thani' } });
-    expect(decide(U({ ...q, uses_context: false }), 'มีตรวจเข่าไหม', listCtx, deps)).toMatchObject({ province: null });
+    expect(decide(U({ ...q, uses_context: false }), 'มีตรวจเข่าไหม', listCtx, deps)).toMatchObject({ province: { id: 'udon-thani' } });
   });
   it('selection resolves against the shown list', () => {
     expect(decide(U({ intent: 'PROGRAM_SELECTION', uses_context: true, entities: { selection_index: 0 } }), 'เอาอันแรก', listCtx, deps)).toMatchObject({ type: 'SELECT', index: 0, item: knee });

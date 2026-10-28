@@ -4,6 +4,8 @@ import { classifyAssistantQuestion, deriveWosJourneyState, extractRejectedProgra
 import { isHandoffConfirmation, isJourneyReady } from '../handoff/concierge';
 
 const mocks = vi.hoisted(() => ({ gate: vi.fn(), search: vi.fn(), knowledge: vi.fn(), forbidden: vi.fn() }));
+const pendingState = vi.hoisted(() => ({ clear: vi.fn() }));
+vi.mock('./understanding/state', async original => ({ ...await original<typeof import('./understanding/state')>(), clearPendingService: pendingState.clear }));
 vi.mock('./understanding/gate', () => ({ runUnderstandingGate: mocks.gate }));
 vi.mock('./notion-knowledge', () => ({ searchWosNotionKnowledge: mocks.knowledge }));
 vi.mock('./programs', async importOriginal => ({
@@ -40,6 +42,7 @@ function noExternalWork() {
   for (const mock of Object.values(mocks)) expect(mock).not.toHaveBeenCalled();
 }
 beforeEach(() => {
+  pendingState.clear.mockReset().mockResolvedValue(undefined);
   for (const mock of Object.values(mocks)) mock.mockReset();
   mocks.gate.mockResolvedValue({ handled: false });
   mocks.knowledge.mockResolvedValue([]);
@@ -84,6 +87,7 @@ describe('named program rejection through real core and journey replay', () => {
     const original = structuredClone(history);
     expect(deriveWosJourneyState(history, '').selectedProgram).toBe('ตรวจเข่า');
     const answer = await runWosAI(input, history, { conversationId: 'mock-conversation' });
+    expect(pendingState.clear).toHaveBeenCalledWith('mock-conversation');
     expect(mocks.search).not.toHaveBeenCalled();
     expect(answer).not.toContain('ตรวจเข่า');
     expect(answer).toContain('โปรแกรม');
