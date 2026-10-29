@@ -143,6 +143,12 @@ function journeyToSummaryLines(journey: WosJourneyState): string[] {
   const lines: Array<string | null> = [
     journey.selectedProgram ? `โปรแกรม: ${journey.selectedProgram}` : null,
     journey.selectedProvider ? `ผู้ให้บริการ: ${journey.selectedProvider}` : null,
+    journey.selectedProgram && journey.transportNeeded !== undefined
+      ? `รถรับส่ง: ${journey.transportNeeded ? 'ต้องการ' : 'ไม่ต้องการ'}` : null,
+    journey.selectedProgram && journey.transportNeeded === true && journey.transportOrigin
+      ? `จุดรับ: ${journey.transportOrigin}` : null,
+    journey.selectedProgram && journey.hotelNeeded !== undefined
+      ? `โรงแรม: ${journey.hotelNeeded ? 'ต้องการ' : 'ไม่ต้องการ'}` : null,
     journey.origin ? `ต้นทาง: ${journey.origin}` : null,
     journey.destination ? `ปลายทาง: ${journey.destination}` : null,
     journey.serviceDate ? `วันที่: ${journey.serviceDate}` : null,

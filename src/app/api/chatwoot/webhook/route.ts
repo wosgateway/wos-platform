@@ -5,7 +5,7 @@ import { createServiceClient } from '@/lib/supabase/service';
 import { deriveWosJourneyState, getWosConciergeStage } from '@/lib/ai/journey-state';
 import { runWosAI, type WosAIHistoryMessage } from '@/lib/ai/core';
 import { submitHandoff } from '@/lib/handoff/service';
-import { buildBookingReviewPrompt, buildConciergeStagePrompt, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, type ChatwootSender } from '@/lib/handoff/concierge';
+import { buildBookingReviewPrompt, buildConciergeHandoffSummary, buildConciergeStagePrompt, buildHandoffContactPrompt, buildHandoffFailureMessage, buildHandoffResultMessage, detectHandoffLanguage, extractContact, isHandoffConfirmation, isJourneyReady, type ChatwootSender } from '@/lib/handoff/concierge';
 import { claimWebhookEvent, recordWebhookEventResult, releaseWebhookEvent } from '@/lib/chatwoot/duplicate';
 
 // =====================================================================
@@ -79,7 +79,12 @@ async function processClaimedWebhook(args: {
     const previousContact = previousContactMessage
       ? extractContact(sender, previousContactMessage.content)
       : null;
-    const resolvedContact = contact?.value ? contact : previousContact;
+    const contactDetails = contact?.value ? contact : previousContact;
+    // Journey state owns the accepted customer name; sender metadata supplies
+    // the contact channel/value and must not replace a name collected in-chat.
+    const resolvedContact = contactDetails
+      ? { ...contactDetails, name: journey.customerName ?? contactDetails.name }
+      : null;
     const journeyReady = isJourneyReady(journey);
     const conciergeStage = getWosConciergeStage(journey);
     // The turn that answers the hotel question (yes OR no) completes the V1 intake.
@@ -115,7 +120,7 @@ async function processClaimedWebhook(args: {
       }
     } else if (journeyReady && conciergeStage === 'awaiting_confirmation' && confirmation) {
       if (!resolvedContact?.name || !resolvedContact.value) {
-        replyText = buildHandoffContactPrompt(language);
+        replyText = buildHandoffContactPrompt(language, Boolean(journey.customerName));
       } else {
         const handoff = await submitHandoff({
           conversationId: String(conversationId),
@@ -127,7 +132,10 @@ async function processClaimedWebhook(args: {
           appUrl: process.env.NEXT_PUBLIC_SITE_URL || 'https://www.wos.asia',
         });
         replyText = handoff.ok
-          ? buildHandoffResultMessage(language, handoff.notification)
+          ? [
+              ...(journey.selectedProgram ? [buildConciergeHandoffSummary(language, journey)] : []),
+              buildHandoffResultMessage(language, handoff.notification),
+            ].join('\n\n')
           : buildHandoffFailureMessage(language);
       }
     } else if (

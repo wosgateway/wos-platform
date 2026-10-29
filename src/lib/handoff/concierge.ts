@@ -242,7 +242,12 @@ export function isServiceOptionsResponse(text: string): boolean {
   return /(?:รถ|รับส่ง|เที่ยวเดียว|เหมารายวัน|ห้องพัก|เตียงคู่|เตียงเดี่ยว|โรงแรม|transport|one-way|daily|room|hotel|twin|double)/iu.test(text);
 }
 
-export function buildHandoffContactPrompt(language: WosLanguage): string {
+export function buildHandoffContactPrompt(language: WosLanguage, nameAlreadyKnown = false): string {
+  if (nameAlreadyKnown) {
+    if (language === 'lo') return 'ກ່ອນສົ່ງໃຫ້ທີມ WOS ຂໍເບີໂທ ຫຼື email ເພື່ອໃຫ້ທີມຕິດຕໍ່ກັບ.';
+    if (language === 'en') return 'Before I send this to WOS, please provide a phone number or email so the team can contact you.';
+    return 'ก่อนส่งให้ทีม WOS ขอเบอร์โทรหรืออีเมลสำหรับให้ทีมติดต่อกลับด้วยนะคะ';
+  }
   if (language === 'lo') {
     return 'ກ່ອນສົ່ງໃຫ້ທີມ WOS ຂໍຊື່ ແລະ ເບີໂທ ຫຼື email ເພື່ອໃຫ້ທີມຕິດຕໍ່ກັບ.';
   }
