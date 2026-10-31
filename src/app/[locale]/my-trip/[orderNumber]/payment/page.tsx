@@ -178,6 +178,17 @@ export default function PaymentPage() {
       return;
     }
 
+    const allowedSlipTypes = new Set(['image/jpeg', 'image/png', 'application/pdf']);
+    const maxSlipSize = 10 * 1024 * 1024;
+    if (!allowedSlipTypes.has(file.type)) {
+      setSubmitError('รองรับเฉพาะไฟล์ JPG, PNG หรือ PDF');
+      return;
+    }
+    if (file.size <= 0 || file.size > maxSlipSize) {
+      setSubmitError('ไฟล์สลิปต้องมีขนาดไม่เกิน 10 MB');
+      return;
+    }
+
     setSubmitting(true);
     try {
       // As of migration 068, `payment-slips` no longer accepts a
@@ -191,7 +202,7 @@ export default function PaymentPage() {
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ filename: file.name }),
+          body: JSON.stringify({ filename: file.name, contentType: file.type, size: file.size }),
         }
       );
       const urlResult = await urlRes.json();
@@ -506,7 +517,7 @@ export default function PaymentPage() {
           <label className="form-label">{t('slipLabel')}</label>
           <input
             type="file"
-            accept="image/*,application/pdf"
+            accept="image/jpeg,image/png,application/pdf"
             className="form-input"
             onChange={(e) => setFile(e.target.files?.[0] ?? null)}
             required

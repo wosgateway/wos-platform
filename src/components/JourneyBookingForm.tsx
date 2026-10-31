@@ -50,6 +50,12 @@ type LocationType =
   | 'mukdahan_bridge'
   | 'chong_mek'
   | 'udon_airport'
+  | 'vientiane'
+  | 'vangvieng'
+  | 'luang_prabang'
+  | 'thakhek'
+  | 'savannakhet'
+  | 'pakse'
   | 'hotel'
   | 'other'
   | 'per_itinerary';
@@ -154,6 +160,18 @@ function resolveLocationLabel(
       return t('fields.locationChongMek');
     case 'udon_airport':
       return t('fields.locationUdonAirport');
+    case 'vientiane':
+      return t('fields.locationVientiane');
+    case 'vangvieng':
+      return t('fields.locationVangVieng');
+    case 'luang_prabang':
+      return t('fields.locationLuangPrabang');
+    case 'thakhek':
+      return t('fields.locationThakhek');
+    case 'savannakhet':
+      return t('fields.locationSavannakhet');
+    case 'pakse':
+      return t('fields.locationPakse');
     case 'hotel':
       return trimmed ? `${t('fields.locationHotel')}: ${trimmed}` : t('fields.locationHotel');
     case 'other':
@@ -779,6 +797,12 @@ export function JourneyBookingForm({
                 <option value="mukdahan_bridge">{t('fields.locationMukdahanBridge')}</option>
                 <option value="chong_mek">{t('fields.locationChongMek')}</option>
                 <option value="udon_airport">{t('fields.locationUdonAirport')}</option>
+                <option value="vientiane">{t('fields.locationVientiane')}</option>
+                <option value="vangvieng">{t('fields.locationVangVieng')}</option>
+                <option value="luang_prabang">{t('fields.locationLuangPrabang')}</option>
+                <option value="thakhek">{t('fields.locationThakhek')}</option>
+                <option value="savannakhet">{t('fields.locationSavannakhet')}</option>
+                <option value="pakse">{t('fields.locationPakse')}</option>
                 <option value="hotel">{t('fields.locationHotel')}</option>
                 <option value="other">{t('fields.locationOther')}</option>
               </select>

@@ -87,7 +87,7 @@ const config: Config = {
         },
       },
       fontFamily: {
-        sans: ['var(--font-prompt)', 'Noto Sans Lao', 'sans-serif'],
+        sans: ['Prompt', 'Noto Sans Lao', 'Tahoma', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       fontSize: {

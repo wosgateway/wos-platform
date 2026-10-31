@@ -1,0 +1,9 @@
+﻿{
+  "event": "message_created",
+  "message_type": "incoming",
+  "private": false,
+  "content": "มโปรแกรมสขภาพอะไรบางในอดรธาน",
+  "conversation": {
+    "id": 1
+  }
+}

@@ -1,5 +1,6 @@
+import { formatDurationMinutes } from '@/lib/format-duration';
 import Image from 'next/image';
-import { getTranslations } from 'next-intl/server';
+import { getLocale, getTranslations } from 'next-intl/server';
 import { notFound } from 'next/navigation';
 import { fetchPackageById } from '@/lib/data';
 import { formatTHB } from '@/lib/format';
@@ -14,6 +15,7 @@ export default async function ProgramDetailPage({
   params: { id: string };
 }) {
   const t = await getTranslations('common');
+  const locale = await getLocale();
   const tBooking = await getTranslations('booking.summary');
 
   let pkg;
@@ -84,8 +86,8 @@ export default async function ProgramDetailPage({
                 {formatTHB((pkg.special_price as number) || (pkg.original_price as number))}
               </span>
             </div>
-            {pkg.duration ? (
-              <span className="ml-auto text-sm text-slate-400">⏱️ {pkg.duration as string}</span>
+            {pkg.duration != null ? (
+              <span className="ml-auto text-sm text-slate-400">⏱️ {formatDurationMinutes(pkg.duration, locale)}</span>
             ) : null}
           </div>
 
