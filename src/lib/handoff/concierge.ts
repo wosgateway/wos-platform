@@ -1,4 +1,5 @@
 import type { WosLanguage } from '@/lib/ai/language-dictionary';
+import { resolveWosLanguageProfile } from '@/lib/ai/language-routing';
 import type { WosJourneyState } from '@/lib/ai/journey-state';
 
 export type ChatwootSender = {
@@ -8,9 +9,7 @@ export type ChatwootSender = {
 };
 
 export function detectHandoffLanguage(text: string): WosLanguage {
-  if (/[຀-໿]/u.test(text)) return 'lo';
-  if (/\b(the|and|with|from|please|yes|confirm)\b/iu.test(text)) return 'en';
-  return 'th';
+  return resolveWosLanguageProfile(text).language;
 }
 
 export function isHandoffConfirmation(text: string): boolean {

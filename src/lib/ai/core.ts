@@ -42,6 +42,8 @@ import {
   languageName,
   type WosLanguage,
 } from './language-dictionary';
+import { resolveWosLanguageProfile } from './language-routing';
+import { buildMedicalSafetyReply, isExplicitMedicalAdviceRequest } from './medical-safety';
 import { getSymptomSearchAliases } from './symptom-intent';
 import { deriveWosJourneyState, formatJourneyState, isShortNegative, hasNegativeRequestSemantics } from './journey-state';
 import { isThanksMessage, isTransparentInterruption, isNewJourneyServiceTopic, extractExplicitProgramTitle } from './journey-state';
@@ -1095,9 +1097,19 @@ export async function runWosAI(
     const lastAssistantForLanguage = [...cleanHistory].reverse().find((m) => m.role === 'assistant')?.content ?? '';
     const looksLikeNameReply = /^(?:[ก-๙\u0E80-\u0EFFA-Za-z][ก-๙\u0E80-\u0EFFA-Za-z .'-]{1,60})$/u.test(userMessage.trim())
       && /(?:ขอชื่อ|ชื่อสำหรับ|what name|name should I use|ຂໍຊື່)/iu.test(lastAssistantForLanguage);
-    const customerLanguage = looksLikeNameReply
-      ? detectWosLanguage(lastUserLanguageAnchor, languageHistory)
-      : detectWosLanguage(userMessage, languageHistory);
+    const languageProfile = resolveWosLanguageProfile(
+      looksLikeNameReply ? lastUserLanguageAnchor : userMessage,
+      languageHistory,
+    );
+    const customerLanguage = languageProfile.language;
+
+    // Explicit diagnosis/treatment requests stop before catalog lookup or model
+    // generation. Ordinary symptom-to-service discovery remains available.
+    if (isExplicitMedicalAdviceRequest(userMessage)) {
+      console.info('[WOS_AI_MEDICAL_SAFETY_GUARD]', JSON.stringify({ language: customerLanguage }));
+      return buildMedicalSafetyReply(customerLanguage);
+    }
+
     // Simple social acknowledgements must never advance or replay an active
     // concierge stage. A customer saying "ขอบคุณ" after handoff is finished
     // should get a natural acknowledgement, not the previous hotel message.
@@ -2168,12 +2180,14 @@ export async function runWosAI(
 `;
 
     const languageInstructions =
-      'CURRENT CUSTOMER LANGUAGE: ' + languageName(customerLanguage) + '\n' +
-      '- Reply in the current customer language unless the customer explicitly asks to switch.\n' +
+      'CURRENT CUSTOMER LANGUAGE: ' + (languageProfile.isMixedThaiLao ? 'Mixed Thai–Lao' : languageName(customerLanguage)) + '\n' +
+      (languageProfile.isMixedThaiLao
+        ? '- The latest customer message intentionally uses both Thai and Lao. Preserve the code-switching and both scripts naturally; do not flatten the whole reply into Thai, Lao, or English.\n'
+        : '- Reply in the current customer language unless the customer explicitly asks to switch.\n') +
       '- Lao customer messages must receive natural Lao, not Thai and not word-for-word machine translation.\n' +
       '- Thai customer messages must receive natural Thai.\n' +
       '- English customer messages must receive natural English.\n' +
-      '- Short replies such as "1", "2", or a short follow-up inherit the conversation language from recent turns.\n' +
+      '- Short replies such as "1", "2", or a short follow-up inherit the latest meaningful customer language from recent turns.\n' +
       '- If the customer switches language explicitly, follow the new language while preserving program and journey context.\n' +
       '- The dictionary is a lexical reference only. It never overrides verified WOS facts and must not invent business data.\n' +
       'DICTIONARY REFERENCE:\n' + dictionaryHints;
@@ -2681,8 +2695,7 @@ const runToolRounds = async (
     // is only a number/short phrase. Re-ask once with an explicit Thai
     // instruction before anything reaches Chatwoot.
     const thaiConversation =
-      /[\u0E00-\u0EFF]/.test(userMessage) ||
-      cleanHistory.some((m) => /[\u0E00-\u0EFF]/.test(m.content));
+      customerLanguage === 'th' || languageProfile.isMixedThaiLao;
     const englishReplyMarkers = [
       /^sure[\s—-]/i,
       /i checked the verified wos data/i,
@@ -2690,16 +2703,23 @@ const runToolRounds = async (
       /there is one program that matches/i,
       /found \d+ programs that match/i,
     ];
-    const looksEnglishInThaiConversation =
-      thaiConversation &&
+    const looksEnglishInNonEnglishConversation =
+      customerLanguage !== 'en' &&
       englishReplyMarkers.some((pattern) => pattern.test(finalText));
 
-    if (looksEnglishInThaiConversation) {
-      console.warn('[WOS_AI_LANGUAGE_RETRY]', JSON.stringify({ target: 'th' }));
+    if (looksEnglishInNonEnglishConversation) {
+      const targetLanguage = languageProfile.isMixedThaiLao
+        ? 'mixed-thai-lao'
+        : customerLanguage;
+      const retryInstruction = languageProfile.isMixedThaiLao
+        ? '[System reminder] The customer is using both Thai and Lao. Rewrite your previous answer in natural Thai–Lao code-switching and preserve both scripts where appropriate. Keep verified program facts exactly the same. Do not add new facts.'
+        : customerLanguage === 'lo'
+          ? '[System reminder] This conversation is in Lao. Rewrite your previous answer in natural Lao. Keep verified program facts exactly the same. Do not switch to Thai or English. Do not add new facts.'
+          : '[System reminder] This conversation is in Thai. Rewrite your previous answer in natural Thai, keeping the verified program facts exactly the same. Do not switch to English. Do not add new facts.';
+      console.warn('[WOS_AI_LANGUAGE_RETRY]', JSON.stringify({ target: targetLanguage }));
       messages.push({
         role: 'user',
-        content:
-          '[System reminder] This conversation is in Thai. Rewrite your previous answer in natural Thai, keeping the verified program facts exactly the same. Do not switch to English. Do not add new facts.',
+        content: retryInstruction,
       });
       response = await complete(false);
       addChatUsage(usage, response);

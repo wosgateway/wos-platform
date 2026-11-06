@@ -2,27 +2,17 @@ import { gunzip } from 'node:zlib';
 import { promisify } from 'node:util';
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { resolveWosLanguageProfile, type WosLanguage } from './language-routing';
 
 const gunzipAsync = promisify(gunzip);
 type Dictionary = Record<string, string>;
 type DictName = 'lao2eng' | 'eng2lao' | 'thai2eng' | 'eng2thai';
 const cache = new Map<DictName, Promise<Dictionary>>();
 
-export type WosLanguage = 'th' | 'lo' | 'en';
+export type { WosLanguage } from './language-routing';
 
 export function detectWosLanguage(text: string, history: string[] = []): WosLanguage {
-  const sample = text.trim() || [...history].reverse().find(Boolean) || '';
-  const lao = (sample.match(/[\u0E80-\u0EFF]/g) ?? []).length;
-  const thai = (sample.match(/[\u0E00-\u0E7F]/g) ?? []).length;
-  if (lao > thai && lao > 0) return 'lo';
-  if (thai > 0) return 'th';
-  if (/[A-Za-z]/.test(sample)) return 'en';
-  for (const item of [...history].reverse()) {
-    if (/[\u0E80-\u0EFF]/.test(item)) return 'lo';
-    if (/[\u0E00-\u0E7F]/.test(item)) return 'th';
-    if (/[A-Za-z]/.test(item)) return 'en';
-  }
-  return 'th';
+  return resolveWosLanguageProfile(text, history).language;
 }
 
 async function loadDictionary(name: DictName): Promise<Dictionary> {

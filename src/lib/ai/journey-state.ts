@@ -1,3 +1,4 @@
+import { buildMedicalSafetyReply, isExplicitMedicalAdviceRequest } from './medical-safety';
 import type { WosLanguage } from './language-dictionary';
 import type { WosAIHistoryMessage } from './core';
 import { normalizeSelectionInput, SELECTION_SERVICE_ALIASES } from './selection-lexical';
@@ -1104,6 +1105,14 @@ function replayAddonHistory(history: WosAIHistoryMessage[]): { slots: AddonSlots
     const prior = history.slice(0, index);
     const boundary = isJourneyContextBoundary(message.content, open, prior);
     if (boundary) open = undefined;
+    // Only an actual guard request/reply pair is transparent to slot replay.
+    // Explicit reset/selection/service boundaries above retain priority.
+    const next = history[index + 1];
+    if (!boundary && next?.role === 'assistant'
+      && isExplicitMedicalAdviceRequest(message.content)
+      && (['th', 'lo', 'en'] as const).some(language => next.content === buildMedicalSafetyReply(language))) {
+      continue;
+    }
     const result = applyAddonTurn(slots, open, message.content, prior);
     slots = result.slots;
     const pickupDeclined = open === 'pickup' && result.answered === 'transport' && slots.transportNeeded === false;
