@@ -1,7 +1,8 @@
 import { normalizeCatalogInput, canonicalCatalogService, hasCatalogLocationWording, hasCatalogDiscoveryWording } from '../catalog-query-normalization';
 import { extractJson, parseUnderstanding, type CatalogItem, type Understanding } from './types';
-import { detectProvinceInText, matchProvince, type ProvinceRecord } from './provinces';
+import { detectProvinceInText, resolveProvinceFromEvidence, type ProvinceRecord } from './provinces';
 import { getSymptomSearchAliases } from '../symptom-intent';
+import { resolveWosLanguageProfile } from '../language-routing';
 
 export type LlmJson = (args: { system: string; user: string; timeoutMs: number }) => Promise<string>;
 
@@ -59,10 +60,8 @@ function buildUser(message: string, history: { role: string; content: string }[]
 }
 
 function langFor(message: string): Understanding['language'] {
-  if (/[\u0e80-\u0eff]/.test(message) && /[\u0e00-\u0e7f]/.test(message)) return 'mixed';
-  if (/[\u0e80-\u0eff]/.test(message)) return 'lo';
-  if (/[\u0e00-\u0e7f]/.test(message)) return 'th';
-  return 'en';
+  const profile = resolveWosLanguageProfile(message);
+  return profile.isMixedThaiLao ? 'mixed' : profile.language;
 }
 
 function makeUnderstanding(
@@ -455,7 +454,12 @@ function normalizeUnderstanding(
  */
 function withCanonicalProvince(u: Understanding, message: string, provinces: ProvinceRecord[]): Understanding {
   if (provinces.length === 0) return u;
-  const hit = matchProvince(u.entities.province, provinces) ?? detectProvinceInText(message, provinces);
+
+  // The customer's explicit place name outranks model extraction. If the
+  // message names multiple provinces, leave the province unresolved.
+  const resolved = resolveProvinceFromEvidence(u.entities.province, message, provinces);
+  if (resolved.ambiguous) return { ...u, entities: { ...u.entities, province: null } };
+  const hit = resolved.province;
   if (!hit || hit.name_th === u.entities.province) return u;
   return { ...u, entities: { ...u.entities, province: hit.name_th } };
 }

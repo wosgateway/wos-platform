@@ -44,6 +44,12 @@ describe('common canonical understanding for Thai and Lao',()=>{
   const r=await understand(vi.fn(),'ມີກວດສຸຂະພາບຢູ່ແຂວງທີ່ບໍ່ຮູ້ຈັກບໍ',[],[],provinces);
   expect(r.understanding).toBeNull();expect(r.error).toBe('unresolved_catalog_province');
  });
+ it('clears model province extraction when the customer explicitly names multiple provinces',async()=>{
+  const llm=vi.fn(async()=>JSON.stringify({intent:'PROGRAM_SEARCH',confidence:.95,entities:{province:'Udon Thani',program_query:'knee check'},uses_context:false,language:'en'}));
+  const r=await understand(llm,'knee check in Udon Thani or Nong Khai',[],[],provinces);
+  expect(llm).toHaveBeenCalled();
+  expect(r.understanding).toMatchObject({intent:'PROGRAM_SEARCH',entities:{province:null,program_query:'knee check'}});
+ });
  it('leaves an unrecognized specific Lao service to existing LLM understanding',async()=>{
   const llm=vi.fn(async()=>JSON.stringify({intent:'PROGRAM_SEARCH',confidence:.95,entities:{province:'อุดรธานี',program_query:'ตรวจหัวใจ'},uses_context:false,language:'lo'}));
   const r=await understand(llm,'ມີໂປຣແກຣມກວດຫົວໃຈຫຍັງແດ່ຢູ່ອຸດອນ',[],[],provinces);

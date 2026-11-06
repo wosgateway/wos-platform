@@ -1,6 +1,6 @@
 // Business rules: Understanding + context -> Action. Pure, no I/O.
 import type { CatalogItem, DetailField, Understanding } from './types';
-import { detectProvinceInText, matchProvince, type ProvinceRecord } from './provinces';
+import { detectProvinceInText, findProvinceMentionsInText, matchProvince, type ProvinceRecord } from './provinces';
 
 export const THRESHOLDS = { high: 0.8, medium: 0.5 }; // tune from eval, then lock
 
@@ -69,6 +69,15 @@ export function decide(
 
   if (hasActiveSelection && !explicitCatalogOperation) {
     return { type: 'DEFER', reason: 'active_selected_program' };
+  }
+
+  // Multiple explicit places in the current message invalidate both model extraction
+  // and any previously stored journey province. Ask instead of silently choosing one.
+  if (
+    (u.intent === 'PROGRAM_DISCOVERY' || u.intent === 'PROGRAM_SEARCH') &&
+    findProvinceMentionsInText(message, deps.provinces).length > 1
+  ) {
+    return { type: 'ASK_PROVINCE', coveredIds: covered };
   }
 
   // Province: the model's value must exist in canonical data; text match is a deterministic backup.

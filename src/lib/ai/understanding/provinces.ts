@@ -43,24 +43,42 @@ const MARKER_PREFIXES = ['จังหวัด', 'จ.', 'ແຂວງ'];
  * Short aliases (<4 chars after normalizing, e.g. "เลย" "ตาก") are ambiguous with ordinary
  * words, so they only count when written with an explicit marker ("จังหวัดเลย", "จ.ตาก").
  */
-export function detectProvinceInText(text: string, provinces: ProvinceRecord[]): ProvinceRecord | null {
+export function findProvinceMentionsInText(text: string, provinces: ProvinceRecord[]): ProvinceRecord[] {
   const flat = text.normalize('NFC').toLowerCase().replace(/[\s\u200b-\u200d\ufeff]+/g, '');
   const normText = normalizeProvinceText(text);
-  let best: { p: ProvinceRecord; len: number } | null = null;
+  const hits: ProvinceRecord[] = [];
   for (const p of provinces) {
-    for (const name of namesOf(p)) {
+    const matched = namesOf(p).some((name) => {
       const n = normalizeProvinceText(name);
-      if (!n) continue;
-      let hit = false;
-      if ([...n].length >= 4) hit = normText.includes(n) || flat.includes(n);
-      else {
-        const nameFlat = name.normalize('NFC').toLowerCase().replace(/\s+/g, '');
-        hit = MARKER_PREFIXES.some((m) => flat.includes(m + nameFlat));
-      }
-      if (hit && (!best || n.length > best.len)) best = { p, len: n.length };
-    }
+      if (!n) return false;
+      if ([...n].length >= 4) return normText.includes(n) || flat.includes(n);
+      const nameFlat = name.normalize('NFC').toLowerCase().replace(/\s+/g, '');
+      return MARKER_PREFIXES.some((m) => flat.includes(m + nameFlat));
+    });
+    if (matched) hits.push(p);
   }
-  return best?.p ?? null;
+  return hits;
+}
+
+/** Return a province only when the customer's message identifies one unambiguous place. */
+export function detectProvinceInText(text: string, provinces: ProvinceRecord[]): ProvinceRecord | null {
+  const hits = findProvinceMentionsInText(text, provinces);
+  return hits.length === 1 ? hits[0] : null;
+}
+
+/**
+ * Resolve model-extracted province evidence without allowing a wrong model
+ * guess to override an explicit place name in the customer's raw message.
+ */
+export function resolveProvinceFromEvidence(
+  modelProvince: string | null,
+  message: string,
+  provinces: ProvinceRecord[],
+): { province: ProvinceRecord | null; ambiguous: boolean } {
+  const mentioned = findProvinceMentionsInText(message, provinces);
+  if (mentioned.length > 1) return { province: null, ambiguous: true };
+  if (mentioned.length === 1) return { province: mentioned[0], ambiguous: false };
+  return { province: matchProvince(modelProvince, provinces), ambiguous: false };
 }
 
 /** Map catalog province strings (partners.province free text) to canonical ids. */

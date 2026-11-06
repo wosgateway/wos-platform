@@ -81,6 +81,14 @@ describe('decide: catalog family', () => {
   it('unknown province string is never sent to search', () => {
     expect(decide(U({ intent: 'PROGRAM_DISCOVERY', entities: { province: 'ดาวอังคาร' } }), 'โปรแกรมดาวอังคาร', emptyCtx, deps).type).toBe('ASK_PROVINCE');
   });
+  it('asks again when discovery names multiple provinces, ignoring a stale journey province', () => {
+    const action = decide(U({ intent: 'PROGRAM_DISCOVERY', entities: { province: 'Udon Thani' } }), 'Udon Thani or Bangkok', { ...emptyCtx, journeyProvinceId: 'udon-thani' }, deps);
+    expect(action).toEqual({ type: 'ASK_PROVINCE', coveredIds: [...covered] });
+  });
+  it('asks again when search names multiple provinces, ignoring model and journey province', () => {
+    const action = decide(U({ intent: 'PROGRAM_SEARCH', entities: { province: 'Udon Thani', program_query: 'knee check' } }), 'knee check in Udon Thani or Bangkok', listCtx, deps);
+    expect(action).toEqual({ type: 'ASK_PROVINCE', coveredIds: [...covered] });
+  });
   it('specific search without province searches catalog-wide', () => {
     expect(decide(U({ intent: 'PROGRAM_SEARCH', entities: { program_query: 'ตรวจเข่า' } }), 'มีตรวจเข่าไหม', emptyCtx, deps)).toMatchObject({ type: 'SEARCH', province: null, query: 'ตรวจเข่า' });
   });

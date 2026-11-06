@@ -30,4 +30,18 @@ describe('understand symptom search', () => {
       },
     });
   });
+
+  it('preserves a mixed Thai-Lao language classification on deterministic symptom routing', async () => {
+    const llm = vi.fn(async () => {
+      throw new Error('LLM must not be called for a deterministic known symptom');
+    }) as unknown as LlmJson;
+
+    const result = await understand(llm, 'ຂ້ອຍ ปวดเข่า', [], [], []);
+
+    expect(llm).not.toHaveBeenCalled();
+    expect(result.understanding).toMatchObject({
+      intent: 'PROGRAM_SEARCH',
+      language: 'mixed',
+    });
+  });
 });
