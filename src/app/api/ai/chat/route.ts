@@ -1,0 +1,246 @@
+import { timingSafeEqual, randomUUID } from 'node:crypto';
+import { NextResponse } from 'next/server';
+import { runWosAI, type WosAIHistoryMessage, type WosAIDiagnostic } from '@/lib/ai/core';
+import { simpleRateLimit } from '@/lib/rate-limit';
+import { authorizeWebConversation, WebOwnershipError } from '@/lib/ai/web-ownership';
+
+// Multiple tool rounds + Notion + OpenAI can exceed the default limit.
+export const maxDuration = 60;
+
+// NextResponse.json() sets "Content-Type: application/json" with no charset.
+// That is valid per RFC 8259 (JSON is UTF-8 by definition), but some HTTP
+// clients - notably PowerShell's Invoke-WebRequest/Invoke-RestMethod on
+// Windows - fall back to a local codepage instead of UTF-8 when the header
+// omits an explicit charset, which mangles Thai/Lao text on the client side
+// even though the bytes we sent were correct UTF-8. Adding the charset
+// removes that ambiguity for every client, so wrap every JSON response here
+// instead of relying on the default.
+function jsonResponse(
+  data: unknown,
+  init?: number | ResponseInit
+) {
+  const responseInit: ResponseInit =
+    typeof init === 'number' ? { status: init } : init ?? {};
+
+  const headers = new Headers(responseInit.headers);
+  headers.set('Content-Type', 'application/json; charset=utf-8');
+
+  return NextResponse.json(data, { ...responseInit, headers });
+}
+
+const MAX_MESSAGE_LENGTH = 1000;
+const RATE_LIMIT_MAX = 20; // requests
+const RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000; // per 10 minutes, per IP
+
+function getClientIp(request: Request): string {
+  const forwarded = request.headers.get('x-forwarded-for');
+  return forwarded?.split(',')[0]?.trim() || 'unknown';
+}
+
+function hasValidRegressionToken(request: Request): boolean {
+  if (process.env.VERCEL_ENV !== 'preview') return false;
+
+  const expected = process.env.WOS_AI_REGRESSION_TOKEN;
+  const supplied = request.headers.get('x-wos-ai-regression-token');
+  if (!expected || !supplied) return false;
+
+  const expectedBytes = Buffer.from(expected, 'utf8');
+  const suppliedBytes = Buffer.from(supplied, 'utf8');
+
+  return expectedBytes.length === suppliedBytes.length &&
+    timingSafeEqual(expectedBytes, suppliedBytes);
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  return (error as { status?: number } | null)?.status;
+}
+
+// Seconds the upstream told us to wait (works with plain-object headers and
+// the Headers class, depending on the openai SDK version). Clamped so a daily
+// quota reset never produces an absurd value.
+function getRetryAfterSeconds(error: unknown): number {
+  const headers = (error as { headers?: unknown } | null)?.headers;
+  let raw: string | null | undefined;
+
+  if (headers && typeof (headers as Headers).get === 'function') {
+    raw = (headers as Headers).get('retry-after');
+  } else if (headers && typeof headers === 'object') {
+    raw = (headers as Record<string, string | undefined>)['retry-after'];
+  }
+
+  const seconds = Number(raw);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 30;
+  return Math.min(Math.ceil(seconds), 3600);
+}
+
+export async function POST(request: Request) {
+  const started = performance.now();
+  const requestId = randomUUID();
+  const trace: WosAIDiagnostic = (event, details = {}) => {
+    try {
+      console.log('[WOS_AI_TRACE]', JSON.stringify({
+        requestId, event, timestamp: new Date().toISOString(),
+        elapsedMs: Math.round((performance.now() - started) * 1000) / 1000, ...details,
+      }));
+    } catch { /* Observation must not affect the response. */ }
+  };
+  const respond = (data: unknown, init?: number | ResponseInit) => {
+    const response = jsonResponse(data, init);
+    trace('response.return', { status: response.status });
+    return response;
+  };
+  // Best effort only: Next may not signal every socket disconnect here.
+  const onAbort = () => trace('request.abort');
+  trace('request.start');
+  try {
+    if (request.signal.aborted) onAbort();
+    else request.signal.addEventListener('abort', onAbort, { once: true });
+  } catch { /* Abort observation is optional; no cancellation is added. */ }
+  try {
+    // This endpoint is public and every call costs OpenAI tokens.
+    const rateLimitStarted = performance.now();
+    trace('rate_limit.start');
+    try {
+      const isRegressionRequest = hasValidRegressionToken(request);
+      const limit = await simpleRateLimit(
+        isRegressionRequest
+          ? 'ai-chat-regression:preview'
+          : `ai-chat:${getClientIp(request)}`,
+        isRegressionRequest ? 50 : RATE_LIMIT_MAX,
+        RATE_LIMIT_WINDOW_MS
+      );
+
+      trace('rate_limit.end', { durationMs: performance.now() - rateLimitStarted });
+      if (!limit.allowed) {
+        return respond(
+          { error: 'Too many requests. Please try again later.' },
+          { status: 429 }
+        );
+      }
+    } catch (rateLimitError) {
+      trace('rate_limit.error', { durationMs: performance.now() - rateLimitStarted, errorType: 'rate_limit_error' });
+      // Fail open: a Redis outage should not take the assistant down.
+      console.error(
+        '[AI_CHAT_RATE_LIMIT_ERROR]',
+        rateLimitError instanceof Error ? rateLimitError.message : rateLimitError
+      );
+    }
+
+    // Parse the body ourselves so malformed JSON returns a clean 400 instead
+    // of falling into the catch-all 500. The body is never logged: it is
+    // customer text.
+    let body: unknown;
+    const bodyStarted = performance.now();
+    trace('body_read.start');
+    try {
+      body = JSON.parse(await request.text());
+      trace('body_read.end', { durationMs: performance.now() - bodyStarted });
+    } catch {
+      trace('body_read.error', { durationMs: performance.now() - bodyStarted, errorType: 'body_read_or_parse_error' });
+      return respond(
+        { error: 'Invalid JSON body' },
+        { status: 400 }
+      );
+    }
+
+    const message =
+      typeof body === 'object' && body !== null
+        ? (body as { message?: unknown }).message
+        : undefined;
+
+    if (typeof message !== 'string' || !message.trim()) {
+      return respond(
+        { error: 'message is required' },
+        { status: 400 }
+      );
+    }
+
+    if (message.length > MAX_MESSAGE_LENGTH) {
+      return respond(
+        { error: `message must be at most ${MAX_MESSAGE_LENGTH} characters` },
+        { status: 400 }
+      );
+    }
+
+    // Optional conversation history is accepted for the public AI endpoint
+    // so browser/integration clients can preserve multi-turn context just
+    // like the Chatwoot adapter does. Keep the same 10-turn cap as Chatwoot
+    // and accept only plain user/assistant text.
+    const rawHistory =
+      typeof body === 'object' && body !== null
+        ? (body as { history?: unknown }).history
+        : undefined;
+
+    const history: WosAIHistoryMessage[] = Array.isArray(rawHistory)
+      ? rawHistory
+          .filter((item): item is Record<string, unknown> => {
+            return (
+              typeof item === 'object' &&
+              item !== null &&
+              (item.role === 'user' || item.role === 'assistant') &&
+              typeof item.content === 'string'
+            );
+          })
+          .map((item) => ({
+            role: item.role as 'user' | 'assistant',
+            content: String(item.content).slice(0, MAX_MESSAGE_LENGTH),
+          }))
+          .slice(-20)
+      : [];
+
+    let conversationId: string | undefined;
+    if (typeof body === 'object' && body !== null && ('conversationSelector' in body || 'conversationId' in body || 'conversation_id' in body)) {
+      try {
+        // Raw/internal IDs are never accepted, including alongside a selector.
+        if ('conversationId' in body || 'conversation_id' in body) throw new WebOwnershipError(400);
+        conversationId = await authorizeWebConversation(request, (body as { conversationSelector?: unknown }).conversationSelector);
+      } catch (error) {
+        return respond({ error: 'Web conversation unavailable' }, { status: error instanceof WebOwnershipError ? error.status : 503 });
+      }
+    }
+
+    const aiStarted = performance.now();
+    trace('ai.start');
+    let answer: Awaited<ReturnType<typeof runWosAI>>;
+    try {
+      answer = await runWosAI(message.trim(), history, conversationId ? { diagnostic: trace, conversationId, channel: 'web' } : { diagnostic: trace });
+      trace('ai.end', { durationMs: performance.now() - aiStarted });
+    } catch (error) {
+      trace('ai.error', { durationMs: performance.now() - aiStarted,
+        ...(getErrorStatus(error) !== undefined ? { status: getErrorStatus(error) } : {}), errorType: 'ai_error' });
+      throw error;
+    }
+
+    return respond({
+      answer,
+    });
+  } catch (error) {
+    // OpenAI quota / rate limit (429): the service is healthy, it is just
+    // busy or out of quota. Tell the caller to retry instead of a generic 500.
+    if (getErrorStatus(error) === 429) {
+      const retryAfter = getRetryAfterSeconds(error);
+      console.warn('[AI_CHAT_RATE_LIMITED] upstream 429, retry after', retryAfter, 's');
+
+      return respond(
+        {
+          error: 'AI service is busy',
+          message:
+            'The assistant is very busy right now. Please try again in a moment. / ผู้ช่วยกำลังมีผู้ใช้งานจำนวนมาก กรุณาลองอีกครั้งในอีกสักครู่ค่ะ',
+        },
+        { status: 503, headers: { 'Retry-After': String(retryAfter) } }
+      );
+    }
+
+    console.error(
+      '[AI_CHAT_ERROR]',
+      error instanceof Error ? error.message : error
+    );
+
+    return respond(
+      { error: 'AI service temporarily unavailable' },
+      { status: 500 }
+    );
+  } finally {
+    try { request.signal.removeEventListener('abort', onAbort); } catch { /* Best effort. */ }
+  }
+}

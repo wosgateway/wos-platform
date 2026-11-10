@@ -138,6 +138,10 @@ export async function middleware(request: NextRequest) {
   // นี้ติดไปกับ request เดียวกันที่ next-intl ใช้สร้าง response สุดท้าย
   // (ทั้ง redirect/rewrite/next case ของ next-intl เอง)
   request.headers.set('x-partner-portal', partnerPortal ? '1' : '0');
+  // RootLayout is above the [locale] segment, so it cannot reliably read
+  // the dynamic route param. Forward the validated URL locale on the request
+  // for the initial server-rendered <html lang="..."> attribute.
+  request.headers.set('x-wos-locale', locale);
 
   // 3. มี locale prefix แล้ว และ rest ไม่ตรงกับหน้าสาธารณะ = partner portal route
   if (partnerPortal) {

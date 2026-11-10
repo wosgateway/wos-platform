@@ -28,6 +28,8 @@ import { simpleRateLimit } from '@/lib/rate-limit';
 import { loadAuthorizedOrder } from '@/lib/orders/authorize-order';
 
 const CLOSED_STATUSES = ['completed', 'cancelled', 'refunded'];
+const MAX_SLIP_SIZE_BYTES = 10 * 1024 * 1024;
+const ALLOWED_CONTENT_TYPES = new Set(['image/jpeg', 'image/png', 'application/pdf']);
 
 export async function POST(
   request: Request,
@@ -56,7 +58,28 @@ export async function POST(
   }
 
   const body = await request.json().catch(() => ({}));
-  const rawFilename = typeof body?.filename === 'string' && body.filename ? body.filename : 'slip';
+  const rawFilename = typeof body?.filename === 'string' ? body.filename.trim() : '';
+  const contentType = typeof body?.contentType === 'string' ? body.contentType.trim().toLowerCase() : '';
+  const size = typeof body?.size === 'number' && Number.isFinite(body.size) ? body.size : NaN;
+
+  if (!rawFilename || rawFilename.length > 180) {
+    return NextResponse.json({ error: 'invalid filename' }, { status: 400 });
+  }
+  if (!ALLOWED_CONTENT_TYPES.has(contentType)) {
+    return NextResponse.json({ error: 'unsupported slip file type' }, { status: 415 });
+  }
+  if (!Number.isInteger(size) || size <= 0 || size > MAX_SLIP_SIZE_BYTES) {
+    return NextResponse.json({ error: 'slip file exceeds 10 MiB limit or has invalid size' }, { status: 413 });
+  }
+  const lowerFilename = rawFilename.toLowerCase();
+  const extensionAllowed =
+    (contentType === 'image/jpeg' && (lowerFilename.endsWith('.jpg') || lowerFilename.endsWith('.jpeg'))) ||
+    (contentType === 'image/png' && lowerFilename.endsWith('.png')) ||
+    (contentType === 'application/pdf' && lowerFilename.endsWith('.pdf'));
+  if (!extensionAllowed) {
+    return NextResponse.json({ error: 'file extension does not match file type' }, { status: 400 });
+  }
+
   // Strip path separators so a crafted filename can't escape the
   // `${orderNumber}/` prefix or add extra folder segments.
   const safeFilename = rawFilename.replace(/[/\\]/g, '_');

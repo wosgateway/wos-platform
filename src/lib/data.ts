@@ -22,10 +22,11 @@ export interface Package {
   title: string;
   image_url: string | null;
   is_promotion: boolean;
+  duration?: number | null;
   // ใหม่ — รองรับ workflow อนุมัติ (ดู migration_link_branches_packages.sql)
   // 'pending' = พาร์ทเนอร์ส่งมาจาก portal รอแอดมินอนุมัติ, 'published' = ขึ้นเว็บจริง,
   // 'rejected' = แอดมินปฏิเสธ, 'archived' = เคยเผยแพร่แล้วถอดออก
-  status: 'pending' | 'published' | 'rejected' | 'archived';
+  status: 'draft' | 'pending' | 'published' | 'rejected' | 'archived';
   // สวิตช์เปิด/ปิดการแสดงผลของแอดมิน — แยกจาก status เพื่อให้แอดมินระงับ
   // การแสดงบนหน้าเว็บชั่วคราวได้โดยไม่ต้องรีเซ็ตสถานะอนุมัติ (ดู migration_add_package_is_active.sql)
   is_active: boolean;
@@ -82,11 +83,11 @@ export async function fetchPackagesByPartner(
   // โผล่ไปหน้าเว็บสาธารณะที่ลูกค้าเห็น
   let query = supabase
     .from('packages')
-    .select('*')
+    .select('*, is_promotion:promotion')
     .eq('partner_id', partnerId)
     .eq('status', 'published')
     .eq('is_active', true);
-  if (promotionsOnly) query = query.eq('is_promotion', true);
+  if (promotionsOnly) query = query.eq('promotion', true);
   const { data, error } = await query.order('created_at', { ascending: false });
   if (error) throw error;
   return data ?? [];
@@ -96,7 +97,7 @@ export async function fetchPackageById(id: string): Promise<Package> {
   const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
-    .select('*, partners(*)')
+    .select('*, is_promotion:promotion, partners(*)')
     .eq('id', id)
     .eq('status', 'published')
     .eq('is_active', true)
@@ -111,8 +112,8 @@ export async function fetchFeaturedPackages(limit = 8): Promise<Package[]> {
   const supabase = createAnonClient();
   const { data, error } = await supabase
     .from('packages')
-    .select('*, partners!inner(id, name, category, status)')
-    .eq('is_promotion', true)
+    .select('*, is_promotion:promotion, partners!inner(id, name, category, status)')
+    .eq('promotion', true)
     .eq('status', 'published')
     .eq('is_active', true)
     .eq('partners.status', 'active')
@@ -140,7 +141,7 @@ export async function fetchPackagesByCategory(dbCategories: string[]): Promise<P
     .from('packages')
     // province included so the hotel-step province filter (BookingForm /
     // JourneyBookingForm) has something to filter on — see src/lib/province.ts
-    .select('*, partners!inner(id, name, category, status, province)')
+    .select('*, is_promotion:promotion, partners!inner(id, name, category, status, province)')
     .in('partners.category', dbCategories)
     .eq('partners.status', 'active')
     .eq('status', 'published')
@@ -209,4 +210,116 @@ export async function fetchTransportVehiclePricing(): Promise<Record<string, num
     map[row.vehicle_type as string] = Number(row.starting_price ?? 0);
   }
   return map;
+}
+
+// NOTE: `partners` is a many-to-one relation (packages.partner_id ->
+// partners.id), so PostgREST always returns a single object here, not
+// an array. This type used to say `Array<...>`, which let
+// `item.partners?.[0]` in programs.ts silently return `undefined`
+// forever. Keep this a single object to match the real response shape.
+type ActivePackageResult = Omit<Partial<Package>, 'partners'> & {
+  partners?: Pick<
+    Partner,
+    'id' | 'name' | 'category' | 'status' | 'province'
+  >;
+};
+
+export async function fetchActivePackages(
+  limit = 10
+): Promise<ActivePackageResult[]> {
+  const supabase = createAnonClient();
+
+  const safeLimit = Math.min(Math.max(limit, 1), 10);
+
+  const { data, error } = await supabase
+    .from('packages')
+    .select(
+      'id, partner_id, title, description, image_url, is_promotion:promotion, original_price, special_price, duration, status, is_active, sub_category, partners!inner(id, name, category, status, province)'
+    )
+    .eq('status', 'published')
+    .eq('is_active', true)
+    .eq('partners.status', 'active')
+    .order('title', { ascending: true })
+    .limit(safeLimit);
+
+  if (error) throw error;
+
+  // Without generated DB types supabase-js infers embedded relations as
+  // arrays, but a many-to-one embed (packages -> partners) is returned as a
+  // single object at runtime, which is what ActivePackageResult describes.
+  return (data ?? []) as unknown as ActivePackageResult[];
+}
+
+// Same many-to-one shape as ActivePackageResult above — not an array.
+type SearchPackageResult = Omit<Partial<Package>, 'partners'> & {
+  partners?: Pick<
+    Partner,
+    'id' | 'name' | 'category' | 'status' | 'province'
+  >;
+};
+
+
+export async function searchPackages(
+  query: string,
+  limit = 10
+): Promise<SearchPackageResult[]> {
+  const supabase = createAnonClient();
+
+  const safeQuery = query
+    .trim()
+    .replace(/[%_]/g, '')
+    .replace(/,/g, ' ');
+
+  if (!safeQuery) return [];
+
+  const safeLimit = Math.min(Math.max(limit, 1), 10);
+
+  const { data, error } = await supabase.rpc('search_packages_thai', {
+    search_term: safeQuery,
+    result_limit: safeLimit,
+  });
+
+  if (error) throw error;
+
+  type SearchPackagesThaiRow = {
+    id: string;
+    partner_id: string | null;
+    title: string | null;
+    description: string | null;
+    image_url: string | null;
+    is_promotion: boolean | null;
+    original_price: number | null;
+    special_price: number | null;
+    duration: number | null;
+    status: string | null;
+    is_active: boolean | null;
+    sub_category: string | null;
+    partner_id_out: string | null;
+    partner_name: string | null;
+    partner_category: string | null;
+    partner_status: string | null;
+    partner_province: string | null;
+  };
+
+  return ((data ?? []) as SearchPackagesThaiRow[]).map((row) => ({
+    id: row.id,
+    partner_id: row.partner_id ?? undefined,
+    title: row.title,
+    description: row.description,
+    image_url: row.image_url,
+    is_promotion: row.is_promotion,
+    original_price: row.original_price,
+    special_price: row.special_price,
+    duration: row.duration,
+    status: row.status,
+    is_active: row.is_active,
+    sub_category: row.sub_category,
+    partners: {
+      id: row.partner_id_out ?? undefined,
+      name: row.partner_name ?? undefined,
+      category: row.partner_category ?? undefined,
+      status: row.partner_status ?? undefined,
+      province: row.partner_province,
+    },
+  })) as unknown as SearchPackageResult[];
 }

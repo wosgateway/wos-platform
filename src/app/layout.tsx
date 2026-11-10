@@ -1,35 +1,23 @@
-import type { ReactNode } from 'react';
-import { Prompt, Noto_Sans_Lao } from 'next/font/google';
+import React, { type ReactNode } from 'react';
+import { headers } from 'next/headers';
 import './globals.css';
 
-const prompt = Prompt({
-  subsets: ['thai', 'latin'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-prompt',
-});
-
-// Prompt has no Lao glyphs at all (Cadson Demak only ships thai/latin/vietnamese),
-// so the /lo pages were silently falling back to the OS default font. Noto Sans Lao
-// is the closest-weight match available on Google Fonts for pairing with Prompt.
-const notoSansLao = Noto_Sans_Lao({
-  subsets: ['lao'],
-  weight: ['400', '500', '600', '700'],
-  variable: '--font-lao',
-});
+const SUPPORTED_LOCALES = new Set(['th', 'lo', 'en']);
 
 export default function RootLayout({
   children,
-  params: { locale },
 }: {
   children: ReactNode;
-  params: { locale: string };
 }) {
+  // The root layout sits above [locale], so read the validated locale that
+  // middleware forwards on the request instead of relying on route params.
+  const requestedLocale = headers().get('x-wos-locale');
+  const locale = requestedLocale && SUPPORTED_LOCALES.has(requestedLocale)
+    ? requestedLocale
+    : 'th';
+
   return (
-    <html
-      lang={locale ?? 'th'}
-      className={`${prompt.variable} ${notoSansLao.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang={locale} suppressHydrationWarning>
       <body className="font-sans bg-white text-slate-900">{children}</body>
     </html>
   );

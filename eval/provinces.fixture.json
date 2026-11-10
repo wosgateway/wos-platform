@@ -1,0 +1,12 @@
+{
+  "note": "Subset of the 77-row seed in sql/126. Covered = provinces that have published packages today.",
+  "covered": ["udon-thani", "nong-khai", "chiang-mai"],
+  "provinces": [
+    {"id":"udon-thani","name_th":"อุดรธานี","name_en":"Udon Thani","name_lo":"ອຸດອນທານີ","aliases":["อุดร","udon","ອຸດອນ","ອຸດຮ","ອຸດຣ"]},
+    {"id":"nong-khai","name_th":"หนองคาย","name_en":"Nong Khai","name_lo":"ໜອງຄາຍ","aliases":["nongkhai"]},
+    {"id":"chiang-mai","name_th":"เชียงใหม่","name_en":"Chiang Mai","name_lo":"ຊຽງໃໝ່","aliases":["chiangmai"]},
+    {"id":"khon-kaen","name_th":"ขอนแก่น","name_en":"Khon Kaen","name_lo":"ຂອນແກ່ນ","aliases":["khonkaen"]},
+    {"id":"phuket","name_th":"ภูเก็ต","name_en":"Phuket","name_lo":"ພູເກັດ","aliases":[]},
+    {"id":"bangkok","name_th":"กรุงเทพมหานคร","name_en":"Bangkok","name_lo":"ບາງກອກ","aliases":["กรุงเทพ","กรุงเทพฯ","กทม","bkk"]}
+  ]
+}

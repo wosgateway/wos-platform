@@ -15,7 +15,7 @@ interface PackageFormState {
   image_url: string;
   original_price: string;
   special_price: string;
-  duration: string;
+  duration: number | null;
   is_promotion: boolean;
   suggested_hotel_name: string;
   suggested_hotel_price_note: string;
@@ -30,7 +30,7 @@ const emptyForm: PackageFormState = {
   image_url: '',
   original_price: '',
   special_price: '',
-  duration: '',
+  duration: null,
   is_promotion: false,
   suggested_hotel_name: '',
   suggested_hotel_price_note: '',
@@ -51,6 +51,7 @@ const ROOM_TYPE_OPTIONS: { value: string; label: string }[] = [
 ];
 
 const STATUS_LABEL: Record<Package['status'], { text: string; className: string }> = {
+  draft: { text: 'ฉบับร่าง', className: 'bg-slate-100 text-slate-500' },
   pending: { text: '⏳ รอตรวจสอบ', className: 'bg-amber-100 text-amber-700' },
   published: { text: '✅ เผยแพร่แล้ว', className: 'bg-emerald-100 text-emerald-700' },
   rejected: { text: '❌ ถูกปฏิเสธ', className: 'bg-red-100 text-red-600' },
@@ -90,7 +91,7 @@ export function PackagesManager() {
     setLoading(true);
     setListError(null);
     const [{ data: pkgData, error: pkgError }, { data: partnerData, error: partnerError }] = await Promise.all([
-      supabase.from('packages').select('*, partners(name)').order('created_at', { ascending: false }),
+      supabase.from('packages').select('*, is_promotion:promotion, partners(name)').order('created_at', { ascending: false }),
       supabase.from('partners').select('*').order('name'),
     ]);
     setLoading(false);
@@ -118,7 +119,7 @@ export function PackagesManager() {
         image_url: pkg.image_url ?? '',
         original_price: pkg.original_price != null ? String(pkg.original_price) : '',
         special_price: pkg.special_price != null ? String(pkg.special_price) : '',
-        duration: (pkg.duration as string) ?? '',
+        duration: pkg.duration ?? null,
         is_promotion: !!pkg.is_promotion,
         suggested_hotel_name: (pkg.suggested_hotel_name as string) ?? '',
         suggested_hotel_price_note: (pkg.suggested_hotel_price_note as string) ?? '',
@@ -169,8 +170,8 @@ export function PackagesManager() {
       image_url: form.image_url.trim() || null,
       original_price: Number(form.original_price) || 0,
       special_price: form.special_price ? Number(form.special_price) : null,
-      duration: form.duration.trim() || null,
-      is_promotion: form.is_promotion,
+      duration: form.duration,
+      promotion: form.is_promotion,
       suggested_hotel_name: form.suggested_hotel_name.trim() || null,
       suggested_hotel_price_note: form.suggested_hotel_price_note.trim() || null,
       // ส่งเฉพาะเมื่อพาร์ทเนอร์ที่เลือกในฟอร์มเป็นหมวดโรงแรม — กันไม่ให้
@@ -609,11 +610,13 @@ export function PackagesManager() {
               </div>
             </div>
             <div>
-              <label className="form-label">ระยะเวลา (เช่น 2 ชั่วโมง, 1 วัน)</label>
+              <label className="form-label">ระยะเวลา (นาที)</label>
               <input
                 className="form-input"
-                value={form.duration}
-                onChange={(e) => setForm({ ...form, duration: e.target.value })}
+                type="number"
+                  step="1"
+                  value={form.duration ?? ''}
+                onChange={(e) => setForm({ ...form, duration: Number.isNaN(e.target.valueAsNumber) ? null : e.target.valueAsNumber })}
               />
             </div>
             {selectedFormPartnerCategory === 'Hotel' ? (

@@ -1,5 +1,6 @@
+import { formatDurationMinutes } from '@/lib/format-duration';
 import Image from 'next/image';
-import { useTranslations } from 'next-intl';
+import { useLocale, useTranslations } from 'next-intl';
 import { Link } from '@/i18n/navigation';
 import { formatTHB } from '@/lib/format';
 import { normalizeImageSrc } from '@/lib/image';
@@ -34,7 +35,7 @@ export function ProgramCardV2({ pkg }: { pkg: Package }) {
 
   const rating = pkg.partners?.rating as number | null | undefined;
   const reviewCount = pkg.partners?.review_count as number | null | undefined;
-  const duration = pkg.duration as string | undefined;
+  const duration = formatDurationMinutes(pkg.duration, useLocale());
 
   return (
     <div className="card-shadow flex flex-col overflow-hidden rounded-2xl border border-slate-100 bg-white transition-transform duration-300 ease-out hover:scale-[1.02]">
