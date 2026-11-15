@@ -1,6 +1,7 @@
 // Shared CLI for `ai:agent` (interactive, one task) and `ai:overnight` (long run). Never commits, pushes or deploys.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { inspectText, redact, safeJson, WITHHELD } from "./sanitize.mjs";
 import { createGuard, DEFAULT_WRITE_SCOPE, parseDuration } from "./guard.mjs";
 import { runGate } from "./gate.mjs";
 import { supervise, formatReport, DEFAULTS } from "./supervisor.mjs";
@@ -12,6 +13,11 @@ const PROFILES = {
 };
 
 export async function main(argv, profileName = "agent") {
+  try { return await run(argv, profileName); }
+  catch { console.error(WITHHELD); return 1; }
+}
+
+async function run(argv, profileName) {
   const P = PROFILES[profileName];
   const val = (n, d) => { const i = argv.indexOf(n); return i >= 0 && argv[i + 1] && !argv[i + 1].startsWith("--") ? argv[i + 1] : d; };
   const all = (n) => argv.flatMap((a, i) => (a === n && argv[i + 1] ? [argv[i + 1]] : []));
@@ -57,7 +63,7 @@ export async function main(argv, profileName = "agent") {
   const { makeLlm } = await import("./llm.mjs");
   const provider = val("--provider", process.env.WOS_AI_AGENT_PROVIDER || "litellm").toLowerCase();
   if (!["litellm", "claude"].includes(provider)) {
-    console.error(`Unsupported AI agent provider: ${provider}. Use "litellm" or "claude".`);
+    console.error("Unsupported AI agent provider. Use litellm or claude.");
     return 1;
   }
   const ask = provider === "claude"
@@ -81,13 +87,23 @@ export async function main(argv, profileName = "agent") {
     },
   });
 
-  const report = formatReport(result);
-  writeFileSync(path.join(artifactsDir, "report.md"), report + "\n");
-  writeFileSync(path.join(artifactsDir, "report.json"), JSON.stringify({ ...result, diff: undefined }, null, 2));
-  writeFileSync(path.join(artifactsDir, "changes.patch"), result.diff || "");
-  const rel = path.relative(process.cwd(), artifactsDir);
-  console.log(`\n${report}\n\nArtifacts: ${rel}/ (report.md, report.json, changes.patch, iteration-*.json)`);
-  if (result.awaitingApproval) console.log(`To approve (Telegram approval + explicit file list, never 'git add .'):\n  npm run ai:agent:commit -- --message "<commit message>"`);
-  if (flag("--notify")) guard.exec("node", ["scripts/telegram-notify.mjs", `WOS ${P.name}\n${report.split("\n")[0]}\nTask: ${result.task}\nIterations: ${result.iterationCount}\nCommit/Push/Deploy: NONE`]);
+  publishRun(result, { artifactsDir, profileName: P.name,
+    notify: flag("--notify") ? (message) => guard.exec("node", ["scripts/telegram-notify.mjs", message]) : undefined,
+  });
   return { PASS: 0, BLOCKED: 2, TIMEOUT: 3 }[result.status] ?? 2;
+}
+
+export function publishRun(result, { artifactsDir, profileName, log = console.log, notify }) {
+  const report = redact(formatReport(result));
+  writeFileSync(path.join(artifactsDir, "report.md"), report + "\n", { flag: "wx" });
+  writeFileSync(path.join(artifactsDir, "report.json"), safeJson({ ...result, diff: undefined }), { flag: "wx" });
+  const patchAvailable = !result.diffWithheld && inspectText(result.diff).safe;
+  if (patchAvailable) writeFileSync(path.join(artifactsDir, "changes.patch"), result.diff, { flag: "wx" });
+  const rel = redact(path.relative(process.cwd(), artifactsDir));
+  log(redact("\n" + report + "\n\nArtifacts: " + rel + "/"));
+  if (result.awaitingApproval && patchAvailable) log("Review the artifacts before approving the change.");
+  if (notify) notify(redact([
+    "WOS " + profileName, report.split("\n")[0], "Task: " + result.task,
+    "Iterations: " + result.iterationCount, "Commit/Push/Deploy: NONE",
+  ].join("\n")));
 }

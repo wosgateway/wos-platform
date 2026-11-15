@@ -1,5 +1,10 @@
 ﻿import test from "node:test";
+import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
+import { askValidated as auditAskValidated } from "./llm.mjs";
+import { inspectText, safeJson, WITHHELD } from "./sanitize.mjs";
+import { publishRun } from "./cli.mjs";
+import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -227,6 +232,303 @@ test("contract: green baseline -> writes a failing repro test first, fixes, DoD 
   assert.equal(execFileSync("git", ["diff", "--cached", "--name-only"], { cwd: dir }).toString().trim(), "");
 });
 
+test("contract: rejected repro attempts retain source, per-check evidence, and feedback", async () => {
+  const dir = repoC(); const artifactsDir = path.join(dir, "run-artifacts");
+  const mk = (name, status, failures = [], summary = "") => ({ name, status, failures, summary });
+  let gateCalls = 0;
+  const detailedGate = () => {
+    gateCalls++;
+    if (gateCalls === 1) return gateC(dir)();
+    const tscFailure = `${REPRO}::TS2345::Argument of type string is not assignable`;
+    const unitFailure = `${REPRO}::province punctuation regression`;
+    const failures = [tscFailure, unitFailure];
+    return { ok: false, score: failures.length, signature: failures.join("\n"), failures, diffCheckAllIds: new Set(), checks: [
+      mk("diff-check", "FAIL", ["diffcheck::trailing whitespace"], "whitespace diagnostic"),
+      mk("typecheck", "FAIL", [tscFailure], `${REPRO}(4,12): error TS2345: Argument of type string is not assignable`),
+      mk("unit", "FAIL", [unitFailure], "1 failed | 0 passed"),
+      mk("regression", "ERROR", ["regression::could_not_run"], "regression diagnostic"),
+      mk("build", "FAIL", ["build::exit_1"], "build diagnostic"),
+    ] };
+  };
+  const feedbackSeen = [];
+  const source = "import { it, expect } from 'vitest';\nit('repro', () => expect(1).toBe(2));\n";
+  const r = await supervise({ task: "t", guard: createGuard({ root: dir }), gate: detailedGate,
+    ...brainC({ patches: [fix], reproducer: async ({ feedback }) => { feedbackSeen.push(feedback); return { file: REPRO, content: source }; } }),
+    artifactsDir, opts: C });
+  assert.equal(r.status, "BLOCKED");
+  assert.equal(r.reproduceAttempts.length, 2);
+  const first = r.reproduceAttempts[0];
+  assert.equal(first.outcome, "REJECTED");
+  assert.equal(first.rejectionReason, "TYPECHECK_FAILED_IN_REPRO_FILE");
+  assert.deepEqual(first.unitFailuresInReproFile, [`${REPRO}::province punctuation regression`]);
+  assert.ok(first.typecheckFailuresInReproFile[0].includes("TS2345"));
+  assert.equal(first.feedbackSent, "");
+  assert.equal(first.feedbackForNextAttempt, "the test file has a type error or fails for the wrong reason; fix the test itself");
+  assert.deepEqual(first.gate.checks.map((check) => check.name), ["diff-check", "typecheck", "unit", "regression", "build"]);
+  assert.equal(first.gate.ok, false);
+  const untruncated = { omittedFailureCount: 0, truncatedFailureIdCount: 0, omittedSummaryCharacters: 0, truncated: false };
+  assert.deepEqual(first.gate.checks[0], { ...mk("diff-check", "FAIL", ["diffcheck::trailing whitespace"], "whitespace diagnostic"), ...untruncated });
+  assert.deepEqual(first.gate.checks[3], { ...mk("regression", "ERROR", ["regression::could_not_run"], "regression diagnostic"), ...untruncated });
+  assert.deepEqual(first.gate.checks[4], { ...mk("build", "FAIL", ["build::exit_1"], "build diagnostic"), ...untruncated });
+  assert.equal(r.reproduceAttempts[1].feedbackSent, first.feedbackForNextAttempt);
+  assert.equal(feedbackSeen[1], first.feedbackForNextAttempt);
+  assert.equal(first.sourceArtifact, "repro-attempt-01.test-source.txt");
+  assert.equal(readFileSync(path.join(artifactsDir, first.sourceArtifact), "utf8"), source);
+  assert.equal(first.sourceSha256, createHash("sha256").update(source).digest("hex"));
+  assert.equal(first.sourceBytes, Buffer.byteLength(source, "utf8"));
+  assert.ok(!existsSync(path.join(dir, REPRO)), "rejected test must be removed from the worktree");
+  assert.deepEqual(r.filesChanged, []);
+  assert.match(formatReport(r), /Reproduction attempts:[\s\S]*TYPECHECK_FAILED_IN_REPRO_FILE/);
+});
+test("contract: reproduction diagnostics are bounded and redacted without changing gate or acceptance", async () => {
+  const dir = repoC();
+  const ordinaryGate = gateC(dir);
+  const envSecret = "sk-" + "e".repeat(24);
+  const bearerSecret = "fixture-bearer-value-c24d2";
+  const failures = [
+    "x".repeat(350),
+    `external::${envSecret}`,
+    ...Array.from({ length: 43 }, (_, index) => `external::case ${index}`),
+    `${REPRO}::decisive failure beyond the report limit`,
+  ];
+  const summary = `Authorization: Bearer ${bearerSecret}\n${"s".repeat(3200)}`;
+  const unit = { name: "unit", status: "FAIL", failures: Object.freeze(failures), summary };
+  const typecheck = { name: "typecheck", status: "FAIL", failures: Object.freeze(["other.ts::TS1234"]), summary: "" };
+  const rawGate = Object.freeze({
+    ...ordinaryGate(), ok: false, score: failures.length + 1, signature: "fixture",
+    failures: Object.freeze([...failures, ...typecheck.failures]),
+    checks: Object.freeze([Object.freeze(unit), Object.freeze(typecheck)]),
+  });
+  const before = structuredClone(rawGate);
+  {
+    let calls = 0;
+    const gate = () => ++calls === 2 ? rawGate : ordinaryGate();
+    const result = await supervise({ task: "t", guard: createGuard({ root: dir }), gate,
+      ...brainC({ patches: [fix] }), opts: C });
+    assert.equal(result.status, "PASS", "fixture must pass");
+    assert.equal(result.reproFile, REPRO);
+    assert.equal(result.reproduceAttempts.length, 1);
+    const attempt = result.reproduceAttempts[0];
+    assert.equal(attempt.outcome, "REPRODUCED");
+    assert.equal(attempt.gate.ok, false);
+    assert.equal(attempt.gate.score, rawGate.score);
+    const [check, other] = attempt.gate.checks;
+    assert.equal(check.name, "unit");
+    assert.equal(check.status, "FAIL");
+    assert.equal(check.summary.length, 3000);
+    assert.equal(check.omittedSummaryCharacters, "Authorization: Bearer [REDACTED]\n".length + 3200 - 3000);
+    assert.equal(check.failures.length, 40);
+    assert.equal(check.failures[0], "x".repeat(300));
+    assert.ok(check.failures[1] === "external::sk-[REDACTED]", "failure ID must be redacted");
+    assert.equal(check.omittedFailureCount, 6);
+    assert.equal(check.truncatedFailureIdCount, 1);
+    assert.equal(check.truncated, true);
+    assert.deepEqual(other.failures, typecheck.failures);
+    assert.equal(other.truncated, false);
+    assert.deepEqual(attempt.unitFailuresInReproFile, [failures.at(-1)]);
+    for (const secret of [envSecret, bearerSecret]) assert.ok(!JSON.stringify(attempt).includes(secret));
+    assert.ok(isDeepStrictEqual(rawGate, before), "original gate changed");
+  }
+});
+
+test("contract: reproduction exceptions are redacted in reports, logs, and retry feedback", async () => {
+  const dir = repoC();
+  const key = "sk-" + "a".repeat(24);
+  const token = "fixture-bearer-22f8";
+  const feedbackSeen = [];
+  const logs = [];
+  const result = await supervise({ task: "t", guard: createGuard({ root: dir }), gate: gateC(dir),
+    ...brainC({ reproducer: async ({ feedback }) => {
+      feedbackSeen.push(feedback);
+      if (feedbackSeen.length === 1) throw new Error(`fixture failed API_KEY=${key}; Authorization: Bearer ${token}`);
+      throw new Error("fixture retry failed");
+    } }), log: (message) => logs.push(message), opts: C });
+  const [first, second] = result.reproduceAttempts;
+  const expected = "fixture failed API_KEY=[REDACTED]; Authorization: Bearer [REDACTED]";
+  assert.ok(first.rejectionReason === expected, "rejection reason must be redacted");
+  assert.ok(first.feedbackForNextAttempt === expected, "recorded retry feedback must be redacted");
+  assert.ok(second.feedbackSent === expected, "recorded sent feedback must be redacted");
+  assert.ok(feedbackSeen[1] === expected, "reproducer must receive redacted feedback");
+  assert.ok(second.rejectionReason === "fixture retry failed", "safe retry error must remain visible");
+  assert.ok(second.feedbackForNextAttempt === second.rejectionReason, "retry fallback must match rejection fallback");
+  assert.ok(/CANNOT_REPRODUCE.*fixture retry failed/.test(result.reason), "stop reason must use fallback");
+  for (const secret of [key, token]) {
+    assert.ok(!JSON.stringify({ result, feedbackSeen, logs }).includes(secret), "synthetic secret leaked");
+  }
+});
+
+test("contract: source artifact filesystem errors redact credentials in paths", async () => {
+  const dir = repoC();
+  const key = "sk-" + "b".repeat(24);
+  const artifactsDir = path.join(dir, key);
+  writeFileSync(artifactsDir, "fixture to force mkdir failure");
+  const result = await supervise({ task: "t", guard: createGuard({ root: dir }), gate: gateC(dir),
+    ...brainC({ patches: [fix] }), artifactsDir, opts: C });
+  const attempt = result.reproduceAttempts[0];
+  assert.equal(result.status, "PASS", "artifact diagnostic must not affect acceptance");
+  assert.equal(attempt.sourceArtifact, null);
+  assert.ok(/sk-\[REDACTED\]/.test(attempt.sourceArtifactError), "filesystem error must be redacted");
+  assert.ok(!JSON.stringify(result).includes(key), "synthetic artifact secret leaked");
+  assert.equal(readFileSync(artifactsDir, "utf8"), "fixture to force mkdir failure");
+});
+
+test("contract: cleanup exceptions keep the candidate for retry and use baseline final rollback", async () => {
+  const dir = repoC();
+  const guard = createGuard({ root: dir });
+  const key = "sk-" + "c".repeat(24);
+  const restore = guard.restore;
+  let restores = 0;
+  guard.restore = (snapshot) => {
+    if (++restores === 1) throw new Error(`fixture cleanup failed for API_KEY=${key}`);
+    return restore(snapshot);
+  };
+  const feedbackSeen = [];
+  const result = await supervise({ task: "t", guard, gate: gateC(dir, ""), opts: C,
+    ...brainC({ reproducer: async ({ feedback }) => {
+      feedbackSeen.push(feedback);
+      assert.equal(existsSync(path.join(dir, REPRO)), feedbackSeen.length === 2);
+      return { file: REPRO, content: "// fixture\n" };
+    } }),
+  });
+  assert.equal(result.status, "BLOCKED");
+  assert.ok(/^CANNOT_REPRODUCE/.test(result.reason), "expected baseline stop reason");
+  assert.equal(result.reproduceAttempts.length, 2);
+  assert.ok(result.reproduceAttempts[0].cleanupError === "fixture cleanup failed for API_KEY=[REDACTED]", "cleanup error must be redacted");
+  assert.ok(feedbackSeen[1] === result.reproduceAttempts[0].cleanupError, "retry must receive redacted cleanup error");
+  assert.ok(!JSON.stringify({ result, feedbackSeen }).includes(key), "synthetic cleanup secret leaked");
+  assert.equal(restores, 2);
+  assert.ok(!existsSync(path.join(dir, REPRO)));
+});
+
+test("contract: a gate exception leaves the candidate until baseline final rollback", async () => {
+  const dir = repoC();
+  const artifactsDir = path.join(dir, "run-artifacts");
+  const guard = createGuard({ root: dir });
+  const nextFile = REPRO.replace("udon", "retry");
+  const source = "// ตัวอย่าง\n";
+  let gateCalls = 0;
+  const gate = () => {
+    if (++gateCalls === 1) return gateC(dir)();
+    assert.ok(existsSync(path.join(dir, REPRO)));
+    if (gateCalls === 2) throw new Error("fixture gate exception");
+    assert.ok(existsSync(path.join(dir, nextFile)));
+    return gateC(dir, "")();
+  };
+  const feedbackSeen = [];
+  const r = await supervise({ task: "t", guard, gate, artifactsDir, opts: C,
+    ...brainC({ reproducer: async ({ feedback }) => {
+      feedbackSeen.push(feedback);
+      const isRetry = feedbackSeen.length === 2;
+      assert.equal(existsSync(path.join(dir, REPRO)), isRetry);
+      return { file: isRetry ? nextFile : REPRO, content: source };
+    } }),
+  });
+  assert.equal(r.status, "BLOCKED");
+  assert.equal(r.iterationCount, 0);
+  assert.equal(r.reproduceAttempts.length, 2);
+  const [first, second] = r.reproduceAttempts;
+  assert.equal(first.outcome, "ERROR");
+  assert.equal(first.gate, null);
+  assert.equal(first.rejectionReason, "fixture gate exception");
+  assert.equal(feedbackSeen[1], "fixture gate exception");
+  assert.equal(first.sourceBytes, Buffer.byteLength(source, "utf8"));
+  assert.equal(readFileSync(path.join(artifactsDir, first.sourceArtifact), "utf8"), source);
+  assert.equal(second.outcome, "REJECTED");
+  assert.ok(!existsSync(path.join(dir, REPRO)));
+  assert.ok(!existsSync(path.join(dir, nextFile)));
+  assert.ok(!guard.touched.has(nextFile));
+  assert.deepEqual(r.filesChanged, []);
+});
+
+test("contract: guard-rejected API key and artifact-filtered bearer token are not persisted", async () => {
+  const dir = repoC();
+  const guard = createGuard({ root: dir });
+  const artifactsDir = path.join(dir, "run-artifacts");
+  const key = "sk-" + "d".repeat(24);
+  const token = "fixture-bearer-a7ca";
+  const candidates = [`// API_KEY=${key}\n`, `// Authorization: Bearer ${token}\n`];
+  let attempts = 0;
+  const result = await supervise({ task: "t", guard, gate: gateC(dir, ""), artifactsDir, opts: C,
+    ...brainC({ reproducer: async () => {
+      assert.ok(!existsSync(path.join(dir, REPRO)));
+      assert.ok(!existsSync(artifactsDir));
+      return { file: REPRO, content: candidates[attempts++] };
+    } }),
+  });
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(attempts, 2);
+  assert.equal(result.reproduceAttempts[0].outcome, "ERROR");
+  assert.ok(/secret-looking content/.test(result.reproduceAttempts[0].rejectionReason), "guard must reject secret-looking content");
+  assert.equal(result.reproduceAttempts[1].outcome, "ERROR");
+  for (const attempt of result.reproduceAttempts) {
+    assert.equal(attempt.sourceArtifact, null);
+    assert.equal(attempt.sourceSha256, null);
+    assert.equal(attempt.sourceBytes, 0);
+  }
+  for (const secret of [key, token]) assert.ok(!JSON.stringify(result).includes(secret), "synthetic source secret leaked");
+  assert.ok(!existsSync(artifactsDir));
+  assert.ok(!existsSync(path.join(dir, REPRO)));
+});
+
+for (const [boundary, suffix] of [["end of input", ""], ["a period", "."], ["a colon", ":"], ["exclamation", "!"], ["question", "?"], ["angle", ">"], ["backtick", String.fromCharCode(96)], ["bracket", "]"]]) {
+  test(`contract: Basic credentials are redacted before ${boundary} in reproduction outputs and candidate artifacts`, async () => {
+    const dir = repoC();
+    const guard = createGuard({ root: dir });
+    const credential = Buffer.from("fixture-basic-user:fixture-password").toString("base64");
+    const header = `Authorization: bAsIc ${credential}${suffix}`;
+    const value = `Basic ${credential}${suffix}`;
+    const artifactsDir = path.join(dir, `Basic ${credential}`);
+    writeFileSync(artifactsDir, "fixture to force mkdir failure");
+    const logs = [];
+    const feedbackSeen = [];
+    const ordinaryGate = gateC(dir, "");
+    let checks = 0;
+    const restore = guard.restore;
+    let restores = 0;
+    guard.restore = (snapshot) => {
+      if (++restores === 1) throw new Error(header);
+      return restore(snapshot);
+    };
+    const result = await supervise({ task: "t", guard, artifactsDir, opts: C,
+      log: (message) => logs.push(message),
+      gate: () => {
+        const g = ordinaryGate();
+        if (++checks === 1) return g;
+        return { ...g, checks: g.checks.map((check) => ({ ...check, summary: header, failures: [value] })) };
+      },
+      ...brainC({ reproducer: async ({ feedback }) => {
+        feedbackSeen.push(feedback);
+        if (feedbackSeen.length === 1) return { file: REPRO, content: "// safe fixture\n" };
+        return { file: REPRO.replace("udon", "basic"), content: `// {"Authorization":"${value}"}\n` };
+      } }),
+    });
+    const [first, second] = result.reproduceAttempts;
+    const report = formatReport(result);
+    assert.ok(!JSON.stringify({ result, report, logs, feedbackSeen }).includes(credential), "Basic credential leaked from reproduction");
+    assert.ok(first.sourceArtifactError?.includes("Basic [REDACTED]"), "artifact error must redact Basic");
+    assert.ok(first.cleanupError === `Authorization: bAsIc [REDACTED]${suffix}`, "cleanup error must redact Basic");
+    assert.ok(first.rejectionReason === first.cleanupError, "rejection must redact Basic");
+    assert.ok(feedbackSeen[1] === first.cleanupError, "retry must receive redacted Basic feedback");
+    assert.ok(logs.some((message) => message.includes("bAsIc [REDACTED]")), "reproduction log must redact Basic");
+    assert.ok(first.gate.checks.every((check) => check.summary === first.cleanupError &&
+      check.failures[0] === `Basic [REDACTED]${suffix}`), "gate diagnostics must redact both Basic forms");
+    assert.equal(second.sourceArtifact, null);
+    assert.equal(second.sourceSha256, null);
+    assert.equal(second.sourceBytes, 0);
+    assert.ok(!existsSync(path.join(dir, REPRO)));
+    assert.ok(!existsSync(path.join(dir, REPRO.replace("udon", "basic"))));
+    assert.equal(readFileSync(artifactsDir, "utf8"), "fixture to force mkdir failure");
+
+    let failure;
+    try {
+      assert.ok(!value.includes(credential), "synthetic credential must not appear in output");
+    } catch (error) { failure = error; }
+    assert.ok(failure?.code === "ERR_ASSERTION", "forced failure must be an assertion error");
+    assert.ok(![`${failure}`, failure.stack, JSON.stringify(failure)].some((text) => text.includes(credential)),
+      "boolean assertion must keep the credential out of failure output");
+  });
+}
+
 test("contract: reproducer cannot create a production source file", async () => {
   const dir = repoC(); const guard = createGuard({ root: dir });
   const productionRepro = "src/lib/ai/understanding/repro-production.ts";
@@ -245,6 +547,9 @@ test("contract: reproducer cannot create a production source file", async () => 
   assert.equal(r.status, "BLOCKED");
   assert.match(r.reason, /CANNOT_REPRODUCE/);
   assert.equal(attempts, 2);
+  assert.equal(r.reproduceAttempts.length, 2);
+  assert.equal(r.reproduceAttempts[0].outcome, "ERROR");
+  assert.match(r.reproduceAttempts[0].rejectionReason, /REPRO_FILE_RULE/);
   assert.ok(!existsSync(path.join(dir, productionRepro)));
 });
 test("contract: a repro test that does not fail -> CANNOT_REPRODUCE and the file is removed", async () => {
@@ -665,4 +970,184 @@ test("claude-exec: strict Claude Code identity: '2.1.302 (Claude Code)' passes; 
   const calls = [];
   validateClaudeExecutable({ command: "x.exe", prefixArgs: ["a.js"] }, { spawnSyncImpl: (c, a, o) => { calls.push({ c, a, o }); return { status: 0, stdout: "1.0.0 (Claude Code)", stderr: "" }; } });
   assert.deepEqual(calls[0].a, ["a.js", "--version"]); assert.equal(calls[0].o.shell, false);
+});
+
+test("sanitizer: inspection and serialization fail closed", () => {
+  const credential = Buffer.from("fixture:synthetic").toString("base64");
+  const unsafe = { get value() { throw new Error(credential); } };
+  assert.ok(!inspectText(unsafe).safe && inspectText(unsafe).text === WITHHELD);
+  assert.ok(safeJson(unsafe) === JSON.stringify({ error: WITHHELD }));
+  const benign = "ordinary prose about basic concepts";
+  assert.deepEqual(inspectText(benign), { text: benign, safe: true });
+  assert.ok(inspectText("const answer = 42;").safe);
+});
+
+test("security flow: callback history, logs and iteration artifacts omit canaries", async () => {
+  const dir = repoC(); const artifactsDir = path.join(dir, "artifacts");
+  const secret = "sk-" + "f".repeat(24);
+  const captured = []; const rawGates = [];
+  let patched = 0;
+  const gate = () => {
+    const g = gateC(dir, "fixture.test.ts")();
+    const raw = Object.freeze({ ...g, ok: false, score: patched ? 3 : 1, failures: Object.freeze([secret]), signature: secret });
+    rawGates.push(raw); return raw;
+  };
+  const result = await supervise({ task: secret, guard: createGuard({ root: dir }), gate, artifactsDir,
+    opts: { maxIterations: 2 }, log: (m) => captured.push(m),
+    planner: async (input) => { captured.push(input); return { rootCause: secret }; },
+    diagnoser: async (input) => { captured.push(input); return { diagnosis: secret }; },
+    patcher: async (input) => { captured.push(input); if (patched++) throw new Error(secret); return { ...fix, rationale: secret }; },
+  });
+  const artifacts = [1, 2].map((n) => readFileSync(path.join(artifactsDir, "iteration-0" + n + ".json"), "utf8"));
+  assert.ok(!JSON.stringify({ captured, result, artifacts }).includes(secret), "security flow leaked canary");
+  assert.equal(result.iterationCount, 2);
+  assert.ok(rawGates.every((g) => !Object.hasOwn(g, "restoredToBest") && g.failures[0] === secret));
+});
+
+test("security flow: planner exception and provider retry echo are sanitized", async () => {
+  const dir = repoC(); const secret = "sk-" + "g".repeat(24);
+  const result = await supervise({ task: "fixture", guard: createGuard({ root: dir }),
+    gate: gateC(dir, "fixture.test.ts"), planner: async () => { throw new Error(secret); } });
+  assert.ok(result.reason.startsWith("PLAN_FAILED"));
+  assert.ok(!JSON.stringify(result).includes(secret));
+  const captured = [];
+  await auditAskValidated({ system: "fixture", user: secret, timeLeft: 1000,
+    ask: async (messages) => { captured.push(messages); return { text: secret, json: { ok: captured.length === 2 } }; },
+    validate: (value) => value.ok ? "" : secret,
+  });
+  assert.equal(captured.length, 2);
+  assert.ok(!JSON.stringify(captured).includes(secret), "provider retry leaked canary");
+});
+
+test("security persistence: guard preflight and exact diff withholding", async () => {
+  const token = Buffer.from("fixture:removed").toString("base64");
+  const unsafe = "// Authorization: Basic " + token;
+  const dir = repoC({ [PROV]: "export const v = 1;\n" + unsafe + "\n" });
+  const guard = createGuard({ root: dir });
+  let denied = false;
+  try { guard.applyEdits([{ file: REPRO, create: true, new: unsafe }]); }
+  catch { denied = true; }
+  assert.ok(denied && !existsSync(path.join(dir, REPRO)));
+  const gate = gateC(dir, "fixture");
+  const result = await supervise({ task: "fixture", guard, gate,
+    ...brainC({ patches: [{ edits: [{ file: PROV, old: "export const v = 1;\n" + unsafe, new: "export const v = 2;" }] }] }),
+  });
+  assert.equal(result.status, "PASS");
+  assert.ok(result.diffWithheld && result.diff === null && !result.awaitingApproval);
+  assert.ok(!JSON.stringify(result).includes(token), "removed credential escaped the diff boundary");
+});
+
+test("baseline parity: reproduction retry, restore and exceptional abort ordering", async () => {
+  const base = "2cc561844ff18233ccd0560b21645d9cc00a6169";
+  const specifier = new URL("./supervisor.mjs", import.meta.url);
+  const historical = execFileSync("git", ["show", base + ":scripts/overnight/supervisor.mjs"], {
+    cwd: new URL("../..", specifier), encoding: "utf8",
+  }).replace(/from "(\.\/[^"]+)"/g, (_, rel) => "from " + JSON.stringify(new URL(rel, specifier).href));
+  const { supervise: baselineSupervise } = await import("data:text/javascript;base64," + Buffer.from(historical).toString("base64"));
+  const secret = "sk-" + "h".repeat(24);
+  for (const scenario of ["reject", "gate", "restore", "null", "getter", "conversion"]) {
+    async function trace(invoke) {
+      const dir = repoC(); const guard = createGuard({ root: dir });
+      const events = []; let calls = 0; let restores = 0;
+      const restore = guard.restore;
+      guard.restore = (snapshot) => {
+        events.push("restore:" + Object.keys(snapshot).length);
+        if (++restores === 1 && scenario === "restore") throw new Error(secret);
+        return restore(snapshot);
+      };
+      try {
+        const r = await invoke({ task: "fixture", guard, opts: C,
+          gate: () => {
+            events.push("gate");
+            if (++calls === 2) {
+              if (scenario === "gate") throw new Error(secret);
+              if (scenario === "null") throw null;
+              if (scenario === "getter") throw { get message() { throw new Error(secret); } };
+              if (scenario === "conversion") throw { message: { toString() { throw new Error(secret); } } };
+            }
+            return gateC(dir, "")();
+          },
+          reproducer: async ({ feedback }) => {
+            events.push("repro:" + existsSync(path.join(dir, REPRO)));
+            if (invoke === supervise) assert.ok(!feedback.includes(secret));
+            return { file: REPRO, content: "// fixture\n" };
+          },
+        });
+        events.push(r.status, r.reason.split(":")[0]);
+      } catch (error) {
+        if (invoke === supervise) assert.ok(error.message === WITHHELD, "abort must emit only fixed text");
+        events.push("abort");
+      }
+      events.push("exists:" + existsSync(path.join(dir, REPRO)));
+      return events;
+    }
+    assert.deepEqual(await trace(supervise), await trace(baselineSupervise), scenario);
+  }
+});
+
+test("security persistence: CLI report bytes, notifications and whole patch boundary", async () => {
+  const dir = repoC(); const secret = "sk-" + "z".repeat(24);
+  const guard = createGuard({ root: dir });
+  const result = await supervise({ task: secret, guard, gate: gateC(dir, "fixture"),
+    ...brainC({ patches: [fix] }),
+  });
+  const captured = []; const publish = { artifactsDir: dir, profileName: "fixture",
+    log: (message) => captured.push(message), notify: (message) => captured.push(message) };
+  publishRun({ ...result, task: secret, diff: "unsafe " + secret }, publish);
+  const reports = ["report.md", "report.json"].map((name) => readFileSync(path.join(dir, name), "utf8"));
+  assert.ok(!existsSync(path.join(dir, "changes.patch")));
+  assert.ok(!JSON.stringify({ reports, captured }).includes(secret));
+  const clean = mkdtempSync(path.join(tmpdir(), "ovn-publish-"));
+  publishRun(result, { ...publish, artifactsDir: clean });
+  assert.ok(readFileSync(path.join(clean, "changes.patch"), "utf8") === result.diff, "clean diff bytes changed");
+});
+
+test("sanitizer: folded Basic values retain punctuation in plain and JSON text", () => {
+  const credential = Buffer.from("fixture:folded-basic").toString("base64");
+  for (const gap of ["\r\n ", "\n ", "\r\n\t", "\n\t  ", "\t", "   ", " \r\n \r\n\t"]) {
+    for (const prefix of ["Basic", "Authorization: bAsIc"]) {
+      const input = prefix + gap + credential + "!?>].:";
+      const expected = prefix + gap + "[REDACTED]!?>].:";
+      for (const encode of [(value) => value, (value) => JSON.stringify({ header: value }),
+        (value) => JSON.stringify({ Authorization: value })]) {
+        const checked = inspectText(encode(input));
+        assert.ok(!checked.safe && checked.text === encode(expected), "folded Basic token or delimiter mishandled");
+        assert.ok(!checked.text.includes(credential), "folded Basic credential leaked");
+      }
+    }
+  }
+  for (const text of ["Basic\nA new paragraph.", "Basic\r\nNext line", "Basic\\nNext line",
+    "Basic\n  ", "basically\n  harmless", "Authorization: Digest\n  realm=fixture",
+    "This is basic authentication guidance.", "Basic authentication guidance",
+    "Authorization: Basic authentication guidance"]) {
+    assert.ok(inspectText(text).safe, "benign line or empty header was changed");
+  }
+});
+
+test("sanitizer: folded Basic is screened at source, prompt and diff boundaries", async () => {
+  const credential = Buffer.from("fixture:folded-boundaries").toString("base64");
+  const header = "Authorization: Basic\r\n \t" + credential + "!";
+  const source = "// " + JSON.stringify({ header }) + "\n";
+  const dir = repoC(); const guard = createGuard({ root: dir });
+  const artifactsDir = path.join(dir, "artifacts");
+  const result = await supervise({ task: "fixture", guard, gate: gateC(dir), artifactsDir, opts: C,
+    ...brainC({ reproducer: async () => ({ file: REPRO, content: source }) }),
+  });
+  assert.equal(result.status, "BLOCKED");
+  assert.equal(result.reproduceAttempts.length, 2);
+  assert.ok(result.reproduceAttempts.every((attempt) => attempt.outcome === "ERROR" &&
+    attempt.sourceArtifact === null && attempt.sourceSha256 === null && attempt.sourceBytes === 0));
+  assert.ok(!existsSync(path.join(dir, REPRO)) && !existsSync(artifactsDir));
+  const prompts = [];
+  await auditAskValidated({ system: "fixture", user: header, timeLeft: 1000,
+    ask: async (messages) => { prompts.push(messages); return { text: "{}", json: {} }; },
+    validate: () => "",
+  });
+  assert.ok(prompts.length === 1 && !JSON.stringify(prompts).includes(credential));
+  assert.ok(prompts[0][1].content.endsWith("[REDACTED]!"));
+  publishRun({ ...result, diff: "+// " + header }, { artifactsDir: dir, profileName: "fixture", log: () => {} });
+  assert.ok(!existsSync(path.join(dir, "changes.patch")));
+  for (const name of ["report.md", "report.json"]) {
+    assert.ok(!readFileSync(path.join(dir, name), "utf8").includes(credential));
+  }
 });

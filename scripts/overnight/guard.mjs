@@ -6,6 +6,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { inspectText, redact } from "./sanitize.mjs";
 
 export const DEFAULT_WRITE_SCOPE = ["src/lib/ai/**"];
 const WRITE_EXT = /\.(?:ts|tsx|js|mjs|cjs|json|md)$/i;
@@ -84,7 +85,7 @@ export function createGuard({
   const nodeScripts = new Set([regressionFile, "scripts/wos-ai-agent-repo.mjs", "scripts/telegram-notify.mjs", "scripts/resolve-ai-test-url.mjs"].map((p) => p.replace(/\\/g, "/")));
 
   const deny = (kind, detail, reason) => {
-    violations.push({ kind, detail: scrub(detail), reason });
+    violations.push({ kind, detail: redact(scrub(detail)), reason });
     return { allowed: false, reason };
   };
 
@@ -178,7 +179,7 @@ export function createGuard({
       const creating = e.create === true;
       const v = checkWrite(e.file, { creating: creating && !existsSync(path.resolve(ROOT, normalizeRel(e.file))) });
       if (!v.allowed) throw new Error(`guard: ${v.reason} (${e.file})`);
-      if (SECRET_IN_TEXT.test(e.new)) { deny("write", e.file, "secret-looking content in new text"); throw new Error(`guard: secret-looking content in edit for ${e.file}`); }
+      if (!inspectText(e.file).safe || SECRET_IN_TEXT.test(e.new) || !inspectText(e.new).safe) { deny("write", e.file, "secret-looking content in new text"); throw new Error(`guard: secret-looking content in edit for ${e.file}`); }
       let cur = staged.get(v.rel);
       if (!cur) {
         const exists = existsSync(v.abs);
@@ -195,6 +196,10 @@ export function createGuard({
       cur.after = cur.after.replace(e.old, () => e.new);
     }
     for (const [rel, s] of staged) {
+      if (!inspectText(rel).safe || !inspectText(s.after).safe) {
+        deny("write", rel, "secret-looking content in resulting file");
+        throw new Error("guard: secret-looking content in resulting file");
+      }
       if (Buffer.byteLength(s.after) > MAX_FILE_BYTES) throw new Error(`file too large after edit: ${rel}`);
     }
     for (const [rel, s] of staged) {

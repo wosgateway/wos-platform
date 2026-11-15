@@ -1,6 +1,6 @@
 // LLM-backed planner / diagnoser / patcher. The model only proposes; guard + gate decide.
 import { readFileSync } from "node:fs";
-import { scrub } from "./guard.mjs";
+import { redact, inspectText, WITHHELD } from "./sanitize.mjs";
 import { LAYERS } from "./layers.mjs";
 
 const CONTRACT = (() => { try { return readFileSync(new URL("./contract.md", import.meta.url), "utf8"); } catch { return ""; } })();
@@ -56,11 +56,15 @@ export async function askValidated({ system, user, timeLeft, model, validate, as
   let messages = [{ role: "system", content: system }, { role: "user", content: user }];
   let lastProblem = "";
   for (let i = 0; i < attempts; i++) {
-    const { text, json } = await ask(messages, timeLeft, model);
+    const { text, json } = await ask(messages.map(({ role, content }) => {
+      const checked = inspectText(content);
+      if (checked.text === WITHHELD) throw new Error(WITHHELD);
+      return { role, content: checked.text };
+    }), timeLeft, model);
     const problem = validate(json);
     if (!problem) return json;
-    lastProblem = `${problem}. Model returned: ${scrub(text).slice(0, 400)}`;
-    messages = [...messages, { role: "assistant", content: text },
+    lastProblem = `${problem}. Model returned: ${redact(text).slice(0, 400)}`;
+    messages = [...messages, { role: "assistant", content: redact(text) },
       { role: "user", content: `INVALID: ${problem}. You returned the schema description or placeholder text instead of real content. Answer again with REAL values derived from the source files above, as one JSON object.` }];
   }
   throw new Error(lastProblem);
@@ -106,10 +110,11 @@ function context(guard, files, terms, perFile = 24_000, total = 60_000) {
   let used = 0; const parts = [];
   for (const f of files) {
     const c = guard.read(f); if (c == null) continue;
+    if (!inspectText(c).safe || !inspectText(f).safe) continue;
     const body = windows(c, terms, perFile);
     if (used + body.length > total) break;
     used += body.length;
-    parts.push(`===== ${f} =====\n${scrub(body)}\n===== END ${f} =====`);
+    parts.push(`===== ${f} =====\n${redact(body)}\n===== END ${f} =====`);
   }
   return parts.join("\n\n");
 }
@@ -122,7 +127,7 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
   return {
     async planner({ task, baseline, feedback = "", timeLeft }) {
       const files = pick(task, baseline);
-      const user = [`Task: ${task}`, "", "Baseline gate failures:", scrub(baseline.failures.slice(0, 30).join("\n") || "(none: gate is green)"), "",
+      const user = [`Task: ${task}`, "", "Baseline gate failures:", redact(baseline.failures.slice(0, 30).join("\n") || "(none: gate is green)"), "",
         "Write scope for edits: " + guard.writeScope.join(", "), "", ctx(files, termsOf(task, baseline)), "",
         "Return one JSON object with keys: rootCause (a sentence of at least 40 characters naming the real file and function), filesToInspect (array of real repo paths), proposedChanges (array of sentences), confidence (number 0..1)" +
           (contract ? `, layers (array chosen from ${LAYERS.join("/")}: the layer(s) that OWN the bug), multiLayerReason (only when more than one layer; explain why), evidence (array of objects {file, symbol}: a real repo file and an identifier or text that really appears in it and proves the root cause)` : "") +
@@ -143,7 +148,8 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
       return plan;
     },
     async reproducer({ task, feedback = "", timeLeft }) {
-      const example = guard.read("src/lib/ai/understanding/understanding.test.ts");
+      const source = guard.read("src/lib/ai/understanding/understanding.test.ts");
+      const example = inspectText(source).safe ? source : null;
       const files = pick(task, { failures: [] });
       const user = [`Task (a bug report, no failing test exists yet): ${task}`, "",
         ...(example ? ["Example of how tests in this repo are written (vitest):", "```ts", example.split("\n").slice(0, 60).join("\n"), "```", ""] : []),
@@ -160,7 +166,7 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
     async diagnoser({ task, plan, gate, history, timeLeft }) {
       const prior = history.filter((h) => h.gate).map((h) => `iteration ${h.n}: ${h.gate.summary}; files ${h.files.join(",")}; ${h.rationale ?? ""}`).join("\n");
       const evidence = gate.checks.filter((c) => c.status !== "PASS" && c.status !== "SKIPPED").map((c) => `## ${c.name} ${c.status}\n${c.summary}`).join("\n\n");
-      const user = [`Task: ${task}`, `Plan root cause: ${plan?.rootCause}`, "", "Previous attempts:", prior || "(none)", "", "Current failing evidence:", scrub(evidence), "",
+      const user = [`Task: ${task}`, `Plan root cause: ${plan?.rootCause}`, "", "Previous attempts:", prior || "(none)", "", "Current failing evidence:", redact(evidence), "",
         "Diagnose WHY it fails now (do not propose code yet). Return one JSON object with keys: diagnosis (real explanation, 20+ characters), failingCause, nextApproach, avoid (array of approaches already tried that did not help). Use real content, not these descriptions."].join("\n");
       return askValidated({ system: SYSTEM, user, timeLeft, model, ask, validate: (j) => (isReal(j.diagnosis, 20) ? "" : "diagnosis is missing, a placeholder, or shorter than 20 characters") });
     },
@@ -170,7 +176,7 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
         "Allowed write scope: " + guard.writeScope.join(", ") + " (existing test files are read-only; you may create NEW test files).",
         ...(contract ? [`Edit ONLY files in layer(s): ${(plan?.layers ?? []).join(", ")}. Do not quote a customer sentence from a test as a string literal in production code. At most 3 production files.`] : []), "",
         ...(history.filter((h) => h.note).length ? ["Your previous patches were REJECTED:", ...history.filter((h) => h.note).slice(-3).map((h) => `- ${h.note}`), "Copy 'old' text character-for-character from the file excerpts below; if the text you need is not shown, say so in rationale and edit only what is shown.", ""] : []),
-        "Failing evidence:", scrub(gate.failures.slice(0, 30).join("\n")), "", ctx(files, termsOf(task, gate)), "",
+        "Failing evidence:", redact(gate.failures.slice(0, 30).join("\n")), "", ctx(files, termsOf(task, gate)), "",
         "Return one JSON object with keys: rationale (string) and edits (array). Each edit is an object with file (repo path), old (text copied EXACTLY from that file, appearing once), new (the replacement text). To create a brand-new file use {file, create: true, new: <whole file>} and omit old.",
         "'old' must match the file EXACTLY once. Keep edits minimal."].join("\n");
       return askValidated({ system: SYSTEM, user, timeLeft, model, ask, validate: (j) => {
