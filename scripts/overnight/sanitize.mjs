@@ -34,6 +34,31 @@ export function inspectText(value) {
   }
 }
 
+// Inspect each side of a hunk without the unified-diff line markers.
+export function isSafePatch(patch) {
+  if (!inspectText(patch).safe) return false;
+  try {
+    let before = [];
+    let after = [];
+    let inHunk = false;
+    const safeHunk = () => inspectText(before.join("\n")).safe && inspectText(after.join("\n")).safe;
+    for (const line of patch.split(/\r?\n/)) {
+      if (line.startsWith("diff --git ") || line.startsWith("@@ ") || line.startsWith("--- new file: ")) {
+        if (!safeHunk()) return false;
+        before = [];
+        after = [];
+        inHunk = line.startsWith("@@ ");
+      } else if (inHunk) {
+        if (line.startsWith(" ") || line.startsWith("-")) before.push(line.slice(1));
+        if (line.startsWith(" ") || line.startsWith("+")) after.push(line.slice(1));
+      }
+    }
+    return safeHunk();
+  } catch {
+    return false;
+  }
+}
+
 export function redact(value) {
   try { return inspectText(String(value ?? "")).text; }
   catch { return WITHHELD; }
@@ -56,7 +81,8 @@ export function sanitizeData(value) {
       if (!descriptor.enumerable) continue;
       if (!Object.hasOwn(descriptor, "value")) throw new Error(WITHHELD);
       if (inspectText(key).safe) Object.defineProperty(output, key, {
-        value: copy(descriptor.value), enumerable: true, configurable: true, writable: true,
+        value: /(?:^|[_-])(?:authorization|cookie|set[_-]?cookie)$|(?:api[_-]?key|access[_-]?key|private[_-]?key|secret[_-]?key|signing[_-]?key|token|secret|password|passwd|credential)$/i.test(key)
+          ? "[REDACTED]" : copy(descriptor.value), enumerable: true, configurable: true, writable: true,
       });
     }
     seen.delete(input);

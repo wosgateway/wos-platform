@@ -4,7 +4,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { inspectText, redact, redactError, safeJson, sanitizeData, WITHHELD } from "./sanitize.mjs";
+import { inspectText, isSafePatch, redact, redactError, safeJson, sanitizeData, WITHHELD } from "./sanitize.mjs";
 import { summarizeGate } from "./gate.mjs";
 import { layerOf, checkLayerRule } from "./layers.mjs";
 import { buildDod, countChangedLines, dirtyPaths, hardcodeViolations, hasSecret, sha256, testLiterals, unrelatedChanges, verifyEvidence } from "./checks.mjs";
@@ -270,7 +270,7 @@ async function superviseRun({ task, guard, gate, planner, diagnoser, patcher, re
   const created = changed.filter((f) => baselineFiles[f] === null).map((f) => `--- new file: ${f} ---\n${guard.read(f)}`);
   const diffText = `${tracked.ok ? tracked.stdout : ""}${created.length ? `\n${created.join("\n")}` : ""}`;
 
-  const diffSafe = tracked.ok && inspectText(diffText).safe;
+  const diffSafe = tracked.ok && isSafePatch(diffText);
   const result = {
     runId, task, status, reason,
     iterations, iterationCount: iterations.length,

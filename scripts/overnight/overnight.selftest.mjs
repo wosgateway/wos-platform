@@ -2,7 +2,7 @@
 import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { askValidated as auditAskValidated } from "./llm.mjs";
-import { inspectText, safeJson, WITHHELD } from "./sanitize.mjs";
+import { inspectText, isSafePatch, safeJson, WITHHELD } from "./sanitize.mjs";
 import { publishRun } from "./cli.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
@@ -1149,5 +1149,42 @@ test("sanitizer: folded Basic is screened at source, prompt and diff boundaries"
   assert.ok(!existsSync(path.join(dir, "changes.patch")));
   for (const name of ["report.md", "report.json"]) {
     assert.ok(!readFileSync(path.join(dir, name), "utf8").includes(credential));
+  }
+});
+
+test("security persistence: structured credentials and folded diff hunks stay out of artifacts", async () => {
+  const structured = JSON.parse(safeJson({
+    API_KEY: "fixture-api", accessKey: "fixture-access",
+    PRIVATE_KEY: "fixture-private", private_key: "fixture-private-snake",
+    SECRET_KEY: "fixture-secret", secretKey: "fixture-secret-camel",
+    SIGNING_KEY: "fixture-signing", signingKey: "fixture-signing-camel",
+    ordinary: "keep-visible",
+  }));
+  for (const key of ["API_KEY", "accessKey", "PRIVATE_KEY", "private_key", "SECRET_KEY", "secretKey", "SIGNING_KEY", "signingKey"]) {
+    assert.equal(structured[key], "[REDACTED]", key + " must be redacted");
+  }
+  assert.equal(structured.ordinary, "keep-visible");
+  const opaque = "fixtureOpaqueValue42";
+  const credential = Buffer.from("fixture:synthetic-patch").toString("base64");
+  const dir = repoC();
+  const result = await supervise({ task: "fixture", guard: createGuard({ root: dir }),
+    gate: gateC(dir, "fixture"), ...brainC({ patches: [fix] }) });
+  const header = "diff --git a/x b/x\n--- a/x\n+++ b/x\n";
+  const patches = [
+    header + "@@ -1,1 +1,2 @@\n-old\n+Authorization: Basic\n+ " + credential + "!\n",
+    header + "@@ -1,2 +1,1 @@\n-Authorization: Basic\n- " + credential + ":\n+new\n",
+    header + "@@ -1,2 +1,2 @@\n Authorization: Basic\n- gone\n+ " + credential + "\n",
+  ];
+  assert.ok(isSafePatch(result.diff), "ordinary patch must pass screening");
+  for (const diff of patches) {
+    assert.ok(!isSafePatch(diff), "folded credential patch passed screening");
+    const artifactsDir = mkdtempSync(path.join(tmpdir(), "ovn-folded-diff-"));
+    publishRun({ ...result, diff, iterations: [{ nested: { API_KEY: opaque, count: 1 } }] },
+      { artifactsDir, profileName: "fixture", log: () => {} });
+    const serialized = readFileSync(path.join(artifactsDir, "report.json"), "utf8");
+    assert.ok(!existsSync(path.join(artifactsDir, "changes.patch")), "unsafe patch was persisted");
+    assert.ok(!serialized.includes(opaque) && !serialized.includes(credential), "credential escaped report writer");
+    const nested = JSON.parse(serialized).iterations[0].nested;
+    assert.ok(nested.API_KEY === "[REDACTED]" && nested.count === 1, "unexpected structured projection");
   }
 });

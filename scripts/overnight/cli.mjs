@@ -1,7 +1,7 @@
 // Shared CLI for `ai:agent` (interactive, one task) and `ai:overnight` (long run). Never commits, pushes or deploys.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { inspectText, redact, safeJson, WITHHELD } from "./sanitize.mjs";
+import { isSafePatch, redact, safeJson, WITHHELD } from "./sanitize.mjs";
 import { createGuard, DEFAULT_WRITE_SCOPE, parseDuration } from "./guard.mjs";
 import { runGate } from "./gate.mjs";
 import { supervise, formatReport, DEFAULTS } from "./supervisor.mjs";
@@ -97,7 +97,7 @@ export function publishRun(result, { artifactsDir, profileName, log = console.lo
   const report = redact(formatReport(result));
   writeFileSync(path.join(artifactsDir, "report.md"), report + "\n", { flag: "wx" });
   writeFileSync(path.join(artifactsDir, "report.json"), safeJson({ ...result, diff: undefined }), { flag: "wx" });
-  const patchAvailable = !result.diffWithheld && inspectText(result.diff).safe;
+  const patchAvailable = !result.diffWithheld && isSafePatch(result.diff);
   if (patchAvailable) writeFileSync(path.join(artifactsDir, "changes.patch"), result.diff, { flag: "wx" });
   const rel = redact(path.relative(process.cwd(), artifactsDir));
   log(redact("\n" + report + "\n\nArtifacts: " + rel + "/"));
