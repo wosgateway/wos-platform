@@ -1038,7 +1038,7 @@ test("security persistence: guard preflight and exact diff withholding", async (
 });
 
 test("baseline parity: reproduction retry, restore and exceptional abort ordering", async () => {
-  const base = "2cc561844ff18233ccd0560b21645d9cc00a6169";
+  const base = "d480d38f7de83ec9582dc0be0f2ced23be7537d5";
   const specifier = new URL("./supervisor.mjs", import.meta.url);
   const historical = execFileSync("git", ["show", base + ":scripts/overnight/supervisor.mjs"], {
     cwd: new URL("../..", specifier), encoding: "utf8",
