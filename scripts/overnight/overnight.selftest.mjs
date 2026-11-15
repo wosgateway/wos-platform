@@ -221,6 +221,28 @@ const brainC = ({ planObj = plan(), patches, reproducer, planner } = {}) => {
 const fix = { edits: [{ file: PROV, old: "v = 1", new: "v = 2" }], rationale: "r" };
 const C = { contract: true, reproduce: true, gate: {} };
 
+test("supervisor: gate exception after a patch blocks and restores the baseline", async () => {
+  const dir = repoC();
+  const guard = createGuard({ root: dir });
+  const secret = "sk-" + "g".repeat(24);
+  let gateCalls = 0;
+  const gate = () => {
+    if (++gateCalls === 1) return gateC(dir, REPRO)();
+    assert.equal(read(dir, PROV), "export const v = 2;\n", "the patch must be present when the post-patch gate runs");
+    throw new Error(`fixture gate failed API_KEY=${secret}`);
+  };
+  const result = await supervise({ task: "t", guard, gate, ...brainC({ patches: [fix] }), opts: C });
+  assert.equal(gateCalls, 2);
+  assert.equal(result.status, "BLOCKED");
+  assert.match(result.reason, /GATE_ERROR/);
+  assert.match(result.reason, /API_KEY=\[REDACTED\]/);
+  assert.ok(!JSON.stringify(result).includes(secret), "gate exception credential must be redacted");
+  assert.equal(read(dir, PROV), "export const v = 1;\n", "the production file must be restored to its pre-patch content");
+  assert.deepEqual(result.filesChanged, []);
+  assert.equal(result.commit, "NONE");
+  assert.equal(result.push, "NONE");
+  assert.equal(result.deploy, "NONE");
+});
 test("contract: green baseline -> writes a failing repro test first, fixes, DoD green, waits for approval", async () => {
   const dir = repoC(); const guard = createGuard({ root: dir });
   const r = await supervise({ task: "t", guard, gate: gateC(dir), ...brainC({ patches: [fix] }), opts: C });

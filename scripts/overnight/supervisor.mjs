@@ -230,11 +230,21 @@ async function superviseRun({ task, guard, gate, planner, diagnoser, patcher, re
     }
 
     if (now() >= deadline) { stop("TIMEOUT", "deadline reached after patch, before gate"); break; }
-    const g = gate(guard, gateOpts());
-    it.gate = { ok: g.ok, score: g.score, summary: summarizeGate(g), failures: callbackGate(g).failures, checks: g.checks.map((c) => ({ name: c.name, status: c.status })) };
+    let g;
+    try {
+      g = gate(guard, gateOpts());
+      it.gate = { ok: g.ok, score: g.score, summary: summarizeGate(g), failures: callbackGate(g).failures, checks: g.checks.map((c) => ({ name: c.name, status: c.status })) };
+    } catch (e) {
+      const msg = redactError(e).replace(/\s+/g, " ").slice(0, 400);
+      it.note = `GATE_ERROR: ${msg}`;
+      current = best.gate;
+      stop("BLOCKED", `GATE_ERROR: ${msg} (during iteration ${i}); the tree was restored to the best known state`);
+      emit(`iteration ${i}: ${it.note}; restoring the best known state`);
+      saveIteration(artifactsDir, it);
+      break;
+    }
     emit(`iteration ${i}: ${it.gate.summary}`);
     saveIteration(artifactsDir, it);
-
     if (envProblem(g)) { current = g; stop("BLOCKED", `ENVIRONMENT_UNHEALTHY: ${redact(envProblem(g))} (during iteration ${i}); the tree was restored to the best known state`); break; }
     const patched = Object.keys(baselineFiles).some((f) => f !== reproFile);
     if (g.ok && patched) { current = g; stop("PASS", "all required gates green"); break; }
