@@ -26,6 +26,31 @@ const PROTECTED_PATH = [
 const TEST_FILE = /(\.test\.|\.spec\.|(^|\/)ai-regression-test\.mjs$)/i;
 export const SECRET_IN_TEXT = /(SERVICE_ROLE_KEY|ACCESS_TOKEN|API_KEY|TELEGRAM_BOT_TOKEN|NOTION_TOKEN|SECRET)\s*[=:]\s*['"]?[A-Za-z0-9_\-./+]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{10,}/;
 
+// Subprocesses receive only the runtime variables required by their command profile.
+// Application credentials, NODE_OPTIONS and tool-specific configuration are not inherited.
+const BASE_PROCESS_ENV = new Set(["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR"]);
+const SHELL_PROCESS_ENV = new Set(["PATHEXT", "COMSPEC"]);
+const GIT_PROCESS_ENV = new Set(["HOME", "USERPROFILE"]);
+const WINDOWS_IMPLICIT_ENV = new Set(["HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "SYSTEMDRIVE", "USERDOMAIN", "USERNAME", "USERPROFILE"]);
+
+function commandEnvironment(command) {
+  const bin = path.basename(String(command)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
+  const allowed = new Set(BASE_PROCESS_ENV);
+  if (bin === "npx" || bin === "npm") for (const name of SHELL_PROCESS_ENV) allowed.add(name);
+  if (bin === "git") for (const name of GIT_PROCESS_ENV) allowed.add(name);
+  const env = Object.create(null);
+  for (const [name, value] of Object.entries(process.env)) {
+    const key = name.toUpperCase();
+    if (allowed.has(key)) env[key] = value;
+  }
+  // libuv/Windows may synthesize these identity variables even when omitted from env.
+  // Pass explicit empty values so the child cannot recover the parent user identity.
+  if (process.platform === "win32") {
+    for (const name of WINDOWS_IMPLICIT_ENV) env[name] = "";
+  }
+  return env;
+}
+
 const DENY_BIN = new Set([
   "vercel", "curl", "wget", "rm", "rmdir", "del", "mv", "cp", "sh", "bash", "zsh", "cmd", "cmd.exe", "powershell", "powershell.exe",
   "pwsh", "ssh", "scp", "docker", "supabase", "psql", "gh", "sudo", "pip", "pnpm", "yarn",
@@ -153,7 +178,7 @@ export function createGuard({
     if (process.platform === "win32" && (bin === "npx" || bin === "npm")) {
       exe = "cmd.exe"; exeArgs = ["/d", "/s", "/c", `${bin}.cmd ${args.join(" ")}`];
     }
-    const r = spawnSync(exe, exeArgs, { cwd: ROOT, encoding: "utf8", timeout: Math.max(1000, timeoutMs), maxBuffer: 64 * 1024 * 1024, input, windowsHide: true });
+    const r = spawnSync(exe, exeArgs, { cwd: ROOT, encoding: "utf8", timeout: Math.max(1000, timeoutMs), maxBuffer: 64 * 1024 * 1024, input, windowsHide: true, env: commandEnvironment(bin) });
     const timedOut = r.error?.code === "ETIMEDOUT" || r.signal === "SIGTERM";
     const stdout = r.stdout ?? "", stderr = r.stderr ?? "";
     return { ok: r.status === 0 && !timedOut, denied: false, status: r.status, stdout, stderr, output: scrub(`${stdout}\n${stderr}`.trim()), timedOut, error: r.error?.message };

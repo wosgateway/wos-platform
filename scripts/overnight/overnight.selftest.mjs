@@ -32,6 +32,44 @@ test("guard: forbidden commands are denied", () => {
   assert.ok(g.violations.length >= bad.length);
 });
 
+test("guard: subprocesses receive only the allowlisted command environment", () => {
+  const dir = repo();
+  const probe = "env-probe.mjs";
+  writeFileSync(path.join(dir, probe), "console.log(JSON.stringify({ env: process.env, path: Boolean(process.env.PATH) }));\n");
+  const g = createGuard({ root: dir, regressionFile: probe });
+  const injected = {
+    WOS_OVERNIGHT_ENV_CANARY: "must-not-cross-boundary",
+    OPENAI_API_KEY: "fixture-openai-secret",
+    SUPABASE_SERVICE_ROLE_KEY: "fixture-supabase-secret",
+    NODE_OPTIONS: "--require=must-not-load",
+    npm_config_userconfig: "fixture-npm-config",
+    GIT_CONFIG_COUNT: "1",
+  };
+  const previous = new Map(Object.keys(injected).map((key) => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, injected);
+    const result = g.exec("node", [probe]);
+    assert.equal(result.ok, true, result.output);
+    const child = JSON.parse(result.stdout.trim());
+    const childEnv = child.env;
+    const keys = new Set(Object.keys(childEnv).map((key) => key.toUpperCase()));
+    for (const key of Object.keys(injected)) assert.equal(keys.has(key.toUpperCase()), false, key + " leaked to child");
+    assert.equal(child.path, true, "PATH remains available for trusted runtime resolution");
+    const windowsImplicit = new Set(["HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "SYSTEMDRIVE", "USERDOMAIN", "USERNAME", "USERPROFILE"]);
+    const allowed = new Set(["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", ...windowsImplicit]);
+    if (process.platform === "win32") {
+      for (const key of windowsImplicit) {
+        if (key in childEnv) assert.equal(childEnv[key], "", key + " must be blanked by the Windows environment boundary");
+      }
+    }
+    for (const key of keys) assert.ok(allowed.has(key), "unexpected child environment variable: " + key);
+  } finally {
+    for (const [key, value] of previous) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
 test("guard: gate commands and read-only git are allowed", () => {
   const g = createGuard({ root: repo() });
   for (const [c, a] of [["git", ["status", "--short"]], ["git", ["diff", "--check"]], ["git", ["rev-parse", "HEAD"]], ["git", ["branch", "--show-current"]], ["git", ["diff", "--cached", "--name-only"]],
