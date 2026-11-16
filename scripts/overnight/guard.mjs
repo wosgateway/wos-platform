@@ -31,12 +31,16 @@ export const SECRET_IN_TEXT = /(SERVICE_ROLE_KEY|ACCESS_TOKEN|API_KEY|TELEGRAM_B
 const BASE_PROCESS_ENV = new Set(["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR"]);
 const SHELL_PROCESS_ENV = new Set(["PATHEXT", "COMSPEC"]);
 const GIT_PROCESS_ENV = new Set(["HOME", "USERPROFILE"]);
+const WINDOWS_HOME_ENV = new Set(["HOMEDRIVE", "HOMEPATH", "USERPROFILE"]);
 const WINDOWS_IMPLICIT_ENV = new Set(["HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "SYSTEMDRIVE", "USERDOMAIN", "USERNAME", "USERPROFILE"]);
 
 function commandEnvironment(command) {
   const bin = path.basename(String(command)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
   const allowed = new Set(BASE_PROCESS_ENV);
-  if (bin === "npx" || bin === "npm") for (const name of SHELL_PROCESS_ENV) allowed.add(name);
+  if (bin === "npx" || bin === "npm") {
+    for (const name of SHELL_PROCESS_ENV) allowed.add(name);
+    if (process.platform === "win32") for (const name of WINDOWS_HOME_ENV) allowed.add(name);
+  }
   if (bin === "git") for (const name of GIT_PROCESS_ENV) allowed.add(name);
   const env = Object.create(null);
   for (const [name, value] of Object.entries(process.env)) {
@@ -46,7 +50,9 @@ function commandEnvironment(command) {
   // libuv/Windows may synthesize these identity variables even when omitted from env.
   // Pass explicit empty values so the child cannot recover the parent user identity.
   if (process.platform === "win32") {
-    for (const name of WINDOWS_IMPLICIT_ENV) env[name] = "";
+    for (const name of WINDOWS_IMPLICIT_ENV) {
+      if (!allowed.has(name)) env[name] = "";
+    }
   }
   return env;
 }
@@ -130,16 +136,30 @@ export function createGuard({
       if (args.some((a) => /^--output|^--ext-diff|^-o$/.test(a))) return deny("git", line, "git output redirection is not allowed");
       return { allowed: true };
     }
+    if (bin === "npx" || bin === "npm") {
+      // Windows executes npm.cmd/npx.cmd through cmd.exe /c. Reject shell syntax,
+      // quotes, whitespace and expansion characters before constructing that command line.
+      // Keep these profiles deliberately narrow: every argument must be one safe token.
+      if (args.some((a) => typeof a !== "string" || /[\x00-\x20\"'&|<>^()%!;]/.test(a))) {
+        return deny("command", line, "npm/npx arguments contain unsafe Windows shell syntax");
+      }
+    }
     if (bin === "npx") {
       const tool = args[0];
-      if (tool === "tsc" && args.includes("--noEmit")) return { allowed: true };
-      if (tool === "vitest" && args[1] === "run" && !args.some((a) => /^(-u|--update)/.test(a))) return { allowed: true };
-      return deny("command", line, "npx is limited to 'tsc --noEmit' and 'vitest run' (no snapshot updates)");
+      if (tool === "tsc") {
+        const basic = args.length === 2 && args[1] === "--noEmit";
+        const formatted = args.length === 4 && args[1] === "--noEmit" && args[2] === "--pretty" && args[3] === "false";
+        const project = args.length === 6 && args[1] === "--noEmit" && args[2] === "--pretty" && args[3] === "false" && args[4] === "-p" && /^[A-Za-z0-9_./\\-]+$/.test(args[5]) && !args[5].startsWith("-");
+        if (basic || formatted || project) return { allowed: true };
+      }
+      if (tool === "vitest" && args.length === 3 && args[1] === "run" && args[2] === "--reporter=json") return { allowed: true };
+      return deny("command", line, "npx is limited to the approved tsc --noEmit and vitest JSON test profiles");
     }
     if (bin === "npm") {
-      if (args[0] === "run" && npmScripts.includes(args[1])) return { allowed: true };
-      return deny("command", line, "npm is limited to explicitly allowlisted 'npm run <script>'");
+      if (args.length === 2 && args[0] === "run" && npmScripts.includes(args[1])) return { allowed: true };
+      return deny("command", line, "npm is limited to an exact allowlisted 'npm run <script>' command");
     }
+
     if (bin === "node") {
       const script = path.posix.normalize(String(args[0] ?? "").replace(/\\/g, "/").replace(/^\.\//, ""));
       if (nodeScripts.has(script)) return { allowed: true };

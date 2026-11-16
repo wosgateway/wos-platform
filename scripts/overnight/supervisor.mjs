@@ -111,6 +111,14 @@ async function superviseRun({ task, guard, gate, planner, diagnoser, patcher, re
         try {
           emit(`Baseline is green: writing a reproducing test (attempt ${attempt})...`);
           const r = await reproducer(sanitizeData({ task, feedback, timeLeft: timeLeft() }));
+          if (r?.outcome === "CANNOT_REPRODUCE" && typeof r.reason === "string" && r.reason.trim() &&
+              !Object.hasOwn(r, "file") && !Object.hasOwn(r, "content")) {
+            evidence.outcome = "CANNOT_REPRODUCE";
+            evidence.rejectionReason = redact(r.reason).slice(0, 1200);
+            reproduceAttempts.push(evidence);
+            stop("BLOCKED", "CANNOT_REPRODUCE: " + evidence.rejectionReason);
+            break;
+          }
           evidence.file = r?.file == null ? null : redact(r.file);
           if (!/(\.test\.|\.spec\.)/i.test(r.file ?? "")) {
             throw new Error(`REPRO_FILE_RULE: reproducer may create only a test/spec file, got '${r.file ?? ""}'`);

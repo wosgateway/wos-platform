@@ -1,13 +1,13 @@
 ﻿import test from "node:test";
 import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
-import { askValidated as auditAskValidated } from "./llm.mjs";
+import { askValidated as auditAskValidated, makeLlm } from "./llm.mjs";
 import { inspectText, isSafePatch, safeJson, WITHHELD } from "./sanitize.mjs";
 import { publishRun } from "./cli.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import path from "node:path";
 import { createGuard, parseDuration, scrub } from "./guard.mjs";
 import { parseTsc, parseVitestJson, parseDiffCheck } from "./gate.mjs";
@@ -32,11 +32,11 @@ test("guard: forbidden commands are denied", () => {
   assert.ok(g.violations.length >= bad.length);
 });
 
-test("guard: subprocesses receive only the allowlisted command environment", () => {
-  const dir = repo();
+test("guard: subprocesses receive profile-scoped environment without leaking app secrets", () => {
+  const dir = repo({ "package.json": JSON.stringify({ scripts: { "env-probe": "node env-probe.mjs" } }) + "\n" });
   const probe = "env-probe.mjs";
-  writeFileSync(path.join(dir, probe), "console.log(JSON.stringify({ env: process.env, path: Boolean(process.env.PATH) }));\n");
-  const g = createGuard({ root: dir, regressionFile: probe });
+  writeFileSync(path.join(dir, probe), "import { homedir } from \"node:os\"; console.log(JSON.stringify({ env: process.env, home: homedir(), path: Boolean(process.env.PATH) }));\n");
+  const g = createGuard({ root: dir, regressionFile: probe, npmScripts: ["env-probe"] });
   const injected = {
     WOS_OVERNIGHT_ENV_CANARY: "must-not-cross-boundary",
     OPENAI_API_KEY: "fixture-openai-secret",
@@ -48,21 +48,25 @@ test("guard: subprocesses receive only the allowlisted command environment", () 
   const previous = new Map(Object.keys(injected).map((key) => [key, process.env[key]]));
   try {
     Object.assign(process.env, injected);
-    const result = g.exec("node", [probe]);
+    const result = g.exec("npm", ["run", "env-probe"]);
     assert.equal(result.ok, true, result.output);
-    const child = JSON.parse(result.stdout.trim());
+    const child = JSON.parse(result.stdout.trim().split(/\r?\n/).at(-1));
     const childEnv = child.env;
     const keys = new Set(Object.keys(childEnv).map((key) => key.toUpperCase()));
-    for (const key of Object.keys(injected)) assert.equal(keys.has(key.toUpperCase()), false, key + " leaked to child");
+    for (const key of Object.keys(injected)) {
+      if (key.toLowerCase() === "npm_config_userconfig") assert.notEqual(childEnv[key], injected[key], key + " fixture value leaked to npm child");
+      else assert.equal(keys.has(key.toUpperCase()), false, key + " leaked to npm child");
+    }
     assert.equal(child.path, true, "PATH remains available for trusted runtime resolution");
+    if (process.platform === "win32") assert.equal(child.home, homedir(), "npm child must resolve the same usable home directory as the parent");
     const windowsImplicit = new Set(["HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "SYSTEMDRIVE", "USERDOMAIN", "USERNAME", "USERPROFILE"]);
-    const allowed = new Set(["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR", ...windowsImplicit]);
     if (process.platform === "win32") {
       for (const key of windowsImplicit) {
-        if (key in childEnv) assert.equal(childEnv[key], "", key + " must be blanked by the Windows environment boundary");
+        if (["HOMEDRIVE", "HOMEPATH", "USERPROFILE"].includes(key)) {
+          assert.equal(childEnv[key], process.env[key], key + " must be available to npm for homedir resolution");
+        } else if (key in childEnv) assert.equal(childEnv[key], "", key + " must remain blanked by the Windows environment boundary");
       }
     }
-    for (const key of keys) assert.ok(allowed.has(key), "unexpected child environment variable: " + key);
   } finally {
     for (const [key, value] of previous) {
       if (value === undefined) delete process.env[key];
@@ -83,6 +87,27 @@ test("guard: exec refuses git commit for real and repo is unchanged", () => {
   const r = g.exec("git", ["commit", "--allow-empty", "-m", "x"]);
   assert.equal(r.denied, true);
   assert.equal(execFileSync("git", ["rev-parse", "HEAD"], { cwd: dir }).toString(), head);
+});
+
+test("guard: npm/npx reject Windows shell metacharacters and non-profile arguments", () => {
+  const g = createGuard({ root: repo(), npmScripts: ["build"] });
+  const bad = [
+    ["npx", ["tsc", "--noEmit", "&", "whoami"]],
+    ["npx", ["vitest", "run", "--reporter=json", "&", "whoami"]],
+    ["npm", ["run", "build", "&", "whoami"]],
+    ["npx", ["tsc", "--noEmit", "|", "whoami"]],
+    ["npx", ["tsc", "--noEmit", ">", "marker.txt"]],
+    ["npx", ["tsc", "--noEmit", "%COMSPEC%"]],
+    ["npx", ["tsc", "--noEmit", "^&whoami"]],
+    ["npx", ["tsc", "--noEmit", "quoted value"]],
+    ["npm", ["run", "build", "--if-present"]],
+    ["npx", ["vitest", "run", "--reporter=json", "--update"]],
+  ];
+  for (const [c, a] of bad) assert.equal(g.checkCommand(c, a).allowed, false, c + " " + a.join(" "));
+  const blocked = g.exec("npx", ["tsc", "--noEmit", "&", "whoami"]);
+  assert.equal(blocked.denied, true, "unsafe arguments are denied before spawn");
+  for (const [c, a] of [["npm", ["run", "build"]], ["npx", ["tsc", "--noEmit"]], ["npx", ["tsc", "--noEmit", "--pretty", "false"]], ["npx", ["tsc", "--noEmit", "--pretty", "false", "-p", "tsconfig.json"]], ["npx", ["vitest", "run", "--reporter=json"]]])
+    assert.equal(g.checkCommand(c, a).allowed, true, c + " " + a.join(" "));
 });
 
 test("guard: write rules", () => {
@@ -1247,4 +1272,99 @@ test("security persistence: structured credentials and folded diff hunks stay ou
     const nested = JSON.parse(serialized).iterations[0].nested;
     assert.ok(nested.API_KEY === "[REDACTED]" && nested.count === 1, "unexpected structured projection");
   }
+});
+
+test("reproducer scope: invalid path is corrected before any write, then gated", async () => {
+  const dir = repoC();
+  const guard = createGuard({ root: dir, writeScope: [PROV, "src/lib/ai/understanding/*.agent-repro.test.ts"] });
+  const allowed = "src/lib/ai/understanding/scope.agent-repro.test.ts";
+  const outside = "src/lib/ai/catalog/catalog-unknown-program.agent-repro.test.ts";
+  const content = "import { it, expect } from \"vitest\";\nit(\"fixture\", () => expect(1).toBe(2));\n";
+  let calls = 0;
+  const llm = makeLlm({ guard, focus: true, ask: async (messages) => {
+    ++calls;
+    assert.ok(!existsSync(path.join(dir, outside)) && !existsSync(path.join(dir, allowed)));
+    assert.ok(messages[1].content.includes(guard.writeScope[1]));
+    if (calls === 2) assert.ok(messages.at(-1).content.includes("outside DEV write scope"), "a valid test suffix must still satisfy the Guard write scope");
+    const json = { file: calls === 1 ? outside : allowed, content };
+    return { json, text: JSON.stringify(json) };
+  } });
+  let gated = false;
+  const result = await supervise({ task: "fixture", guard, opts: C,
+    ...brainC({ patches: [fix], reproducer: llm.reproducer }),
+    gate: () => {
+      if (existsSync(path.join(dir, allowed))) gated = true;
+      return gateC(dir, existsSync(path.join(dir, allowed)) ? allowed : undefined)();
+    },
+  });
+  assert.equal(calls, 2);
+  assert.ok(gated && !existsSync(path.join(dir, outside)));
+  assert.equal(result.reproFile, allowed);
+  assert.equal(result.status, "PASS");
+});
+
+test("reproducer validator: rejects named imports that do not exist in the local module", async () => {
+  const dir = repoC({ "src/lib/ai/understanding/llm.ts": 'export function createUnderstandLlm() { return null; }\n' });
+  const guard = createGuard({ root: dir, writeScope: ["src/lib/ai/**/*.agent-repro.test.ts"] });
+  const file = "src/lib/ai/understanding/llm.agent-repro.test.ts";
+  const invalid = 'import { detectProvinceInText } from "./llm";\nimport { it, expect } from "vitest";\nit("rejects an unknown export", () => expect(detectProvinceInText("Udon")).toBeTruthy());\n';
+  const valid = 'import { createUnderstandLlm } from "./llm";\nimport { it, expect } from "vitest";\nit("uses an existing export", () => expect(createUnderstandLlm()).toBeNull());\n';
+  let calls = 0;
+  const llm = makeLlm({ guard, focus: true, ask: async (messages) => {
+    calls++;
+    assert.ok(messages[1].content.includes("named symbol is exported by that module"));
+    assert.ok(!existsSync(path.join(dir, file)), "import preflight must happen before any write");
+    if (calls === 2) assert.ok(messages.at(-1).content.includes("detectProvinceInText is not exported by src/lib/ai/understanding/llm.ts"));
+    const json = { file, content: calls === 1 ? invalid : valid, rationale: "Use an actual local module export." };
+    return { json, text: JSON.stringify(json) };
+  } });
+  const result = await llm.reproducer({ task: "verify local imports", timeLeft: 30_000 });
+  assert.equal(calls, 2);
+  assert.equal(result.file, file);
+  assert.equal(result.content, valid);
+});
+
+test("reproducer scope: no concrete evidence stops without a write or another attempt", async () => {
+  const dir = repoC();
+  const guard = createGuard({ root: dir });
+  let calls = 0;
+  const llm = makeLlm({ guard, focus: true, ask: async () => {
+    ++calls;
+    const json = { outcome: "CANNOT_REPRODUCE", reason: "No concrete failing example was supplied." };
+    return { json, text: JSON.stringify(json) };
+  } });
+  const result = await supervise({ task: "qualification only", guard, opts: C,
+    gate: gateC(dir), reproducer: llm.reproducer,
+    planner: async () => assert.fail("must stop before planning"),
+  });
+  assert.equal(calls, 1);
+  assert.equal(result.status, "BLOCKED");
+  assert.match(result.reason, /^CANNOT_REPRODUCE: No concrete failing example/);
+  assert.equal(result.iterationCount, 0);
+  assert.equal(result.reproFile, null);
+  assert.equal(result.reproduceAttempts.length, 1);
+  assert.equal(result.reproduceAttempts[0].outcome, "CANNOT_REPRODUCE");
+  assert.equal(guard.touched.size, 0);
+  assert.deepEqual(result.filesChanged, []);
+});
+
+test("reproducer validator: requires imports for Vitest globals before a candidate write", async () => {
+  const dir = repoC();
+  const guard = createGuard({ root: dir, writeScope: ["src/lib/ai/**/*.agent-repro.test.ts"] });
+  const unbound = 'describe("fixture", () => { it("checks evidence", () => expect(false).toBe(true)); });';
+  const file = "src/lib/ai/understanding/globals.agent-repro.test.ts";
+  let calls = 0;
+  const llm = makeLlm({ guard, focus: true, ask: async (messages) => {
+    calls++;
+    assert.ok(messages[1].content.includes('import { describe, it, expect } from "vitest"'));
+    assert.ok(!existsSync(path.join(dir, file)));
+    if (calls === 2) assert.ok(messages.at(-1).content.includes("describe, it, expect"));
+    const json = { file, content: calls === 1 ? unbound : 'import { describe, it, expect } from "vitest";\n' + unbound };
+    return { json, text: JSON.stringify(json) };
+  } });
+  const result = await llm.reproducer({ task: "fixture", timeLeft: 30_000 });
+  assert.equal(calls, 2);
+  assert.equal(result.file, file);
+  assert.ok(result.content.startsWith("import "));
+  assert.equal(guard.touched.size, 0);
 });

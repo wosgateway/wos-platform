@@ -1,5 +1,6 @@
 // LLM-backed planner / diagnoser / patcher. The model only proposes; guard + gate decide.
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { redact, inspectText, WITHHELD } from "./sanitize.mjs";
 import { LAYERS } from "./layers.mjs";
 
@@ -72,6 +73,62 @@ export async function askValidated({ system, user, timeLeft, model, validate, as
 
 const PLACEHOLDER = /concrete mechanism|<string>|exact existing text|full content|^path$|^string$|new\/path\.ts/i;
 const isReal = (v, min = 1) => typeof v === "string" && v.trim().length >= min && !PLACEHOLDER.test(v.trim());
+
+
+// Check relative named imports in a proposed reproduction against real repository exports.
+// This is a cheap preflight; the normal typecheck remains authoritative for full TS semantics.
+function validateLocalNamedImports(file, content, guard) {
+  const normalizedFile = String(file);
+  const imports = content.matchAll(/\bimport\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["']([^"']+)["']/g);
+  for (const match of imports) {
+    const specifier = match[2];
+    if (!specifier.startsWith(".")) continue;
+    const rawBase = path.posix.normalize(path.posix.join(path.posix.dirname(normalizedFile), specifier));
+    const withoutRuntimeExt = rawBase.replace(/\.(?:mjs|cjs|js|jsx)$/i, "");
+    const candidates = [...new Set([
+      rawBase, withoutRuntimeExt + ".ts", withoutRuntimeExt + ".tsx", withoutRuntimeExt + ".mts", withoutRuntimeExt + ".cts",
+      withoutRuntimeExt + ".js", withoutRuntimeExt + ".jsx", withoutRuntimeExt + ".mjs", withoutRuntimeExt + ".cjs",
+      ...["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"].map((ext) => withoutRuntimeExt + "/index." + ext),
+    ])];
+    let moduleText = null;
+    let resolved = null;
+    for (const candidate of candidates) {
+      moduleText = guard.read(candidate);
+      if (moduleText !== null) { resolved = candidate; break; }
+    }
+    if (moduleText === null) return "relative import " + specifier + " cannot be resolved to a readable repository source file";
+    // Re-export barrels need full module-graph resolution; leave those to TypeScript's authoritative gate.
+    if (/\bexport\s+(?:\*|\{[^}]*\}\s*from\b)/.test(moduleText)) continue;
+    const exports = new Set([...(moduleText.matchAll(/\bexport\s+(?:declare\s+)?(?:async\s+)?(?:abstract\s+)?(?:function|class|interface|type|enum|const|let|var)\s+([A-Za-z_$][\w$]*)/g))].map((item) => item[1]));
+    if (/\bexport\s+default\b/.test(moduleText)) exports.add("default");
+    for (const list of moduleText.matchAll(/\bexport\s*\{([^}]+)\}/g)) {
+      for (const item of list[1].split(",")) {
+        const parts = item.trim().split(/\s+as\s+/);
+        if (parts[0]) exports.add((parts[1] ?? parts[0]).trim());
+      }
+    }
+    for (const item of match[1].split(",")) {
+      const parts = item.trim().split(/\s+as\s+/);
+      const imported = parts[0]?.replace(/^type\s+/, "").trim();
+      if (imported && !exports.has(imported)) return "named import " + imported + " is not exported by " + resolved;
+    }
+  }
+  return "";
+}
+
+function validateVitestImports(content) {
+  const bindings = new Set();
+  for (const [, imports] of content.matchAll(/\bimport\s+(?:\w+\s*,\s*)?\{([^}]+)\}\s*from\s*["']vitest["']/g)) {
+    for (const entry of imports.split(",")) {
+      const [name, alias] = entry.trim().split(/\s+as\s+/);
+      if (name) bindings.add(alias ?? name);
+    }
+  }
+  const used = new Set([...content.matchAll(/(?<![\w$.])\b(describe|it|test|expect)(?:\s*\.\s*(?:each|skip|only|todo|concurrent|sequential|soft|poll))*\s*\(/g)]
+    .map(([, name]) => name));
+  const missing = [...used].filter((name) => !bindings.has(name));
+  return missing.length ? "Import Vitest helpers explicitly from 'vitest': " + missing.join(", ") : "";
+}
 
 const RULES = [
   "You are the engineering brain of the WOS Overnight Agent working on a Next.js/TypeScript repo.",
@@ -154,12 +211,26 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
       const user = [`Task (a bug report, no failing test exists yet): ${task}`, "",
         ...(example ? ["Example of how tests in this repo are written (vitest):", "```ts", example.split("\n").slice(0, 60).join("\n"), "```", ""] : []),
         ctx(files, termsOf(task, { failures: [] })), "",
-        "Write ONE new vitest test file that asserts the CORRECT expected behaviour described in the task and that FAILS with the current code. Use only pure functions that already exist (no network, no database). Do not weaken or invent behaviour.",
-        'Return one JSON object with keys: file (a NEW path under src/lib/ai/ ending in .agent-repro.test.ts), content (the whole TypeScript file), rationale (string). Use real content, not these descriptions.',
+        "Allowed write scope for reproduction: " + guard.writeScope.join(", "), "",
+        'Import each Vitest helper you use explicitly, for example: import { describe, it, expect } from "vitest". Do not rely on test globals.',
+        "Before proposing a test, confirm that each local import resolves from the proposed test path and that the named symbol is exported by that module. Use existing test imports as examples and check the source for the symbol and signature. If the source context does not confirm the import, do not guess.",
+        "If the provided evidence demonstrates a concrete defect, propose ONE new Vitest test that asserts the correct expected behavior and fails on the current code. Use only existing pure functions (no network or database). Do not invent a defect.",
+        'Return one JSON object with file (a NEW path under src/lib/ai/ ending in .agent-repro.test.ts and matching the allowed write scope), content (the whole TypeScript file), and rationale (string). If there is no concrete failing example, or no valid test path in scope, return {"outcome":"CANNOT_REPRODUCE","reason":"<specific explanation>"} without file or content.',
         feedback ? `\nYour previous test was rejected: ${feedback}` : ""].join("\n");
       return askValidated({ system: SYSTEM, user, timeLeft, model, ask, validate: (j) => {
-        if (!isReal(j.file) || !/^src\/lib\/ai\/.+\.test\.ts$/.test(String(j.file).replace(/\\/g, "/"))) return "file must be a new path under src/lib/ai/ ending in .test.ts";
+        if (j?.outcome === "CANNOT_REPRODUCE") {
+          return isReal(j.reason) && !Object.hasOwn(j, "file") && !Object.hasOwn(j, "content")
+            ? "" : "CANNOT_REPRODUCE requires a specific reason and no file or content";
+        }
+        if (!isReal(j?.file) || !/^src\/lib\/ai\/.+\.agent-repro\.test\.ts$/.test(String(j.file).replace(/\\/g, "/"))) return "file must be a new path under src/lib/ai/ ending in .agent-repro.test.ts";
+        const verdict = guard.checkWrite(j.file, { creating: true });
+        if (!verdict.allowed) return verdict.reason;
+        if (existsSync(verdict.abs)) return "reproduction requires a new test file";
         if (!isReal(j.content, 60) || !/expect\(/.test(j.content) || !/\b(it|test)\(/.test(j.content)) return "content must be a real vitest file with it()/test() and expect()";
+        const vitestProblem = validateVitestImports(j.content);
+        if (vitestProblem) return vitestProblem;
+        const importProblem = validateLocalNamedImports(verdict.rel, j.content, guard);
+        if (importProblem) return importProblem;
         return "";
       } });
     },
