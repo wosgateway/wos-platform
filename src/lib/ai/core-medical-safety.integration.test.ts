@@ -151,7 +151,8 @@ describe('core medical safety integration with isolated imported boundaries', ()
   it.each([
     ['เลือกตรวจเข่า', 'th'],
     ['ສົນໃຈກວດສຸຂະພາບ', 'lo'],
-  ] as const)('uses current English medical request language over prior name-context language: %s', async (anchor, _language) => {
+  ] as const)('uses current English medical request language over prior name-context language: %s', async (anchor, priorLanguage) => {
+    expect(['th', 'lo']).toContain(priorLanguage);
     const history: WosAIHistoryMessage[] = [
       { role: 'user', content: anchor },
       { role: 'assistant', content: 'What name should I use?' },
