@@ -15,6 +15,7 @@ export function normalizeProvinceText(input: string): string {
     .normalize('NFC')
     .toLowerCase()
     .replace(/[\s\u200b-\u200d\ufeff]+/g, '')
+    .replace(/[.!?]+$/u, '')
     .replace(/^(?:จังหวัด|จ\.|ແຂວງ)/u, '')
     .replace(/province$/u, '')
     .replace(/ฯ/g, '')
