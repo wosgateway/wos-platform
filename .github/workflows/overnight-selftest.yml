@@ -1,0 +1,38 @@
+name: Overnight self-test
+
+on:
+  pull_request:
+    branches:
+      - feat/ai-core-v1
+    paths:
+      - 'scripts/overnight/**'
+      - '.github/workflows/overnight-selftest.yml'
+  push:
+    branches:
+      - ai/agent-e2e-observe-20261113
+    paths:
+      - 'scripts/overnight/**'
+      - '.github/workflows/overnight-selftest.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: overnight-selftest-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  selftest:
+    name: Overnight regression tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Run overnight self-tests
+        run: node --test scripts/overnight/overnight.selftest.mjs
