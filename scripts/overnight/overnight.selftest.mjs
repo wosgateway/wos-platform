@@ -238,6 +238,32 @@ test("llm: schema-echo is rejected and the model is asked again with feedback", 
   await assert.rejects(badPatch.patcher({ task: "t", plan: {}, diagnosis: { diagnosis: "x" }, gate: { failures: [] }, history: [], timeLeft: 60000 }), /placeholder/);
 });
 
+test("llm: contract planner retries malformed diagnosis objects with an explicit evidence-array example", async () => {
+  const dir = repoC(); const guard = createGuard({ root: dir }); const prompts = [];
+  const malformed = {
+    rootCause: "normalizeProvince trims whitespace but does not remove trailing punctuation from the province value",
+    filesToInspect: { file: PROV, symbol: "normalizeProvince" },
+    proposedChanges: { change: "strip punctuation" },
+    confidence: 0.9,
+    layers: ["understanding"],
+  };
+  const valid = {
+    rootCause: "normalizeProvince trims whitespace but does not remove trailing punctuation from the province value",
+    filesToInspect: [PROV], proposedChanges: ["strip trailing punctuation"], confidence: 0.9,
+    layers: ["understanding"], evidence: [{ file: PROV, symbol: "normalizeProvince" }],
+  };
+  const llm = makeLlm({ guard, contract: true, ask: async (messages) => {
+    prompts.push(messages.map((m) => m.content ?? "").join("\n"));
+    const j = prompts.length === 1 ? malformed : valid;
+    return { text: JSON.stringify(j), json: structuredClone(j) };
+  } });
+  const result = await llm.planner({ task: "fix province punctuation", baseline: { failures: ["repro test fails"] }, timeLeft: 60000 });
+  assert.equal(prompts.length, 2);
+  assert.match(prompts[0], /evidence.*array of objects/i);
+  assert.match(prompts[1], /evidence.*array of objects/i);
+  assert.match(prompts[1], /INVALID: evidence must be an array of \{file, symbol\}/i);
+  assert.deepEqual(result.evidence, [{ file: PROV, symbol: "normalizeProvince" }]);
+});
 test("llm: transient gateway errors (Cloudflare 524) are retried with backoff, real errors are not", async () => {
   const { withRetry, isRetryable } = await import("./llm.mjs");
   const waits = []; let n = 0;
