@@ -28,28 +28,84 @@ export const SECRET_IN_TEXT = /(SERVICE_ROLE_KEY|ACCESS_TOKEN|API_KEY|TELEGRAM_B
 
 // Subprocesses receive only the runtime variables required by their command profile.
 // Application credentials, NODE_OPTIONS and tool-specific configuration are not inherited.
+// PATH is rebuilt from trusted runtime/system locations; untrusted PATH entries are never forwarded.
 const BASE_PROCESS_ENV = new Set(["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR"]);
-const SHELL_PROCESS_ENV = new Set(["PATHEXT", "COMSPEC"]);
 const GIT_PROCESS_ENV = new Set(["HOME", "USERPROFILE"]);
 const WINDOWS_HOME_ENV = new Set(["HOMEDRIVE", "HOMEPATH", "USERPROFILE"]);
 const WINDOWS_IMPLICIT_ENV = new Set(["HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "SYSTEMDRIVE", "USERDOMAIN", "USERNAME", "USERPROFILE"]);
 
-function commandEnvironment(command) {
+function realFileInside(file, parent) {
+  try {
+    const realFile = realpathSync(file);
+    const realParent = realpathSync(parent).replace(/[\\\\/]+$/, "");
+    return realFile.toLowerCase().startsWith((realParent + path.sep).toLowerCase()) ? realFile : null;
+  } catch { return null; }
+}
+
+function trustedCommand(command, { platform }) {
+  const bin = path.basename(String(command)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
+  if (bin === "node") {
+    try { return realpathSync(process.execPath); } catch { return null; }
+  }
+  if (platform === "win32") {
+    const nodeDir = path.dirname(process.execPath);
+    if (bin === "npm" || bin === "npx") {
+      const npmRoot = path.join(nodeDir, "node_modules", "npm");
+      const npmCli = path.join(npmRoot, "bin", `${bin}-cli.js`);
+      return realFileInside(npmCli, npmRoot) ? process.execPath : null;
+    }
+    if (bin === "cmd") {
+      const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\Windows";
+      const candidate = path.join(systemRoot, "System32", "cmd.exe");
+      return realFileInside(candidate, path.join(systemRoot, "System32"));
+    }
+    if (bin === "git") {
+      for (const base of ["C:\\Program Files", "C:\\Program Files (x86)"]) {
+        const gitRoot = path.join(base, "Git");
+        const trusted = realFileInside(path.join(gitRoot, "cmd", "git.exe"), gitRoot);
+        if (trusted && path.basename(trusted).toLowerCase() === "git.exe") return trusted;
+      }
+      return null;
+    }
+    return null;
+  }
+  const candidates = bin === "git" ? ["/usr/bin/git", "/bin/git"] :
+    bin === "npm" ? ["/usr/bin/npm", "/usr/local/bin/npm"] :
+    bin === "npx" ? ["/usr/bin/npx", "/usr/local/bin/npx"] : [];
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+function trustedPath({ platform }) {
+  const nodeDir = path.dirname(process.execPath);
+  const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\Windows";
+  const gitExe = trustedCommand("git", { platform });
+  const candidates = platform === "win32"
+    ? [nodeDir, ...(gitExe ? [path.dirname(gitExe)] : []), path.join(systemRoot, "System32"), systemRoot]
+    : [nodeDir, "/usr/local/bin", "/usr/bin", "/bin"];
+  return [...new Set(candidates.filter((candidate) => existsSync(candidate)))].join(path.delimiter);
+}
+
+function commandEnvironment(command, { platform, env: sourceEnv }) {
   const bin = path.basename(String(command)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
   const allowed = new Set(BASE_PROCESS_ENV);
   if (bin === "npx" || bin === "npm") {
-    for (const name of SHELL_PROCESS_ENV) allowed.add(name);
-    if (process.platform === "win32") for (const name of WINDOWS_HOME_ENV) allowed.add(name);
+    if (platform === "win32") for (const name of WINDOWS_HOME_ENV) allowed.add(name);
   }
   if (bin === "git") for (const name of GIT_PROCESS_ENV) allowed.add(name);
   const env = Object.create(null);
-  for (const [name, value] of Object.entries(process.env)) {
+  for (const [name, value] of Object.entries(sourceEnv)) {
     const key = name.toUpperCase();
-    if (allowed.has(key)) env[key] = value;
+    if (allowed.has(key) && key !== "PATH") env[key] = value;
+  }
+  env.PATH = trustedPath({ platform });
+  if (platform === "win32" && (bin === "npm" || bin === "npx")) {
+    const trustedCmd = trustedCommand("cmd", { platform });
+    if (trustedCmd) env.COMSPEC = trustedCmd;
+    env.PATHEXT = ".COM;.EXE;.BAT;.CMD";
   }
   // libuv/Windows may synthesize these identity variables even when omitted from env.
   // Pass explicit empty values so the child cannot recover the parent user identity.
-  if (process.platform === "win32") {
+  if (platform === "win32") {
     for (const name of WINDOWS_IMPLICIT_ENV) {
       if (!allowed.has(name)) env[name] = "";
     }
@@ -108,6 +164,9 @@ export function createGuard({
   regressionFile = "ai-regression-test.mjs",
   npmScripts = [],
   maxFiles = 12,
+  env = process.env,
+  platform = process.platform,
+  spawnSyncImpl = spawnSync,
 } = {}) {
   const ROOT = realpathSync(root);
   const scope = writeScope.map(globToRegex);
@@ -193,12 +252,21 @@ export function createGuard({
   function exec(cmd, args = [], { timeoutMs = 600_000, input } = {}) {
     const verdict = checkCommand(cmd, args);
     if (!verdict.allowed) return { ok: false, denied: true, status: null, stdout: "", stderr: verdict.reason, output: `DENIED: ${verdict.reason}`, timedOut: false };
-    const bin = path.basename(cmd).toLowerCase();
-    let exe = cmd, exeArgs = args;
-    if (process.platform === "win32" && (bin === "npx" || bin === "npm")) {
-      exe = "cmd.exe"; exeArgs = ["/d", "/s", "/c", `${bin}.cmd ${args.join(" ")}`];
+    const bin = path.basename(String(cmd)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
+    let exe = trustedCommand(bin, { platform });
+    let exeArgs = args;
+    if (platform === "win32" && (bin === "npx" || bin === "npm")) {
+      const npmRoot = path.join(path.dirname(process.execPath), "node_modules", "npm");
+      const npmCli = realFileInside(path.join(npmRoot, "bin", `${bin}-cli.js`), npmRoot);
+      if (!npmCli) exe = null;
+      else { exe = process.execPath; exeArgs = [npmCli, ...args]; }
     }
-    const r = spawnSync(exe, exeArgs, { cwd: ROOT, encoding: "utf8", timeout: Math.max(1000, timeoutMs), maxBuffer: 64 * 1024 * 1024, input, windowsHide: true, env: commandEnvironment(bin) });
+    if (!exe) {
+      const reason = "trusted executable for " + bin + " was not found; refusing PATH-based lookup";
+      deny("command", [cmd, ...args].join(" "), reason);
+      return { ok: false, denied: true, status: null, stdout: "", stderr: reason, output: `DENIED: ${reason}`, timedOut: false };
+    }
+    const r = spawnSyncImpl(exe, exeArgs, { cwd: ROOT, encoding: "utf8", timeout: Math.max(1000, timeoutMs), maxBuffer: 64 * 1024 * 1024, input, windowsHide: true, env: commandEnvironment(bin, { platform, env }) });
     const timedOut = r.error?.code === "ETIMEDOUT" || r.signal === "SIGTERM";
     const stdout = r.stdout ?? "", stderr = r.stderr ?? "";
     return { ok: r.status === 0 && !timedOut, denied: false, status: r.status, stdout, stderr, output: scrub(`${stdout}\n${stderr}`.trim()), timedOut, error: r.error?.message };

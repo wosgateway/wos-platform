@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import assert from "node:assert/strict";
 import { askValidated as auditAskValidated, makeLlm } from "./llm.mjs";
 import { inspectText, isSafePatch, safeJson, WITHHELD } from "./sanitize.mjs";
-import { publishRun } from "./cli.mjs";
+import { makeBudgetedClaudeAsk, parseClaudeBudget, publishRun } from "./cli.mjs";
 import { isDeepStrictEqual } from "node:util";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from "node:fs";
@@ -22,6 +22,44 @@ function repo(files = {}) {
   sh("add", "-A"); sh("commit", "-qm", "init");
   return dir;
 }
+
+test("cli: Claude cost cap must be finite and positive", () => {
+  assert.equal(parseClaudeBudget(undefined), null);
+  assert.equal(parseClaudeBudget(""), null);
+  assert.equal(parseClaudeBudget("0"), null);
+  assert.equal(parseClaudeBudget("-0.1"), null);
+  assert.equal(parseClaudeBudget("Infinity"), null);
+  assert.equal(parseClaudeBudget("not-a-number"), null);
+  assert.equal(parseClaudeBudget("0.75"), 0.75);
+});
+
+test("cli: Claude total-run budget decreases per call and blocks further calls when exhausted", async () => {
+  const budgets = [];
+  const ask = makeBudgetedClaudeAsk({
+    maxBudgetUsd: 1,
+    makeClaudeAsk: ({ maxBudgetUsd }) => {
+      budgets.push(maxBudgetUsd);
+      return async () => ({ text: "ok", json: { ok: true }, meta: { costUsd: 0.5 } });
+    },
+  });
+  await ask([], 1000);
+  await ask([], 1000);
+  assert.deepEqual(budgets, [1, 0.5]);
+  await assert.rejects(ask([], 1000), /CLAUDE_BUDGET_EXHAUSTED/);
+});
+
+test("cli: Claude budget refuses unknown or over-limit provider cost metadata", async () => {
+  const unknown = makeBudgetedClaudeAsk({
+    maxBudgetUsd: 1,
+    makeClaudeAsk: () => async () => ({ text: "ok", json: {}, meta: {} }),
+  });
+  await assert.rejects(unknown([], 1000), /CLAUDE_COST_UNKNOWN/);
+  const over = makeBudgetedClaudeAsk({
+    maxBudgetUsd: 0.25,
+    makeClaudeAsk: () => async () => ({ text: "ok", json: {}, meta: { costUsd: 0.3 } }),
+  });
+  await assert.rejects(over([], 1000), /CLAUDE_BUDGET_EXCEEDED/);
+});
 
 test("guard: forbidden commands are denied", () => {
   const g = createGuard({ root: repo() });
@@ -44,6 +82,8 @@ test("guard: subprocesses receive profile-scoped environment without leaking app
     NODE_OPTIONS: "--require=must-not-load",
     npm_config_userconfig: "fixture-npm-config",
     GIT_CONFIG_COUNT: "1",
+    COMSPEC: "C:\\attacker\\evil.exe",
+    PATHEXT: ".EVIL",
   };
   const previous = new Map(Object.keys(injected).map((key) => [key, process.env[key]]));
   try {
@@ -55,6 +95,8 @@ test("guard: subprocesses receive profile-scoped environment without leaking app
     const keys = new Set(Object.keys(childEnv).map((key) => key.toUpperCase()));
     for (const key of Object.keys(injected)) {
       if (key.toLowerCase() === "npm_config_userconfig") assert.notEqual(childEnv[key], injected[key], key + " fixture value leaked to npm child");
+      else if (process.platform === "win32" && key === "COMSPEC") assert.equal(childEnv.COMSPEC.toLowerCase(), path.join(process.env.SystemRoot || "C:\\Windows", "System32", "cmd.exe").toLowerCase(), "COMSPEC must resolve to the trusted Windows command processor");
+      else if (process.platform === "win32" && key === "PATHEXT") assert.equal(childEnv.PATHEXT, ".COM;.EXE;.BAT;.CMD", "PATHEXT must use the fixed safe extension list");
       else assert.equal(keys.has(key.toUpperCase()), false, key + " leaked to npm child");
     }
     assert.equal(child.path, true, "PATH remains available for trusted runtime resolution");
@@ -74,6 +116,28 @@ test("guard: subprocesses receive profile-scoped environment without leaking app
     }
   }
 });
+test("guard: PATH lookup ignores injected directories and uses a trusted absolute executable", () => {
+  const dir = repo();
+  const attackerPath = path.join(dir, "attacker-bin");
+  mkdirSync(attackerPath, { recursive: true });
+  const env = { ...process.env, PATH: [attackerPath, process.env.PATH ?? ""].join(path.delimiter) };
+  let captured;
+  const g = createGuard({
+    root: dir,
+    env,
+    spawnSyncImpl: (exe, args, options) => {
+      captured = { exe, args, options };
+      return { status: 0, stdout: "ok", stderr: "" };
+    },
+  });
+  const result = g.exec("git", ["status", "--short"]);
+  assert.equal(result.ok, true);
+  assert.ok(path.isAbsolute(captured.exe), captured.exe);
+  assert.ok(!captured.options.env.PATH.split(path.delimiter).includes(attackerPath), captured.options.env.PATH);
+  assert.ok(!captured.exe.toLowerCase().startsWith(attackerPath.toLowerCase()), captured.exe);
+  assert.equal(path.basename(captured.exe).toLowerCase(), process.platform === "win32" ? "git.exe" : "git");
+});
+
 test("guard: gate commands and read-only git are allowed", () => {
   const g = createGuard({ root: repo() });
   for (const [c, a] of [["git", ["status", "--short"]], ["git", ["diff", "--check"]], ["git", ["rev-parse", "HEAD"]], ["git", ["branch", "--show-current"]], ["git", ["diff", "--cached", "--name-only"]],

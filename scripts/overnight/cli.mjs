@@ -6,11 +6,33 @@ import { createGuard, DEFAULT_WRITE_SCOPE, parseDuration } from "./guard.mjs";
 import { runGate } from "./gate.mjs";
 import { supervise, formatReport, DEFAULTS } from "./supervisor.mjs";
 
-const VALUE_FLAGS = new Set(["--task", "--task-file", "--max-iterations", "--timeout", "--failure-limit", "--no-improve-limit", "--scope", "--file", "--base-url", "--model", "--provider", "--max-context-kb", "--max-files", "--max-lines"]);
+const VALUE_FLAGS = new Set(["--task", "--task-file", "--max-iterations", "--timeout", "--failure-limit", "--no-improve-limit", "--scope", "--file", "--base-url", "--model", "--provider", "--max-context-kb", "--max-files", "--max-lines", "--max-budget-usd"]);
 const PROFILES = {
   agent: { name: "ai:agent", maxIterations: 4, timeout: "45m", maxContextKb: 24 },
   overnight: { name: "ai:overnight", maxIterations: DEFAULTS.maxIterations, timeout: "6h", maxContextKb: 60 },
 };
+
+export function parseClaudeBudget(value) {
+  if (value == null || String(value).trim() === "") return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+export function makeBudgetedClaudeAsk({ makeClaudeAsk, maxBudgetUsd }) {
+  const cap = parseClaudeBudget(maxBudgetUsd);
+  if (cap === null || typeof makeClaudeAsk !== "function") throw new TypeError("a positive Claude budget and ask factory are required");
+  let spentUsd = 0;
+  return async (...args) => {
+    const remainingUsd = cap - spentUsd;
+    if (remainingUsd <= 0) throw new Error("CLAUDE_BUDGET_EXHAUSTED: total run budget has been used");
+    const result = await makeClaudeAsk({ maxBudgetUsd: remainingUsd })(...args);
+    const costUsd = result?.meta?.costUsd;
+    if (!Number.isFinite(costUsd) || costUsd < 0) throw new Error("CLAUDE_COST_UNKNOWN: refusing another call without valid provider cost metadata");
+    if (costUsd > remainingUsd + 1e-9) throw new Error("CLAUDE_BUDGET_EXCEEDED: provider-reported cost exceeded the remaining run budget");
+    spentUsd += costUsd;
+    return result;
+  };
+}
 
 export async function main(argv, profileName = "agent") {
   try { return await run(argv, profileName); }
@@ -39,6 +61,7 @@ async function run(argv, profileName) {
   --max-context-kb <n>   cap on source sent per model call (default ${P.maxContextKb})
   --model <name>         LiteLLM model (default: WOS_AI_AGENT_MODEL / LITELLM_MODEL)
   --provider <name>      LLM provider: litellm or claude (default: WOS_AI_AGENT_PROVIDER / litellm)
+  --max-budget-usd <usd>  required positive total-run Claude budget (or WOS_CLAUDE_MAX_BUDGET_USD)
   --base-url <url>       dev server for ai-regression-test.mjs
   --build                also require 'npm run build' to pass
   --skip-regression      do not require ai-regression-test.mjs (reported as skipped, never as passed)
@@ -66,9 +89,24 @@ async function run(argv, profileName) {
     console.error("Unsupported AI agent provider. Use litellm or claude.");
     return 1;
   }
-  const ask = provider === "claude"
-    ? (await import("./claude-exec.mjs")).makeClaudeAsk()
-    : undefined;
+  const maxBudgetUsd = parseClaudeBudget(val("--max-budget-usd", process.env.WOS_CLAUDE_MAX_BUDGET_USD));
+  if (provider === "claude" && maxBudgetUsd === null) {
+    console.error("Claude provider requires a positive --max-budget-usd or WOS_CLAUDE_MAX_BUDGET_USD. Refusing to start without a cost cap.");
+    return 1;
+  }
+  let ask;
+  if (provider === "claude") {
+    const claude = await import("./claude-exec.mjs");
+    const executable = claude.discoverClaudeExecutable();
+    ask = makeBudgetedClaudeAsk({
+      maxBudgetUsd,
+      makeClaudeAsk: (options) => claude.makeClaudeAsk({
+        ...options,
+        executable: executable.command ?? executable.path,
+        prefixArgs: executable.prefixArgs ?? [],
+      }),
+    });
+  }
   const llm = makeLlm({ guard, extraFiles: all("--file"), model: val("--model"), ask, focus: flag("--focus"), maxContextKb: Number(val("--max-context-kb", P.maxContextKb)), contract });
   const artifactsDir = path.resolve(".overnight", new Date().toISOString().replace(/[:.]/g, "-"));
   mkdirSync(artifactsDir, { recursive: true });
