@@ -6,6 +6,7 @@
 import { spawnSync } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { inspectText, redact } from "./sanitize.mjs";
 
 export const DEFAULT_WRITE_SCOPE = ["src/lib/ai/**"];
 const WRITE_EXT = /\.(?:ts|tsx|js|mjs|cjs|json|md)$/i;
@@ -24,6 +25,93 @@ const PROTECTED_PATH = [
 ];
 const TEST_FILE = /(\.test\.|\.spec\.|(^|\/)ai-regression-test\.mjs$)/i;
 export const SECRET_IN_TEXT = /(SERVICE_ROLE_KEY|ACCESS_TOKEN|API_KEY|TELEGRAM_BOT_TOKEN|NOTION_TOKEN|SECRET)\s*[=:]\s*['"]?[A-Za-z0-9_\-./+]{12,}|sk-[A-Za-z0-9]{20,}|eyJ[A-Za-z0-9_-]{30,}\.[A-Za-z0-9_-]{10,}/;
+
+// Subprocesses receive only the runtime variables required by their command profile.
+// Application credentials, NODE_OPTIONS and tool-specific configuration are not inherited.
+// PATH is rebuilt from trusted runtime/system locations; untrusted PATH entries are never forwarded.
+const BASE_PROCESS_ENV = new Set(["PATH", "SYSTEMROOT", "WINDIR", "TEMP", "TMP", "TMPDIR"]);
+const GIT_PROCESS_ENV = new Set(["HOME", "USERPROFILE"]);
+const WINDOWS_HOME_ENV = new Set(["HOMEDRIVE", "HOMEPATH", "USERPROFILE"]);
+const WINDOWS_IMPLICIT_ENV = new Set(["HOMEDRIVE", "HOMEPATH", "LOGONSERVER", "SYSTEMDRIVE", "USERDOMAIN", "USERNAME", "USERPROFILE"]);
+
+function realFileInside(file, parent) {
+  try {
+    const realFile = realpathSync(file);
+    const realParent = realpathSync(parent).replace(/[\\\\/]+$/, "");
+    return realFile.toLowerCase().startsWith((realParent + path.sep).toLowerCase()) ? realFile : null;
+  } catch { return null; }
+}
+
+function trustedCommand(command, { platform }) {
+  const bin = path.basename(String(command)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
+  if (bin === "node") {
+    try { return realpathSync(process.execPath); } catch { return null; }
+  }
+  if (platform === "win32") {
+    const nodeDir = path.dirname(process.execPath);
+    if (bin === "npm" || bin === "npx") {
+      const npmRoot = path.join(nodeDir, "node_modules", "npm");
+      const npmCli = path.join(npmRoot, "bin", `${bin}-cli.js`);
+      return realFileInside(npmCli, npmRoot) ? process.execPath : null;
+    }
+    if (bin === "cmd") {
+      const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\Windows";
+      const candidate = path.join(systemRoot, "System32", "cmd.exe");
+      return realFileInside(candidate, path.join(systemRoot, "System32"));
+    }
+    if (bin === "git") {
+      for (const base of ["C:\\Program Files", "C:\\Program Files (x86)"]) {
+        const gitRoot = path.join(base, "Git");
+        const trusted = realFileInside(path.join(gitRoot, "cmd", "git.exe"), gitRoot);
+        if (trusted && path.basename(trusted).toLowerCase() === "git.exe") return trusted;
+      }
+      return null;
+    }
+    return null;
+  }
+  const candidates = bin === "git" ? ["/usr/bin/git", "/bin/git"] :
+    bin === "npm" ? ["/usr/bin/npm", "/usr/local/bin/npm"] :
+    bin === "npx" ? ["/usr/bin/npx", "/usr/local/bin/npx"] : [];
+  return candidates.find((candidate) => existsSync(candidate)) ?? null;
+}
+
+function trustedPath({ platform }) {
+  const nodeDir = path.dirname(process.execPath);
+  const systemRoot = process.env.SystemRoot || process.env.SYSTEMROOT || "C:\\Windows";
+  const gitExe = trustedCommand("git", { platform });
+  const candidates = platform === "win32"
+    ? [nodeDir, ...(gitExe ? [path.dirname(gitExe)] : []), path.join(systemRoot, "System32"), systemRoot]
+    : [nodeDir, "/usr/local/bin", "/usr/bin", "/bin"];
+  return [...new Set(candidates.filter((candidate) => existsSync(candidate)))].join(path.delimiter);
+}
+
+function commandEnvironment(command, { platform, env: sourceEnv }) {
+  const bin = path.basename(String(command)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
+  const allowed = new Set(BASE_PROCESS_ENV);
+  if (bin === "npx" || bin === "npm") {
+    if (platform === "win32") for (const name of WINDOWS_HOME_ENV) allowed.add(name);
+  }
+  if (bin === "git") for (const name of GIT_PROCESS_ENV) allowed.add(name);
+  const env = Object.create(null);
+  for (const [name, value] of Object.entries(sourceEnv)) {
+    const key = name.toUpperCase();
+    if (allowed.has(key) && key !== "PATH") env[key] = value;
+  }
+  env.PATH = trustedPath({ platform });
+  if (platform === "win32" && (bin === "npm" || bin === "npx")) {
+    const trustedCmd = trustedCommand("cmd", { platform });
+    if (trustedCmd) env.COMSPEC = trustedCmd;
+    env.PATHEXT = ".COM;.EXE;.BAT;.CMD";
+  }
+  // libuv/Windows may synthesize these identity variables even when omitted from env.
+  // Pass explicit empty values so the child cannot recover the parent user identity.
+  if (platform === "win32") {
+    for (const name of WINDOWS_IMPLICIT_ENV) {
+      if (!allowed.has(name)) env[name] = "";
+    }
+  }
+  return env;
+}
 
 const DENY_BIN = new Set([
   "vercel", "curl", "wget", "rm", "rmdir", "del", "mv", "cp", "sh", "bash", "zsh", "cmd", "cmd.exe", "powershell", "powershell.exe",
@@ -76,6 +164,9 @@ export function createGuard({
   regressionFile = "ai-regression-test.mjs",
   npmScripts = [],
   maxFiles = 12,
+  env = process.env,
+  platform = process.platform,
+  spawnSyncImpl = spawnSync,
 } = {}) {
   const ROOT = realpathSync(root);
   const scope = writeScope.map(globToRegex);
@@ -84,7 +175,7 @@ export function createGuard({
   const nodeScripts = new Set([regressionFile, "scripts/wos-ai-agent-repo.mjs", "scripts/telegram-notify.mjs", "scripts/resolve-ai-test-url.mjs"].map((p) => p.replace(/\\/g, "/")));
 
   const deny = (kind, detail, reason) => {
-    violations.push({ kind, detail: scrub(detail), reason });
+    violations.push({ kind, detail: redact(scrub(detail)), reason });
     return { allowed: false, reason };
   };
 
@@ -104,16 +195,30 @@ export function createGuard({
       if (args.some((a) => /^--output|^--ext-diff|^-o$/.test(a))) return deny("git", line, "git output redirection is not allowed");
       return { allowed: true };
     }
+    if (bin === "npx" || bin === "npm") {
+      // Windows executes npm.cmd/npx.cmd through cmd.exe /c. Reject shell syntax,
+      // quotes, whitespace and expansion characters before constructing that command line.
+      // Keep these profiles deliberately narrow: every argument must be one safe token.
+      if (args.some((a) => typeof a !== "string" || /[\x00-\x20\"'&|<>^()%!;]/.test(a))) {
+        return deny("command", line, "npm/npx arguments contain unsafe Windows shell syntax");
+      }
+    }
     if (bin === "npx") {
       const tool = args[0];
-      if (tool === "tsc" && args.includes("--noEmit")) return { allowed: true };
-      if (tool === "vitest" && args[1] === "run" && !args.some((a) => /^(-u|--update)/.test(a))) return { allowed: true };
-      return deny("command", line, "npx is limited to 'tsc --noEmit' and 'vitest run' (no snapshot updates)");
+      if (tool === "tsc") {
+        const basic = args.length === 2 && args[1] === "--noEmit";
+        const formatted = args.length === 4 && args[1] === "--noEmit" && args[2] === "--pretty" && args[3] === "false";
+        const project = args.length === 6 && args[1] === "--noEmit" && args[2] === "--pretty" && args[3] === "false" && args[4] === "-p" && /^[A-Za-z0-9_./\\-]+$/.test(args[5]) && !args[5].startsWith("-");
+        if (basic || formatted || project) return { allowed: true };
+      }
+      if (tool === "vitest" && args.length === 3 && args[1] === "run" && args[2] === "--reporter=json") return { allowed: true };
+      return deny("command", line, "npx is limited to the approved tsc --noEmit and vitest JSON test profiles");
     }
     if (bin === "npm") {
-      if (args[0] === "run" && npmScripts.includes(args[1])) return { allowed: true };
-      return deny("command", line, "npm is limited to explicitly allowlisted 'npm run <script>'");
+      if (args.length === 2 && args[0] === "run" && npmScripts.includes(args[1])) return { allowed: true };
+      return deny("command", line, "npm is limited to an exact allowlisted 'npm run <script>' command");
     }
+
     if (bin === "node") {
       const script = path.posix.normalize(String(args[0] ?? "").replace(/\\/g, "/").replace(/^\.\//, ""));
       if (nodeScripts.has(script)) return { allowed: true };
@@ -147,12 +252,21 @@ export function createGuard({
   function exec(cmd, args = [], { timeoutMs = 600_000, input } = {}) {
     const verdict = checkCommand(cmd, args);
     if (!verdict.allowed) return { ok: false, denied: true, status: null, stdout: "", stderr: verdict.reason, output: `DENIED: ${verdict.reason}`, timedOut: false };
-    const bin = path.basename(cmd).toLowerCase();
-    let exe = cmd, exeArgs = args;
-    if (process.platform === "win32" && (bin === "npx" || bin === "npm")) {
-      exe = "cmd.exe"; exeArgs = ["/d", "/s", "/c", `${bin}.cmd ${args.join(" ")}`];
+    const bin = path.basename(String(cmd)).toLowerCase().replace(/\.(?:cmd|exe)$/, "");
+    let exe = trustedCommand(bin, { platform });
+    let exeArgs = args;
+    if (platform === "win32" && (bin === "npx" || bin === "npm")) {
+      const npmRoot = path.join(path.dirname(process.execPath), "node_modules", "npm");
+      const npmCli = realFileInside(path.join(npmRoot, "bin", `${bin}-cli.js`), npmRoot);
+      if (!npmCli) exe = null;
+      else { exe = process.execPath; exeArgs = [npmCli, ...args]; }
     }
-    const r = spawnSync(exe, exeArgs, { cwd: ROOT, encoding: "utf8", timeout: Math.max(1000, timeoutMs), maxBuffer: 64 * 1024 * 1024, input, windowsHide: true });
+    if (!exe) {
+      const reason = "trusted executable for " + bin + " was not found; refusing PATH-based lookup";
+      deny("command", [cmd, ...args].join(" "), reason);
+      return { ok: false, denied: true, status: null, stdout: "", stderr: reason, output: `DENIED: ${reason}`, timedOut: false };
+    }
+    const r = spawnSyncImpl(exe, exeArgs, { cwd: ROOT, encoding: "utf8", timeout: Math.max(1000, timeoutMs), maxBuffer: 64 * 1024 * 1024, input, windowsHide: true, env: commandEnvironment(bin, { platform, env }) });
     const timedOut = r.error?.code === "ETIMEDOUT" || r.signal === "SIGTERM";
     const stdout = r.stdout ?? "", stderr = r.stderr ?? "";
     return { ok: r.status === 0 && !timedOut, denied: false, status: r.status, stdout, stderr, output: scrub(`${stdout}\n${stderr}`.trim()), timedOut, error: r.error?.message };
@@ -178,7 +292,7 @@ export function createGuard({
       const creating = e.create === true;
       const v = checkWrite(e.file, { creating: creating && !existsSync(path.resolve(ROOT, normalizeRel(e.file))) });
       if (!v.allowed) throw new Error(`guard: ${v.reason} (${e.file})`);
-      if (SECRET_IN_TEXT.test(e.new)) { deny("write", e.file, "secret-looking content in new text"); throw new Error(`guard: secret-looking content in edit for ${e.file}`); }
+      if (!inspectText(e.file).safe || SECRET_IN_TEXT.test(e.new) || !inspectText(e.new).safe) { deny("write", e.file, "secret-looking content in new text"); throw new Error(`guard: secret-looking content in edit for ${e.file}`); }
       let cur = staged.get(v.rel);
       if (!cur) {
         const exists = existsSync(v.abs);
@@ -195,6 +309,10 @@ export function createGuard({
       cur.after = cur.after.replace(e.old, () => e.new);
     }
     for (const [rel, s] of staged) {
+      if (!inspectText(rel).safe || !inspectText(s.after).safe) {
+        deny("write", rel, "secret-looking content in resulting file");
+        throw new Error("guard: secret-looking content in resulting file");
+      }
       if (Buffer.byteLength(s.after) > MAX_FILE_BYTES) throw new Error(`file too large after edit: ${rel}`);
     }
     for (const [rel, s] of staged) {

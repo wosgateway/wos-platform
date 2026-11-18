@@ -1,6 +1,7 @@
 // LLM-backed planner / diagnoser / patcher. The model only proposes; guard + gate decide.
-import { readFileSync } from "node:fs";
-import { scrub } from "./guard.mjs";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { redact, inspectText, WITHHELD } from "./sanitize.mjs";
 import { LAYERS } from "./layers.mjs";
 
 const CONTRACT = (() => { try { return readFileSync(new URL("./contract.md", import.meta.url), "utf8"); } catch { return ""; } })();
@@ -56,11 +57,15 @@ export async function askValidated({ system, user, timeLeft, model, validate, as
   let messages = [{ role: "system", content: system }, { role: "user", content: user }];
   let lastProblem = "";
   for (let i = 0; i < attempts; i++) {
-    const { text, json } = await ask(messages, timeLeft, model);
+    const { text, json } = await ask(messages.map(({ role, content }) => {
+      const checked = inspectText(content);
+      if (checked.text === WITHHELD) throw new Error(WITHHELD);
+      return { role, content: checked.text };
+    }), timeLeft, model);
     const problem = validate(json);
     if (!problem) return json;
-    lastProblem = `${problem}. Model returned: ${scrub(text).slice(0, 400)}`;
-    messages = [...messages, { role: "assistant", content: text },
+    lastProblem = `${problem}. Model returned: ${redact(text).slice(0, 400)}`;
+    messages = [...messages, { role: "assistant", content: redact(text) },
       { role: "user", content: `INVALID: ${problem}. You returned the schema description or placeholder text instead of real content. Answer again with REAL values derived from the source files above, as one JSON object.` }];
   }
   throw new Error(lastProblem);
@@ -68,6 +73,62 @@ export async function askValidated({ system, user, timeLeft, model, validate, as
 
 const PLACEHOLDER = /concrete mechanism|<string>|exact existing text|full content|^path$|^string$|new\/path\.ts/i;
 const isReal = (v, min = 1) => typeof v === "string" && v.trim().length >= min && !PLACEHOLDER.test(v.trim());
+
+
+// Check relative named imports in a proposed reproduction against real repository exports.
+// This is a cheap preflight; the normal typecheck remains authoritative for full TS semantics.
+function validateLocalNamedImports(file, content, guard) {
+  const normalizedFile = String(file);
+  const imports = content.matchAll(/\bimport\s+(?:type\s+)?\{([^}]+)\}\s+from\s+["']([^"']+)["']/g);
+  for (const match of imports) {
+    const specifier = match[2];
+    if (!specifier.startsWith(".")) continue;
+    const rawBase = path.posix.normalize(path.posix.join(path.posix.dirname(normalizedFile), specifier));
+    const withoutRuntimeExt = rawBase.replace(/\.(?:mjs|cjs|js|jsx)$/i, "");
+    const candidates = [...new Set([
+      rawBase, withoutRuntimeExt + ".ts", withoutRuntimeExt + ".tsx", withoutRuntimeExt + ".mts", withoutRuntimeExt + ".cts",
+      withoutRuntimeExt + ".js", withoutRuntimeExt + ".jsx", withoutRuntimeExt + ".mjs", withoutRuntimeExt + ".cjs",
+      ...["ts", "tsx", "mts", "cts", "js", "jsx", "mjs", "cjs"].map((ext) => withoutRuntimeExt + "/index." + ext),
+    ])];
+    let moduleText = null;
+    let resolved = null;
+    for (const candidate of candidates) {
+      moduleText = guard.read(candidate);
+      if (moduleText !== null) { resolved = candidate; break; }
+    }
+    if (moduleText === null) return "relative import " + specifier + " cannot be resolved to a readable repository source file";
+    // Re-export barrels need full module-graph resolution; leave those to TypeScript's authoritative gate.
+    if (/\bexport\s+(?:\*|\{[^}]*\}\s*from\b)/.test(moduleText)) continue;
+    const exports = new Set([...(moduleText.matchAll(/\bexport\s+(?:declare\s+)?(?:async\s+)?(?:abstract\s+)?(?:function|class|interface|type|enum|const|let|var)\s+([A-Za-z_$][\w$]*)/g))].map((item) => item[1]));
+    if (/\bexport\s+default\b/.test(moduleText)) exports.add("default");
+    for (const list of moduleText.matchAll(/\bexport\s*\{([^}]+)\}/g)) {
+      for (const item of list[1].split(",")) {
+        const parts = item.trim().split(/\s+as\s+/);
+        if (parts[0]) exports.add((parts[1] ?? parts[0]).trim());
+      }
+    }
+    for (const item of match[1].split(",")) {
+      const parts = item.trim().split(/\s+as\s+/);
+      const imported = parts[0]?.replace(/^type\s+/, "").trim();
+      if (imported && !exports.has(imported)) return "named import " + imported + " is not exported by " + resolved;
+    }
+  }
+  return "";
+}
+
+function validateVitestImports(content) {
+  const bindings = new Set();
+  for (const [, imports] of content.matchAll(/\bimport\s+(?:\w+\s*,\s*)?\{([^}]+)\}\s*from\s*["']vitest["']/g)) {
+    for (const entry of imports.split(",")) {
+      const [name, alias] = entry.trim().split(/\s+as\s+/);
+      if (name) bindings.add(alias ?? name);
+    }
+  }
+  const used = new Set([...content.matchAll(/(?<![\w$.])\b(describe|it|test|expect)(?:\s*\.\s*(?:each|skip|only|todo|concurrent|sequential|soft|poll))*\s*\(/g)]
+    .map(([, name]) => name));
+  const missing = [...used].filter((name) => !bindings.has(name));
+  return missing.length ? "Import Vitest helpers explicitly from 'vitest': " + missing.join(", ") : "";
+}
 
 const RULES = [
   "You are the engineering brain of the WOS Overnight Agent working on a Next.js/TypeScript repo.",
@@ -106,10 +167,11 @@ function context(guard, files, terms, perFile = 24_000, total = 60_000) {
   let used = 0; const parts = [];
   for (const f of files) {
     const c = guard.read(f); if (c == null) continue;
+    if (!inspectText(c).safe || !inspectText(f).safe) continue;
     const body = windows(c, terms, perFile);
     if (used + body.length > total) break;
     used += body.length;
-    parts.push(`===== ${f} =====\n${scrub(body)}\n===== END ${f} =====`);
+    parts.push(`===== ${f} =====\n${redact(body)}\n===== END ${f} =====`);
   }
   return parts.join("\n\n");
 }
@@ -122,11 +184,11 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
   return {
     async planner({ task, baseline, feedback = "", timeLeft }) {
       const files = pick(task, baseline);
-      const user = [`Task: ${task}`, "", "Baseline gate failures:", scrub(baseline.failures.slice(0, 30).join("\n") || "(none: gate is green)"), "",
+      const user = [`Task: ${task}`, "", "Baseline gate failures:", redact(baseline.failures.slice(0, 30).join("\n") || "(none: gate is green)"), "",
         "Write scope for edits: " + guard.writeScope.join(", "), "", ctx(files, termsOf(task, baseline)), "",
         "Return one JSON object with keys: rootCause (a sentence of at least 40 characters naming the real file and function), filesToInspect (array of real repo paths), proposedChanges (array of sentences), confidence (number 0..1)" +
           (contract ? `, layers (array chosen from ${LAYERS.join("/")}: the layer(s) that OWN the bug), multiLayerReason (only when more than one layer; explain why), evidence (array of objects {file, symbol}: a real repo file and an identifier or text that really appears in it and proves the root cause)` : "") +
-          ". Fill them with REAL content from the files above; do not echo these key descriptions." + (feedback ? `\n\nYour previous plan was rejected: ${feedback}` : "")].join("\n");
+          ". Return ONLY valid JSON (no markdown or prose). Example shape (replace every value with verified repository evidence): {\"rootCause\":\"normalizeProvince in src/lib/ai/understanding/provinces.ts trims whitespace but leaves trailing punctuation unchanged\",\"filesToInspect\":[\"src/lib/ai/understanding/provinces.ts\"],\"proposedChanges\":[\"Strip trailing punctuation after trimming\"],\"confidence\":0.9,\"layers\":[\"understanding\"],\"evidence\":[{\"file\":\"src/lib/ai/understanding/provinces.ts\",\"symbol\":\"normalizeProvince\"}]}. The evidence value MUST be a non-empty array of objects with non-empty string fields file and symbol; do not replace it with filesToInspect, proposedChanges, or a prose object. Include multiLayerReason only when layers has more than one item. Fill paths and symbols with REAL content from the files above; do not copy example values unless verified." + (feedback ? `\n\nYour previous plan was rejected: ${feedback}\nCorrect the JSON shape exactly as specified above; return the complete corrected object.` : "")].join("\n");
       const plan = await askValidated({ system: SYSTEM, user, timeLeft, model, ask, validate: (j) => {
         const rc = [j.rootCause, j.root_cause, j.cause, j.diagnosis].find((v) => typeof v === "string" && v.trim()) ?? (Array.isArray(j.rootCause) ? j.rootCause.join(" ") : undefined);
         j.rootCause = rc;
@@ -143,24 +205,39 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
       return plan;
     },
     async reproducer({ task, feedback = "", timeLeft }) {
-      const example = guard.read("src/lib/ai/understanding/understanding.test.ts");
+      const source = guard.read("src/lib/ai/understanding/understanding.test.ts");
+      const example = inspectText(source).safe ? source : null;
       const files = pick(task, { failures: [] });
       const user = [`Task (a bug report, no failing test exists yet): ${task}`, "",
         ...(example ? ["Example of how tests in this repo are written (vitest):", "```ts", example.split("\n").slice(0, 60).join("\n"), "```", ""] : []),
         ctx(files, termsOf(task, { failures: [] })), "",
-        "Write ONE new vitest test file that asserts the CORRECT expected behaviour described in the task and that FAILS with the current code. Use only pure functions that already exist (no network, no database). Do not weaken or invent behaviour.",
-        'Return one JSON object with keys: file (a NEW path under src/lib/ai/ ending in .agent-repro.test.ts), content (the whole TypeScript file), rationale (string). Use real content, not these descriptions.',
+        "Allowed write scope for reproduction: " + guard.writeScope.join(", "), "",
+        'Import each Vitest helper you use explicitly, for example: import { describe, it, expect } from "vitest". Do not rely on test globals.',
+        "Before proposing a test, confirm that each local import resolves from the proposed test path and that the named symbol is exported by that module. Use existing test imports as examples and check the source for the symbol and signature. If the source context does not confirm the import, do not guess.",
+        "If the provided evidence demonstrates a concrete defect, propose ONE new Vitest test that asserts the correct expected behavior and fails on the current code. Use only existing pure functions (no network or database). Do not invent a defect.",
+        'Return one JSON object with file (a NEW path under src/lib/ai/ ending in .agent-repro.test.ts and matching the allowed write scope), content (the whole TypeScript file), and rationale (string). If there is no concrete failing example, or no valid test path in scope, return {"outcome":"CANNOT_REPRODUCE","reason":"<specific explanation>"} without file or content.',
         feedback ? `\nYour previous test was rejected: ${feedback}` : ""].join("\n");
       return askValidated({ system: SYSTEM, user, timeLeft, model, ask, validate: (j) => {
-        if (!isReal(j.file) || !/^src\/lib\/ai\/.+\.test\.ts$/.test(String(j.file).replace(/\\/g, "/"))) return "file must be a new path under src/lib/ai/ ending in .test.ts";
+        if (j?.outcome === "CANNOT_REPRODUCE") {
+          return isReal(j.reason) && !Object.hasOwn(j, "file") && !Object.hasOwn(j, "content")
+            ? "" : "CANNOT_REPRODUCE requires a specific reason and no file or content";
+        }
+        if (!isReal(j?.file) || !/^src\/lib\/ai\/.+\.agent-repro\.test\.ts$/.test(String(j.file).replace(/\\/g, "/"))) return "file must be a new path under src/lib/ai/ ending in .agent-repro.test.ts";
+        const verdict = guard.checkWrite(j.file, { creating: true });
+        if (!verdict.allowed) return verdict.reason;
+        if (existsSync(verdict.abs)) return "reproduction requires a new test file";
         if (!isReal(j.content, 60) || !/expect\(/.test(j.content) || !/\b(it|test)\(/.test(j.content)) return "content must be a real vitest file with it()/test() and expect()";
+        const vitestProblem = validateVitestImports(j.content);
+        if (vitestProblem) return vitestProblem;
+        const importProblem = validateLocalNamedImports(verdict.rel, j.content, guard);
+        if (importProblem) return importProblem;
         return "";
       } });
     },
     async diagnoser({ task, plan, gate, history, timeLeft }) {
       const prior = history.filter((h) => h.gate).map((h) => `iteration ${h.n}: ${h.gate.summary}; files ${h.files.join(",")}; ${h.rationale ?? ""}`).join("\n");
       const evidence = gate.checks.filter((c) => c.status !== "PASS" && c.status !== "SKIPPED").map((c) => `## ${c.name} ${c.status}\n${c.summary}`).join("\n\n");
-      const user = [`Task: ${task}`, `Plan root cause: ${plan?.rootCause}`, "", "Previous attempts:", prior || "(none)", "", "Current failing evidence:", scrub(evidence), "",
+      const user = [`Task: ${task}`, `Plan root cause: ${plan?.rootCause}`, "", "Previous attempts:", prior || "(none)", "", "Current failing evidence:", redact(evidence), "",
         "Diagnose WHY it fails now (do not propose code yet). Return one JSON object with keys: diagnosis (real explanation, 20+ characters), failingCause, nextApproach, avoid (array of approaches already tried that did not help). Use real content, not these descriptions."].join("\n");
       return askValidated({ system: SYSTEM, user, timeLeft, model, ask, validate: (j) => (isReal(j.diagnosis, 20) ? "" : "diagnosis is missing, a placeholder, or shorter than 20 characters") });
     },
@@ -170,7 +247,7 @@ export function makeLlm({ guard, extraFiles = [], model, ask = askJsonOnce, focu
         "Allowed write scope: " + guard.writeScope.join(", ") + " (existing test files are read-only; you may create NEW test files).",
         ...(contract ? [`Edit ONLY files in layer(s): ${(plan?.layers ?? []).join(", ")}. Do not quote a customer sentence from a test as a string literal in production code. At most 3 production files.`] : []), "",
         ...(history.filter((h) => h.note).length ? ["Your previous patches were REJECTED:", ...history.filter((h) => h.note).slice(-3).map((h) => `- ${h.note}`), "Copy 'old' text character-for-character from the file excerpts below; if the text you need is not shown, say so in rationale and edit only what is shown.", ""] : []),
-        "Failing evidence:", scrub(gate.failures.slice(0, 30).join("\n")), "", ctx(files, termsOf(task, gate)), "",
+        "Failing evidence:", redact(gate.failures.slice(0, 30).join("\n")), "", ctx(files, termsOf(task, gate)), "",
         "Return one JSON object with keys: rationale (string) and edits (array). Each edit is an object with file (repo path), old (text copied EXACTLY from that file, appearing once), new (the replacement text). To create a brand-new file use {file, create: true, new: <whole file>} and omit old.",
         "'old' must match the file EXACTLY once. Keep edits minimal."].join("\n");
       return askValidated({ system: SYSTEM, user, timeLeft, model, ask, validate: (j) => {
